@@ -21,6 +21,7 @@ creature battle from the current build stays and is what resolves combat.
 - Attacking a tile defended by your monster(s) triggers a **battle**: choose **auto-fight** (your side AI-controlled) or **manual**.
 - A tile with one of your monsters is **guarded** → no mob spawns there.
 - You **send monsters each turn**; moving costs **energy** based on the monster's **Speed** and the destination tile.
+- Each species has **separate base stats** for food: **`base_satiety`** (bar capacity) and **`base_upkeep`** (food consumed per turn), both scaled by level. Feeding refills 50% of the bar, starvation drains 30%; a full bar heals over time.
 
 ## Terrain
 
@@ -39,11 +40,17 @@ Spawn tables differ per terrain, with some mobs **unique to a tile type**.
 
 | Improvement | On | Effect |
 |---|---|---|
-| **Farm** | Grove | decent food/turn; prevents spawns |
-| **Mine** | Cave | small gold/turn; prevents spawns |
+| **Farm** | Grove | **staffed** by one of your monsters: feeds your monsters within 4 tiles; surplus is delivered to a **Granary within 4** (else wasted) |
+| **Mine** | Cave | **staffed**: delivers gold to a **Treasury within 4** (else wasted) |
 | **Bridge** | Water | lets non-water monsters cross |
-| **Granary** | Cave, Grove | + food storage |
-| **Treasury** | Cave | + gold storage |
+| **Granary** | Cave, Grove | stores food; feeds your monsters within 4 |
+| **Treasury** | Cave | stores gold (counts as spendable) |
+
+**Logistics rules**
+- **Farms and Mines only produce while one of your monsters is stationed on the tile.**
+- **Food has no global pool:** it lives in farms/granaries. A monster is fed only if a Farm or Granary with food is **within 4 tiles**; otherwise it starves.
+- **Gold is global/accessible.** Treasury contents count toward your spendable gold and are **lost if the treasury is destroyed** (Phase 3). Likewise a destroyed granary loses its food.
+- Any production with **no valid receiver in range is wasted** that turn.
 
 ## Breeding & genetics
 
@@ -72,3 +79,14 @@ Spawn tables differ per terrain, with some mobs **unique to a tile type**.
 4. **Floors & progression** — floor 1–10 scaling, crystal travel cost, crystal→XP feeding, final boss.
 5. **Breeding & genetics** — 0–5 genetics, breeding rolls, babies at level 1.
 6. **Content** — more monsters, moves, and card synergies.
+
+## Lose conditions
+
+- **All monsters dead** — whether from **starvation** or **killed in battle** — the run ends.
+
+## Progress
+
+- Phase 1 ✅ colony foundation (regular grid + terrain, currencies, roster on tiles, turn loop, movement energy, food upkeep).
+- Phase 2 ✅ improvements & economy (build with gold, staffed production, range-gated food logistics, Trading Post: heal / energy / revive) + graveyard.
+- Phase 3 ⏳ threats & combat hooks.
+

@@ -32,6 +32,8 @@ Species :: struct {
 	base_power:   int,
 	base_defense: int,
 	base_speed:   int,
+	base_satiety: int, // satiation capacity (food bar)
+	base_upkeep:  int, // food consumed per turn
 	color:        rl.Color,
 	role:         Species_Role,
 	starter:      []Move_Id,
@@ -46,7 +48,7 @@ COMMON_MOVES := []Move_Id{.Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .I
 SPECIES := [?]Species{
 	// 0 - Emberling
 	{
-		name = "Emberling", element = .EMBER, base_hp = 60, base_energy = 3, base_energy_max = 4, base_power = 2, base_defense = 1, base_speed = 9,
+		name = "Emberling", element = .EMBER, base_hp = 60, base_energy = 3, base_energy_max = 4, base_power = 2, base_defense = 1, base_speed = 9, base_satiety = 100, base_upkeep = 3,
 		color = rl.Color{226, 110, 72, 255}, role = .STARTER,
 		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flame_Burst, .Hone, .Screech},
 		learnset = []Learn_Entry{
@@ -58,7 +60,7 @@ SPECIES := [?]Species{
 	},
 	// 1 - Tidepup
 	{
-		name = "Tidepup", element = .AQUA, base_hp = 62, base_energy = 3, base_energy_max = 4, base_power = 2, base_defense = 1, base_speed = 8,
+		name = "Tidepup", element = .AQUA, base_hp = 62, base_energy = 3, base_energy_max = 4, base_power = 2, base_defense = 1, base_speed = 8, base_satiety = 105, base_upkeep = 3,
 		color = rl.Color{86, 150, 226, 255}, role = .STARTER,
 		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Tidal_Slam, .Hone, .Undertow},
 		learnset = []Learn_Entry{
@@ -70,7 +72,7 @@ SPECIES := [?]Species{
 	},
 	// 2 - Sproutle
 	{
-		name = "Sproutle", element = .FLORA, base_hp = 58, base_energy = 3, base_energy_max = 4, base_power = 2, base_defense = 1, base_speed = 7,
+		name = "Sproutle", element = .FLORA, base_hp = 58, base_energy = 3, base_energy_max = 4, base_power = 2, base_defense = 1, base_speed = 7, base_satiety = 95, base_upkeep = 3,
 		color = rl.Color{102, 188, 112, 255}, role = .STARTER,
 		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Thorn_Crash, .Hone, .Screech},
 		learnset = []Learn_Entry{
@@ -82,7 +84,7 @@ SPECIES := [?]Species{
 	},
 	// 3 - Cave Bat
 	{
-		name = "Cave Bat", element = .NEUTRAL, base_hp = 36, base_energy = 3, base_energy_max = 4, base_power = 1, base_defense = 0, base_speed = 13,
+		name = "Cave Bat", element = .NEUTRAL, base_hp = 36, base_energy = 3, base_energy_max = 4, base_power = 1, base_defense = 0, base_speed = 13, base_satiety = 70, base_upkeep = 2,
 		color = rl.Color{158, 146, 178, 255}, role = .WILD,
 		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Tackle, .Guard, .Guard, .Guard, .Flurry, .Screech, .Hone},
 		learnset = []Learn_Entry{
@@ -94,7 +96,7 @@ SPECIES := [?]Species{
 	},
 	// 4 - Magmite
 	{
-		name = "Magmite", element = .EMBER, base_hp = 42, base_energy = 3, base_energy_max = 4, base_power = 1, base_defense = 1, base_speed = 6,
+		name = "Magmite", element = .EMBER, base_hp = 42, base_energy = 3, base_energy_max = 4, base_power = 1, base_defense = 1, base_speed = 6, base_satiety = 90, base_upkeep = 3,
 		color = rl.Color{214, 92, 62, 255}, role = .WILD,
 		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Cinder, .Flame_Burst, .Screech},
 		learnset = []Learn_Entry{
@@ -106,7 +108,7 @@ SPECIES := [?]Species{
 	},
 	// 5 - Bubblet
 	{
-		name = "Bubblet", element = .AQUA, base_hp = 44, base_energy = 3, base_energy_max = 4, base_power = 1, base_defense = 1, base_speed = 8,
+		name = "Bubblet", element = .AQUA, base_hp = 44, base_energy = 3, base_energy_max = 4, base_power = 1, base_defense = 1, base_speed = 8, base_satiety = 95, base_upkeep = 2,
 		color = rl.Color{72, 134, 214, 255}, role = .WILD,
 		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Bubble_Shield, .Tidal_Slam, .Undertow},
 		learnset = []Learn_Entry{
@@ -118,7 +120,7 @@ SPECIES := [?]Species{
 	},
 	// 6 - Thornkit
 	{
-		name = "Thornkit", element = .FLORA, base_hp = 40, base_energy = 3, base_energy_max = 4, base_power = 1, base_defense = 1, base_speed = 9,
+		name = "Thornkit", element = .FLORA, base_hp = 40, base_energy = 3, base_energy_max = 4, base_power = 1, base_defense = 1, base_speed = 9, base_satiety = 85, base_upkeep = 2,
 		color = rl.Color{88, 172, 98, 255}, role = .WILD,
 		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Leech, .Thorn_Crash, .Screech},
 		learnset = []Learn_Entry{
@@ -130,7 +132,7 @@ SPECIES := [?]Species{
 	},
 	// 7 - Elite Sentinel
 	{
-		name = "Elite Sentinel", element = .NEUTRAL, base_hp = 66, base_energy = 4, base_energy_max = 5, base_power = 3, base_defense = 2, base_speed = 6,
+		name = "Elite Sentinel", element = .NEUTRAL, base_hp = 66, base_energy = 4, base_energy_max = 5, base_power = 3, base_defense = 2, base_speed = 6, base_satiety = 140, base_upkeep = 5,
 		color = rl.Color{206, 122, 62, 255}, role = .ELITE,
 		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Tackle, .Body_Slam, .Body_Slam, .Guard, .Guard, .Fortify, .Crush},
 		learnset = []Learn_Entry{
@@ -142,7 +144,7 @@ SPECIES := [?]Species{
 	},
 	// 8 - The Deep One
 	{
-		name = "The Deep One", element = .NEUTRAL, base_hp = 120, base_energy = 4, base_energy_max = 5, base_power = 5, base_defense = 3, base_speed = 5,
+		name = "The Deep One", element = .NEUTRAL, base_hp = 120, base_energy = 4, base_energy_max = 5, base_power = 5, base_defense = 3, base_speed = 5, base_satiety = 220, base_upkeep = 8,
 		color = rl.Color{150, 42, 62, 255}, role = .BOSS,
 		starter = []Move_Id{.Body_Slam, .Body_Slam, .Body_Slam, .Body_Slam, .Fortify, .Fortify, .Fortify, .Crush, .Iron_Skin, .Hone},
 		learnset = []Learn_Entry{

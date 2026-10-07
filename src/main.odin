@@ -5,45 +5,41 @@ import "core:time"
 import "core:math"
 import "core:fmt"
 
-Game_Mode :: enum { STARTER, MAP, BATTLE, REWARD, GAME_OVER }
+Game_Mode :: enum { STARTER, MAP, GAME_OVER }
 
 Game :: struct {
 	mode:     Game_Mode,
 	renderer: Hex_Renderer,
-	graph:    Map_Graph,
-	battle:   Battle,
-	party:    [dynamic]Creature,
-	active:   int,
-	moves:    int,
-	cleared:  bool,
-	seed_rng: Rng,
-	cfg:      Map_Config,
+	colony:   Colony,
+	has_colony: bool,
+	selected: int, // roster index of the selected monster, or -1
 
 	// deck viewer overlay
 	show_deck:   bool,
 	view_index:  int,
 	view_scroll: f32,
 
-	// card reward screen
-	reward_options: [dynamic]Move_Id,
-	pending_cleared: bool,
+	status:       cstring,
+	status_timer: f32,
 
-	// the tile whose encounter is currently being resolved
-	pending_node: Hex,
-	has_pending:  bool,
+	// build / trade overlays
+	build_mode: bool,
+	build_hex:  Hex,
+	has_build:  bool,
+	trade_open: bool,
+
+	seed_rng: Rng,
 }
 
 main :: proc() {
 	rl.SetConfigFlags({.WINDOW_RESIZABLE, .MSAA_4X_HINT})
-	rl.InitWindow(1280, 720, "Vibegambling - Hex Dungeon")
+	rl.InitWindow(1280, 720, "Vibegambling - Colony")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
 
 	g: Game
-	g.cfg = default_map_config()
 	g.seed_rng = rng_make(u64(time.now()._nsec))
-	g.party = make([dynamic]Creature, 0)
-	g.reward_options = make([dynamic]Move_Id, 0)
+	g.selected = -1
 
 	hex_renderer_init(&g.renderer, 46.0, int(rl.GetScreenWidth()), int(rl.GetScreenHeight()))
 
@@ -65,34 +61,36 @@ main :: proc() {
 }
 
 // ----------------------------------------------------------------------------
-// Run lifecycle
+// Lifecycle
 // ----------------------------------------------------------------------------
 
 end_run :: proc(g: ^Game) {
-	map_free(&g.graph)
-	g.graph = Map_Graph{}
-	battle_free(&g.battle)
-	g.battle = Battle{}
-	party_free(&g.party)
-	delete(g.reward_options)
-	g.reward_options = make([dynamic]Move_Id, 0)
-	g.show_deck = false
+	if g.has_colony {
+		colony_free(&g.colony)
+		g.has_colony = false
+	}
 }
 
 reset_to_starter :: proc(g: ^Game) {
 	end_run(g)
+	g.show_deck = false
 	g.mode = .STARTER
 }
 
 choose_starter :: proc(g: ^Game, species_idx: int) {
-	party_free(&g.party)
-	append(&g.party, creature_make(species_idx, 1, SPECIES[species_idx].name))
-	g.active = 0
-	g.graph = generate_map(rng_next_u64(&g.seed_rng), g.cfg)
-	g.moves = 0
-	g.cleared = false
+	end_run(g)
+	g.colony = colony_generate(rng_next_u64(&g.seed_rng), 11, 8)
+	g.has_colony = true
+	g.selected = colony_add_starter(&g.colony, species_idx)
 	g.mode = .MAP
-	center_camera_on(&g.renderer, g.graph.current_hex)
+	g.status = "Click an adjacent tile to move your monster. Space ends the turn."
+	g.status_timer = 6
+	center_camera_on(&g.renderer, g.colony.start_hex)
+}
+
+set_status :: proc(g: ^Game, msg: cstring) {
+	g.status = msg
+	g.status_timer = 3.0
 }
 
 // ----------------------------------------------------------------------------
@@ -100,14 +98,17 @@ choose_starter :: proc(g: ^Game, species_idx: int) {
 // ----------------------------------------------------------------------------
 
 game_update :: proc(g: ^Game, dt: f32) {
-	// Deck viewer is a modal pause over whichever scene is active.
+	if g.status_timer > 0 {
+		g.status_timer -= dt
+	}
+
 	if g.show_deck {
 		update_deck_viewer(g, dt)
 		return
 	}
-	if (g.mode == .MAP || g.mode == .BATTLE) && len(g.party) > 0 && rl.IsKeyPressed(.V) {
+	if g.mode == .MAP && len(g.colony.roster) > 0 && rl.IsKeyPressed(.V) {
 		g.show_deck = true
-		g.view_index = clamp(g.active, 0, len(g.party) - 1)
+		g.view_index = clamp(g.selected, 0, len(g.colony.roster) - 1)
 		g.view_scroll = 0
 		return
 	}
@@ -116,11 +117,7 @@ game_update :: proc(g: ^Game, dt: f32) {
 	case .STARTER:
 		update_starter(g)
 	case .MAP:
-		update_map(g, dt)
-	case .BATTLE:
-		update_battle(g, dt)
-	case .REWARD:
-		update_reward(g)
+		update_colony(g, dt)
 	case .GAME_OVER:
 		if rl.IsKeyPressed(.N) {
 			reset_to_starter(g)
@@ -141,7 +138,7 @@ update_starter :: proc(g: ^Game) {
 	}
 }
 
-update_map :: proc(g: ^Game, dt: f32) {
+update_colony :: proc(g: ^Game, dt: f32) {
 	hex_renderer_update_camera(&g.renderer, dt)
 
 	if rl.IsMouseButtonDown(.RIGHT) {
@@ -149,87 +146,198 @@ update_map :: proc(g: ^Game, dt: f32) {
 		g.renderer.camera_x -= d.x / g.renderer.zoom
 		g.renderer.camera_y -= d.y / g.renderer.zoom
 	}
-
-	if rl.IsKeyPressed(.N) {
-		reset_to_starter(g)
-		return
-	}
 	if rl.IsKeyPressed(.R) {
-		center_camera_on(&g.renderer, g.graph.current_hex)
+		center_camera_on(&g.renderer, g.colony.start_hex)
 	}
 
-	if g.cleared {
+	// Build mode toggles.
+	if rl.IsKeyPressed(.B) {
+		g.build_mode = !g.build_mode
+		g.trade_open = false
+		g.has_build = false
+		if g.build_mode {
+			set_status(g, "Build mode: click a tile, then pick an improvement. B/Esc exits.")
+		}
 		return
+	}
+	if g.build_mode {
+		update_build(g)
+		return
+	}
+
+	// Trading Post UI.
+	if g.trade_open {
+		update_trade(g)
+		return
+	}
+	if rl.IsKeyPressed(.T) && selected_on_trading_post(g) {
+		g.trade_open = true
+		return
+	}
+
+	// End turn.
+	if rl.IsKeyPressed(.SPACE) || rl.IsKeyPressed(.E) {
+		do_end_turn(g)
+		return
+	}
+
+	// Cycle selection through the roster.
+	if rl.IsKeyPressed(.TAB) {
+		n := len(g.colony.roster)
+		if n > 0 {
+			next := g.selected + 1
+			if g.selected < 0 || next >= n {
+				next = 0
+			}
+			g.selected = next
+		}
+		return
+	}
+
+	mp := rl.GetMousePosition()
+	if rl.IsMouseButtonPressed(.LEFT) {
+		if rl.CheckCollisionPointRec(mp, colony_end_turn_rect()) {
+			do_end_turn(g)
+			return
+		}
+		for i in 0..<len(g.colony.roster) {
+			if rl.CheckCollisionPointRec(mp, roster_entry_rect(i)) {
+				g.selected = i
+				return
+			}
+		}
 	}
 
 	hovered := hex_renderer_hovered(&g.renderer)
-	if !rl.IsMouseButtonPressed(.LEFT) || !can_travel_to(&g.graph, hovered) {
-		return
+
+	if g.selected >= 0 && g.selected < len(g.colony.roster) {
+		m := &g.colony.roster[g.selected]
+		if rl.IsMouseButtonPressed(.LEFT) && hex_distance(m.pos, hovered) == 1 {
+			res := colony_move(&g.colony, g.selected, hovered)
+			switch res {
+			case 0:
+				set_status(g, "Moved.")
+			case 2:
+				set_status(g, "Blocked (water needs a water monster or bridge).")
+			case 3:
+				set_status(g, "That tile is full (max 6).")
+			case 4:
+				set_status(g, "Not enough movement energy.")
+			case:
+				set_status(g, "Can't move there.")
+			}
+			return
+		}
 	}
 
-	if !travel_to(&g.graph, hovered) {
-		return
-	}
-	g.moves += 1
-	center_camera_on(&g.renderer, g.graph.current_hex)
-
-	node := map_get(&g.graph, hovered)
-	if node == nil || node.cleared {
-		return
-	}
-
-	// Resolve the tile's encounter (once).
-	#partial switch node.kind {
-	case .COMBAT, .ELITE, .BOSS:
-		g.pending_node = hovered
-		g.has_pending = true
-		g.pending_cleared = false
-		battle_free(&g.battle)
-		g.battle = battle_start(&g.party, g.active, node.kind, node.depth, &g.seed_rng)
-		g.mode = .BATTLE
-	case .REST:
-		party_heal(&g.party, 1.0 / 3.0)
-		node.cleared = true
-	case:
-		node.cleared = true // START / SHOP / EVENT (no effect yet)
+	if rl.IsMouseButtonPressed(.LEFT) {
+		idx := first_player_monster_on(&g.colony, hovered)
+		g.selected = idx
 	}
 }
 
-update_battle :: proc(g: ^Game, dt: f32) {
-	battle_update(&g.battle, dt)
-	battle_input(&g.battle)
+selected_on_trading_post :: proc(g: ^Game) -> bool {
+	if g.selected < 0 || g.selected >= len(g.colony.roster) {
+		return false
+	}
+	t := tile_at(&g.colony, g.colony.roster[g.selected].pos)
+	return t != nil && t.terrain == .TRADING_POST
+}
 
-	if g.battle.timer <= 0.4 {
+update_build :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) {
+		g.build_mode = false
+		g.has_build = false
 		return
 	}
-	continue_pressed := rl.IsMouseButtonPressed(.LEFT) ||
-		rl.IsKeyPressed(.SPACE) || rl.IsKeyPressed(.ENTER)
-	if !continue_pressed {
+	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
+	mp := rl.GetMousePosition()
 
-	#partial switch g.battle.phase {
-	case .WON:
-		if g.battle.active >= 0 && g.battle.active < len(g.party) {
-			creature_level_up(&g.party[g.battle.active])
+	if g.has_build {
+		if t := tile_at(&g.colony, g.build_hex); t != nil {
+			opts: [8]Improvement
+			n := buildable_improvements(t.terrain, opts[:])
+			for i in 0..<n {
+				if rl.CheckCollisionPointRec(mp, build_option_rect(i)) {
+					res := colony_build(&g.colony, g.build_hex, opts[i])
+					switch res {
+					case 0: set_status(g, "Improvement built.")
+					case 1: set_status(g, "Can't build that on this terrain.")
+					case 2: set_status(g, "Tile already improved.")
+					case 3: set_status(g, "Not enough gold.")
+					}
+					return
+				}
+			}
 		}
-		if g.has_pending {
-			g.pending_cleared = map_node_kind(&g.graph, g.pending_node) == .BOSS
-			clear_node(&g.graph, g.pending_node)
-			g.has_pending = false
+	}
+
+	hovered := hex_renderer_hovered(&g.renderer)
+	if t := tile_at(&g.colony, hovered); t != nil && t.revealed {
+		g.build_hex = hovered
+		g.has_build = true
+	}
+}
+
+update_trade :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.T) {
+		g.trade_open = false
+		return
+	}
+	if !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := rl.GetMousePosition()
+	s := g.selected
+
+	if s >= 0 && s < len(g.colony.roster) {
+		if rl.CheckCollisionPointRec(mp, trade_heal_rect()) {
+			res := colony_heal(&g.colony, s)
+			set_status(g, res == 0 ? "Healed." : res == 2 ? "Not enough gold." : "Already at full HP.")
+			return
 		}
-		open_reward(g)
-	case .CAPTURED:
-		if g.has_pending {
-			clear_node(&g.graph, g.pending_node)
-			g.has_pending = false
+		if rl.CheckCollisionPointRec(mp, trade_energy_rect()) {
+			res := colony_refill_energy(&g.colony, s)
+			set_status(g, res == 0 ? "Energy refilled." : "Not enough gold.")
+			return
 		}
-		g.mode = .MAP
-		center_camera_on(&g.renderer, g.graph.current_hex)
-	case .LOST:
+	}
+	for i in 0..<len(g.colony.graveyard) {
+		if rl.CheckCollisionPointRec(mp, trade_revive_rect(i)) {
+			res := colony_revive(&g.colony, i)
+			set_status(g, res == 0 ? "Revived." : res == 2 ? "Not enough gold." : "Start tile is full.")
+			return
+		}
+	}
+	g.trade_open = false
+}
+
+// Shared lose condition: no living monsters, whether from starvation or battle.
+check_game_over :: proc(g: ^Game) {
+	if g.mode == .MAP && player_monster_count(&g.colony) == 0 {
 		g.mode = .GAME_OVER
-	case:
 	}
+}
+
+do_end_turn :: proc(g: ^Game) {
+	colony_end_turn(&g.colony)
+	if player_monster_count(&g.colony) == 0 {
+		g.mode = .GAME_OVER
+	} else {
+		set_status(g, "Turn advanced.")
+	}
+}
+
+player_monster_count :: proc(c: ^Colony) -> int {
+	n := 0
+	for m in c.roster {
+		if !m.wild {
+			n += 1
+		}
+	}
+	return n
 }
 
 // ----------------------------------------------------------------------------
@@ -241,13 +349,15 @@ game_draw :: proc(g: ^Game) {
 	case .STARTER:
 		draw_starter()
 	case .MAP:
-		draw_map(g)
-	case .BATTLE:
-		draw_battle(&g.battle)
-	case .REWARD:
-		draw_reward(g)
+		draw_colony(g)
+		if g.build_mode {
+			draw_build_panel(g)
+		}
+		if g.trade_open {
+			draw_trade_panel(g)
+		}
 	case .GAME_OVER:
-		draw_game_over(g.moves)
+		draw_colony_game_over(g.colony.turn)
 	}
 
 	if g.show_deck {
@@ -255,266 +365,406 @@ game_draw :: proc(g: ^Game) {
 	}
 }
 
-// ----------------------------------------------------------------------------
-// Card reward screen
-// ----------------------------------------------------------------------------
+draw_colony :: proc(g: ^Game) {
+	rl.ClearBackground(rl.Color{10, 12, 16, 255})
 
-reward_card_rect :: proc(i, count: int) -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
-	w := f32(184)
-	h := f32(258)
-	gap := f32(34)
-	total := f32(count) * w + f32(count - 1) * gap
-	start := sw / 2 - total / 2
-	return rl.Rectangle{start + f32(i) * (w + gap), sh / 2 - h / 2 - 24, w, h}
-}
-
-reward_skip_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
-	return rl.Rectangle{sw / 2 - 90, sh - 96, 180, 48}
-}
-
-open_reward :: proc(g: ^Game) {
-	delete(g.reward_options)
-	g.reward_options = make([dynamic]Move_Id, 0)
-
-	if len(g.party) == 0 || g.battle.active < 0 || g.battle.active >= len(g.party) {
-		g.mode = .MAP
-		return
-	}
-
-	c := &g.party[g.battle.active]
-	sp := SPECIES[c.species]
-
-	// Reward picks are limited to this species' move pool. Moves in the pool
-	// but not in the level learnset can ONLY be obtained here.
-	avail := make([dynamic]Move_Id, 0)
-	defer delete(avail)
-	for id in sp.move_pool {
-		if !contains_move(avail[:], id) {
-			append(&avail, id)
-		}
-	}
-
-	// Prefer moves the creature does not already have; fall back to repeats.
-	unknown := make([dynamic]Move_Id, 0)
-	defer delete(unknown)
-	known := make([dynamic]Move_Id, 0)
-	defer delete(known)
-	for id in avail {
-		if creature_knows(c, id) {
-			append(&known, id)
-		} else {
-			append(&unknown, id)
-		}
-	}
-	shuffle_cards(&unknown, &g.seed_rng)
-	shuffle_cards(&known, &g.seed_rng)
-
-	for id in unknown {
-		if len(g.reward_options) >= 3 { break }
-		append(&g.reward_options, id)
-	}
-	for id in known {
-		if len(g.reward_options) >= 3 { break }
-		append(&g.reward_options, id)
-	}
-
-	g.mode = .REWARD
-}
-
-contains_move :: proc(haystack: []Move_Id, needle: Move_Id) -> bool {
-	for m in haystack {
-		if m == needle {
-			return true
-		}
-	}
-	return false
-}
-
-finish_reward :: proc(g: ^Game, choice: int) {
-	if choice >= 0 && choice < len(g.reward_options) && len(g.party) > 0 {
-		idx := clamp(g.battle.active, 0, len(g.party) - 1)
-		append(&g.party[idx].deck, g.reward_options[choice])
-	}
-
-	delete(g.reward_options)
-	g.reward_options = make([dynamic]Move_Id, 0)
-
-	if g.pending_cleared {
-		g.cleared = true
-		g.pending_cleared = false
-	}
-
-	g.mode = .MAP
-	center_camera_on(&g.renderer, g.graph.current_hex)
-}
-
-update_reward :: proc(g: ^Game) {
-	if len(g.reward_options) == 0 {
-		return
-	}
-	if rl.IsKeyPressed(.S) || rl.IsKeyPressed(.ESCAPE) {
-		finish_reward(g, -1)
-		return
-	}
-	for key, i in DIGIT_KEYS {
-		if i < len(g.reward_options) && rl.IsKeyPressed(key) {
-			finish_reward(g, i)
-			return
-		}
-	}
-	if rl.IsMouseButtonPressed(.LEFT) {
-		mp := rl.GetMousePosition()
-		for i in 0..<len(g.reward_options) {
-			if rl.CheckCollisionPointRec(mp, reward_card_rect(i, len(g.reward_options))) {
-				finish_reward(g, i)
-				return
-			}
-		}
-		if rl.CheckCollisionPointRec(mp, reward_skip_rect()) {
-			finish_reward(g, -1)
-			return
-		}
-	}
-}
-
-draw_reward :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
-	rl.ClearBackground(rl.Color{12, 14, 22, 255})
-
-	title := cstring("CHOOSE A CARD")
-	tw := rl.MeasureText(title, 40)
-	rl.DrawText(title, i32(sw) / 2 - tw / 2, 58, 40, rl.Color{230, 230, 245, 255})
-
-	if len(g.party) > 0 {
-		idx := clamp(g.battle.active, 0, len(g.party) - 1)
-		c := &g.party[idx]
-		note := fmt.ctprintf("%s reached Lv %d   -   HP max %d   PWR +%d   DEF %d   SPD %d", c.name, c.level, c.max_hp, c.power, c.defense, c.speed)
-		nw := rl.MeasureText(note, 20)
-		rl.DrawText(note, i32(sw) / 2 - nw / 2, 112, 20, element_color(creature_element(c)))
-	}
-
-	mp := rl.GetMousePosition()
-	for card, i in g.reward_options {
-		rec := reward_card_rect(i, len(g.reward_options))
-		hovered := rl.CheckCollisionPointRec(mp, rec)
-		draw_card(card, rec, true, hovered)
-		num := fmt.ctprintf("%d", i + 1)
-		rl.DrawText(num, i32(rec.x) + 8, i32(rec.y) + i32(rec.height) - 20, 14, rl.Color{190, 190, 210, 255})
-	}
-
-	skip := reward_skip_rect()
-	hover := rl.CheckCollisionPointRec(mp, skip)
-	col := rl.Color{48, 48, 58, 255}
-	if hover {
-		col = rl.Color{70, 70, 86, 255}
-	}
-	rl.DrawRectangleRounded(skip, 0.3, 8, col)
-	rl.DrawRectangleRoundedLinesEx(skip, 0.3, 8, 2, rl.Color{120, 120, 140, 255})
-	st := cstring("Skip (S)")
-	stw := rl.MeasureText(st, 18)
-	rl.DrawText(st, i32(skip.x + skip.width / 2) - stw / 2, i32(skip.y + skip.height / 2) - 9, 18, rl.Color{200, 200, 215, 255})
-
-	hint := cstring("Click a card, or press 1-3")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 32, 16, rl.Color{140, 140, 160, 255})
-}
-
-// ----------------------------------------------------------------------------
-// Deck viewer
-// ----------------------------------------------------------------------------
-
-DV_COLS   :: 7
-DV_CW     :: f32(104)
-DV_CH     :: f32(140)
-DV_GAP    :: f32(10)
-DV_TOP    :: f32(176)
-DV_BOTTOM :: f32(64)
-
-deck_max_scroll :: proc(g: ^Game) -> f32 {
-	if len(g.party) == 0 {
-		return 0
-	}
-	n := len(g.party[g.view_index].deck)
-	rows := (n + DV_COLS - 1) / DV_COLS
-	content := f32(rows) * (DV_CH + DV_GAP) - DV_GAP
-	visible := f32(rl.GetScreenHeight()) - DV_TOP - DV_BOTTOM
-	return max(f32(0), content - visible)
-}
-
-update_deck_viewer :: proc(g: ^Game, dt: f32) {
-	if len(g.party) == 0 {
-		g.show_deck = false
-		return
-	}
-	if g.view_index < 0 || g.view_index >= len(g.party) {
-		g.view_index = 0
-	}
-
-	if rl.IsKeyPressed(.V) || rl.IsKeyPressed(.ESCAPE) {
-		g.show_deck = false
-		return
-	}
-
-	n := len(g.party)
-	if rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressed(.E) {
-		g.view_index = (g.view_index + 1) % n
-		g.view_scroll = 0
-	}
-	if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressed(.Q) {
-		g.view_index = (g.view_index - 1 + n) % n
-		g.view_scroll = 0
-	}
-
-	g.view_scroll -= rl.GetMouseWheelMove() * 60
-	if rl.IsKeyDown(.DOWN) { g.view_scroll += 600 * dt }
-	if rl.IsKeyDown(.UP) { g.view_scroll -= 600 * dt }
-	g.view_scroll = clamp(g.view_scroll, 0, deck_max_scroll(g))
-}
-
-draw_deck_viewer :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
-	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
-
-	c := &g.party[g.view_index]
-	element := creature_element(c)
-
-	name := fmt.ctprintf("%s's Deck", c.name)
-	rl.DrawText(name, 40, 26, 34, rl.Color{235, 235, 245, 255})
-	sub := fmt.ctprintf("Lv %d   %s   HP %d/%d   PWR +%d   DEF %d   SPD %d   Energy %s max (%s regen)   %d cards",
-		c.level, element_name(element), c.hp, c.max_hp, c.power, creature_defense(c), c.speed, fmt_num(c.energy_max), fmt_num(c.energy_regen), len(c.deck))
-	rl.DrawText(sub, 40, 68, 18, element_color(element))
-	pager := fmt.ctprintf("creature %d / %d   -   Left/Right or Q/E to switch", g.view_index + 1, len(g.party))
-	rl.DrawText(pager, 40, 96, 16, rl.Color{150, 150, 170, 255})
-
-	n := len(c.deck)
-	total_w := f32(DV_COLS) * DV_CW + f32(DV_COLS - 1) * DV_GAP
-	start_x := sw / 2 - total_w / 2
-	base_y := DV_TOP - g.view_scroll
-	mp := rl.GetMousePosition()
-
-	rl.BeginScissorMode(0, i32(DV_TOP) - 4, i32(sw), i32(sh - DV_TOP - DV_BOTTOM) + 8)
-	for i in 0..<n {
-		col := i % DV_COLS
-		row := i / DV_COLS
-		rec := rl.Rectangle{start_x + f32(col) * (DV_CW + DV_GAP), base_y + f32(row) * (DV_CH + DV_GAP), DV_CW, DV_CH}
-		if rec.y + DV_CH < DV_TOP - 8 || rec.y > sh - DV_BOTTOM + 8 {
+	// Tiles (fog of war: only explored tiles are drawn).
+	for t in g.colony.tiles {
+		if !t.revealed {
 			continue
 		}
-		hovered := rl.CheckCollisionPointRec(mp, rec)
-		draw_card(c.deck[i], rec, true, hovered)
-	}
-	rl.EndScissorMode()
+		draw_hex(&g.renderer, t.hex, terrain_color(t.terrain), HEX_BORDER, 2.0 * g.renderer.zoom)
 
-	hint := cstring("V / Esc close   |   wheel or Up/Down to scroll")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 32, 16, rl.Color{140, 140, 160, 255})
+		if t.improvement != .NONE {
+			cx, cy := hex_to_screen(&g.renderer, t.hex)
+			label := improvement_label(t.improvement)
+			lw := rl.MeasureText(label, 20)
+			rl.DrawText(label, i32(cx) - lw / 2, i32(cy) - 10, 20, rl.Color{20, 20, 20, 255})
+		}
+	}
+
+	draw_move_highlights(g)
+	draw_map_monsters(g)
+	draw_hover_marker(&g.renderer, hex_renderer_hovered(&g.renderer), true)
+	draw_colony_hud(g)
+	draw_roster_panel(g)
+	draw_end_turn_button(g)
+	draw_terrain_legend()
 }
+
+draw_map_monsters :: proc(g: ^Game) {
+	for i in 0..<len(g.colony.roster) {
+		m := &g.colony.roster[i]
+		t := tile_at(&g.colony, m.pos)
+		if t == nil || !t.revealed {
+			continue
+		}
+		idx := 0
+		for j in 0..<i {
+			if !g.colony.roster[j].wild && hex_equal(g.colony.roster[j].pos, m.pos) {
+				idx += 1
+			}
+		}
+		n := max(monsters_on_tile(&g.colony, m.pos, false), 1)
+		cx, cy := hex_to_screen(&g.renderer, m.pos)
+		px, py := f32(cx), f32(cy)
+		if n > 1 {
+			angle := f32(idx) / f32(n) * 2.0 * math.PI - math.PI / 2.0
+			px += math.cos(angle) * 15.0 * g.renderer.zoom
+			py += math.sin(angle) * 15.0 * g.renderer.zoom
+		}
+		radius := 9.0 * g.renderer.zoom
+		rl.DrawCircleV(rl.Vector2{px, py}, radius, creature_color(&m.creature))
+		rl.DrawCircleLinesV(rl.Vector2{px, py}, radius, element_color(creature_element(&m.creature)))
+		if i == g.selected {
+			rl.DrawCircleLinesV(rl.Vector2{px, py}, radius + 3 * g.renderer.zoom, rl.Color{255, 245, 140, 255})
+		}
+		if m.food < 40 {
+			rl.DrawCircleV(rl.Vector2{px + 7 * g.renderer.zoom, py - 7 * g.renderer.zoom}, 4 * g.renderer.zoom, rl.Color{220, 70, 70, 255})
+		}
+	}
+}
+
+draw_hover_marker :: proc(r: ^Hex_Renderer, hex: Hex, active: bool) {
+	if !active {
+		return
+	}
+	t := f32(rl.GetTime())
+	pulse := 0.5 + 0.5 * abs(math.sin(t * 4.0))
+	color := rl.Color{255, 245, 140, u8(120 + 100 * pulse)}
+	draw_hex_outline(r, hex, color, (3.0 + 2.0 * pulse) * r.zoom)
+}
+
+draw_move_highlights :: proc(g: ^Game) {
+	if g.selected < 0 || g.selected >= len(g.colony.roster) {
+		return
+	}
+	m := &g.colony.roster[g.selected]
+	for n in hex_neighbors(m.pos) {
+		t := tile_at(&g.colony, n)
+		if t == nil {
+			continue
+		}
+		passable := tile_passable(&g.colony, m, n)
+		cost := monster_move_cost(m, t.terrain)
+		affordable := m.energy >= cost
+		full := monsters_on_tile(&g.colony, n, false) >= MAX_MONSTERS_PER_TILE
+
+		col := rl.Color{120, 220, 150, 70}
+		if !passable || full {
+			col = rl.Color{220, 90, 90, 70}
+		} else if !affordable {
+			col = rl.Color{220, 180, 90, 70}
+		}
+		draw_hex_filled(&g.renderer, n, col)
+
+		if t.revealed && passable && !full {
+			cx, cy := hex_to_screen(&g.renderer, n)
+			label := fmt.ctprintf("%s", fmt_num(cost))
+			lw := rl.MeasureText(label, 14)
+			rl.DrawText(label, i32(cx) - lw / 2, i32(cy) + 14, 14, rl.Color{230, 240, 210, 255})
+		}
+	}
+}
+
+draw_colony_hud :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+
+	rl.DrawText("THE COLONY", 20, 16, 26, rl.Color{215, 215, 235, 255})
+	res := fmt.ctprintf("Floor %d    Turn %d", g.colony.floor, g.colony.turn)
+	rl.DrawText(res, 20, 48, 18, rl.Color{140, 140, 165, 255})
+
+	x := i32(20)
+	gold := fmt.ctprintf("Gold %d / %d", colony_total_gold(&g.colony), g.colony.gold_cap)
+	rl.DrawText(gold, x, 78, 20, rl.Color{240, 205, 90, 255})
+	x += rl.MeasureText(gold, 20) + 30
+
+	if granary_count(&g.colony) == 0 {
+		rl.DrawText("Food: no granary", x, 78, 20, rl.Color{150, 170, 150, 255})
+		x += rl.MeasureText("Food: no granary", 20) + 30
+	} else {
+		food := fmt.ctprintf("Food stored %d / %d", colony_total_food(&g.colony), g.colony.food_cap)
+		rl.DrawText(food, x, 78, 20, rl.Color{140, 220, 130, 255})
+		x += rl.MeasureText(food, 20) + 30
+	}
+
+	cryst := fmt.ctprintf("Crystals %d", g.colony.crystals)
+	rl.DrawText(cryst, x, 78, 20, rl.Color{150, 210, 255, 255})
+
+	upkeep := 0
+	for &m in g.colony.roster {
+		if !m.wild {
+			upkeep += monster_upkeep(&m)
+		}
+	}
+	up := fmt.ctprintf("Upkeep %d food/turn    Monsters %d", upkeep, player_monster_count(&g.colony))
+	rl.DrawText(up, 20, 106, 16, rl.Color{150, 150, 175, 255})
+
+	// Hovered tile info + selected monster.
+	hovered := hex_renderer_hovered(&g.renderer)
+	if t := tile_at(&g.colony, hovered); t != nil && t.revealed {
+		info := fmt.ctprintf("Tile: %s%s", terrain_name(t.terrain), t.improvement != .NONE ? " (improved)" : "")
+		rl.DrawText(info, 20, 130, 16, rl.Color{180, 180, 200, 255})
+	}
+
+	rl.DrawText("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck", 20, i32(sh) - 70, 16, rl.Color{120, 120, 145, 255})
+	rl.DrawText("RMB/WASD pan  |  wheel zoom  |  R recenter  |  N new run", 20, i32(sh) - 46, 16, rl.Color{120, 120, 145, 255})
+
+	if g.status_timer > 0 {
+		w := rl.MeasureText(g.status, 22)
+		rl.DrawText(g.status, i32(sw) / 2 - w / 2, i32(sh) - 110, 22, rl.Color{235, 235, 250, 255})
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Roster panel
+// ----------------------------------------------------------------------------
+
+roster_entry_rect :: proc(i: int) -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	return rl.Rectangle{sw - 240, 180 + f32(i) * 60, 224, 56}
+}
+
+draw_roster_panel :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	rl.DrawText("MONSTERS", i32(sw) - 236, 152, 18, rl.Color{170, 170, 190, 255})
+
+	for &m, i in g.colony.roster {
+		if m.wild {
+			continue
+		}
+		rec := roster_entry_rect(i)
+		sel := i == g.selected
+		bg := rl.Color{24, 24, 34, 255}
+		if sel {
+			bg = rl.Color{36, 46, 40, 255}
+		}
+		rl.DrawRectangleRounded(rec, 0.16, 6, bg)
+		border := rl.Color{60, 60, 78, 255}
+		if sel {
+			border = rl.Color{120, 230, 180, 255}
+		}
+		rl.DrawRectangleRoundedLinesEx(rec, 0.16, 6, 2, border)
+
+		rl.DrawCircleV(rl.Vector2{rec.x + 24, rec.y + 26}, 16, creature_color(&m.creature))
+		rl.DrawCircleLinesV(rl.Vector2{rec.x + 24, rec.y + 26}, 16, element_color(creature_element(&m.creature)))
+
+		name := fmt.ctprintf("%s  Lv%d", m.creature.name, m.creature.level)
+		rl.DrawText(name, i32(rec.x) + 48, i32(rec.y) + 5, 15, rl.Color{225, 225, 240, 255})
+
+		hp := fmt.ctprintf("HP %d/%d", m.creature.hp, m.creature.max_hp)
+		rl.DrawText(hp, i32(rec.x) + 48, i32(rec.y) + 23, 13, rl.Color{210, 130, 130, 255})
+
+		pct := int(m.food / max(monster_satiety_max(&m), 1.0) * 100)
+		food := fmt.ctprintf("Food %d%%   En %s", pct, fmt_num(m.energy))
+		rl.DrawText(food, i32(rec.x) + 48, i32(rec.y) + 39, 12, rl.Color{150, 210, 150, 255})
+	}
+}
+
+// ----------------------------------------------------------------------------
+// End turn button + legends
+// ----------------------------------------------------------------------------
+
+colony_end_turn_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	return rl.Rectangle{sw - 240, sh - 120, 224, 48}
+}
+
+draw_end_turn_button :: proc(g: ^Game) {
+	rec := colony_end_turn_rect()
+	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), rec)
+	col := rl.Color{70, 130, 100, 255}
+	if hover {
+		col = rl.Color{95, 175, 130, 255}
+	}
+	rl.DrawRectangleRounded(rec, 0.25, 8, col)
+	rl.DrawRectangleRoundedLinesEx(rec, 0.25, 8, 2, rl.Color{210, 230, 220, 255})
+	lbl := cstring("End Turn (Space)")
+	w := rl.MeasureText(lbl, 18)
+	rl.DrawText(lbl, i32(rec.x + rec.width / 2) - w / 2, i32(rec.y + rec.height / 2) - 9, 18, rl.Color{240, 255, 245, 255})
+}
+
+// ----------------------------------------------------------------------------
+// Phase 2: build panel + Trading Post
+// ----------------------------------------------------------------------------
+
+build_panel_rect :: proc() -> rl.Rectangle {
+	return rl.Rectangle{20, 210, 360, 350}
+}
+
+build_option_rect :: proc(i: int) -> rl.Rectangle {
+	p := build_panel_rect()
+	return rl.Rectangle{p.x + 12, p.y + 120 + f32(i) * 58, p.width - 24, 52}
+}
+
+draw_build_panel :: proc(g: ^Game) {
+	p := build_panel_rect()
+	rl.DrawRectangleRounded(p, 0.04, 8, rl.Color{18, 18, 26, 240})
+	rl.DrawRectangleRoundedLinesEx(p, 0.04, 8, 2, rl.Color{120, 120, 150, 255})
+	rl.DrawText("BUILD", i32(p.x) + 16, i32(p.y) + 12, 22, rl.Color{220, 220, 235, 255})
+
+	if !g.has_build {
+		rl.DrawText("Click a revealed tile", i32(p.x) + 16, i32(p.y) + 52, 16, rl.Color{150, 150, 170, 255})
+		rl.DrawText("B / Esc to exit", i32(p.x) + 16, i32(p.y) + 74, 15, rl.Color{120, 120, 140, 255})
+		return
+	}
+
+	t := tile_at(&g.colony, g.build_hex)
+	if t == nil {
+		return
+	}
+	info := fmt.ctprintf("Tile: %s", terrain_name(t.terrain))
+	rl.DrawText(info, i32(p.x) + 16, i32(p.y) + 46, 16, rl.Color{180, 180, 200, 255})
+	gold := fmt.ctprintf("Gold: %d", colony_total_gold(&g.colony))
+	rl.DrawText(gold, i32(p.x) + 16, i32(p.y) + 68, 16, rl.Color{240, 205, 90, 255})
+
+	if t.improvement != .NONE {
+		cur := fmt.ctprintf("Built: %s (hp %d)", improvement_name(t.improvement), t.improvement_hp)
+		rl.DrawText(cur, i32(p.x) + 16, i32(p.y) + 96, 16, rl.Color{140, 220, 150, 255})
+		return
+	}
+
+	opts: [8]Improvement
+	n := buildable_improvements(t.terrain, opts[:])
+	if n == 0 {
+		rl.DrawText("No improvements available here", i32(p.x) + 16, i32(p.y) + 100, 15, rl.Color{200, 150, 150, 255})
+		return
+	}
+
+	mp := rl.GetMousePosition()
+	for i in 0..<n {
+		im := opts[i]
+		rec := build_option_rect(i)
+		cost := improvement_cost(im)
+		afford := colony_total_gold(&g.colony) >= cost
+		hover := rl.CheckCollisionPointRec(mp, rec)
+
+		bg := rl.Color{28, 28, 40, 255}
+		if !afford {
+			bg = rl.Color{30, 24, 26, 255}
+		} else if hover {
+			bg = rl.Color{40, 42, 56, 255}
+		}
+		rl.DrawRectangleRounded(rec, 0.14, 6, bg)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.14, 6, 2, afford ? rl.Color{120, 180, 120, 255} : rl.Color{120, 80, 80, 255})
+
+		rl.DrawText(improvement_name(im), i32(rec.x) + 10, i32(rec.y) + 6, 16, rl.Color{225, 225, 240, 255})
+		rl.DrawText(improvement_effect(im), i32(rec.x) + 10, i32(rec.y) + 28, 13, rl.Color{160, 160, 180, 255})
+		cst := fmt.ctprintf("%dg", cost)
+		cw := rl.MeasureText(cst, 16)
+		rl.DrawText(cst, i32(rec.x + rec.width) - 10 - cw, i32(rec.y) + 6, 16, afford ? rl.Color{240, 205, 90, 255} : rl.Color{200, 120, 120, 255})
+	}
+}
+
+trade_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	return rl.Rectangle{sw / 2 - 230, sh / 2 - 210, 460, 420}
+}
+
+trade_heal_rect :: proc() -> rl.Rectangle {
+	p := trade_panel_rect()
+	return rl.Rectangle{p.x + 20, p.y + 84, p.width - 40, 50}
+}
+
+trade_energy_rect :: proc() -> rl.Rectangle {
+	p := trade_panel_rect()
+	return rl.Rectangle{p.x + 20, p.y + 144, p.width - 40, 50}
+}
+
+trade_revive_rect :: proc(i: int) -> rl.Rectangle {
+	p := trade_panel_rect()
+	return rl.Rectangle{p.x + 20, p.y + 220 + f32(i) * 58, p.width - 40, 52}
+}
+
+draw_trade_button :: proc(rec: rl.Rectangle, label: cstring, enabled: bool, cost_text: cstring) {
+	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), rec)
+	bg := rl.Color{30, 30, 42, 255}
+	if !enabled {
+		bg = rl.Color{26, 24, 26, 255}
+	} else if hover {
+		bg = rl.Color{44, 44, 58, 255}
+	}
+	rl.DrawRectangleRounded(rec, 0.16, 6, bg)
+	rl.DrawRectangleRoundedLinesEx(rec, 0.16, 6, 2, enabled ? rl.Color{180, 160, 90, 255} : rl.Color{90, 80, 80, 255})
+	rl.DrawText(label, i32(rec.x) + 12, i32(rec.y) + 14, 18, enabled ? rl.Color{235, 235, 245, 255} : rl.Color{140, 140, 150, 255})
+	if cost_text != "" {
+		cw := rl.MeasureText(cost_text, 16)
+		rl.DrawText(cost_text, i32(rec.x + rec.width) - 12 - cw, i32(rec.y) + 15, 16, enabled ? rl.Color{240, 205, 90, 255} : rl.Color{150, 120, 120, 255})
+	}
+}
+
+draw_trade_panel :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 160})
+
+	p := trade_panel_rect()
+	rl.DrawRectangleRounded(p, 0.05, 8, rl.Color{20, 20, 30, 245})
+	rl.DrawRectangleRoundedLinesEx(p, 0.05, 8, 2, rl.Color{180, 160, 90, 255})
+	rl.DrawText("TRADING POST", i32(p.x) + 20, i32(p.y) + 16, 24, rl.Color{240, 210, 120, 255})
+	gold := fmt.ctprintf("Gold: %d", colony_total_gold(&g.colony))
+	rl.DrawText(gold, i32(p.x) + 20, i32(p.y) + 48, 16, rl.Color{220, 200, 120, 255})
+
+	if g.selected >= 0 && g.selected < len(g.colony.roster) {
+		m := &g.colony.roster[g.selected]
+
+		hc := heal_cost(m)
+		heal_label := hc > 0 ? fmt.ctprintf("Heal %s", m.creature.name) : cstring("Already at full HP")
+		draw_trade_button(trade_heal_rect(), heal_label, hc > 0 && colony_total_gold(&g.colony) >= hc, hc > 0 ? fmt.ctprintf("%dg", hc) : "")
+
+		ec := energy_cost(m)
+		draw_trade_button(trade_energy_rect(), fmt.ctprintf("Refill movement energy"), colony_total_gold(&g.colony) >= ec, fmt.ctprintf("%dg", ec))
+	}
+
+	rl.DrawText("FALLEN (revive)", i32(p.x) + 20, i32(p.y) + 202, 15, rl.Color{180, 150, 150, 255})
+	if len(g.colony.graveyard) == 0 {
+		rl.DrawText("None", i32(p.x) + 20, i32(p.y) + 226, 15, rl.Color{130, 130, 145, 255})
+	} else {
+		for i in 0..<len(g.colony.graveyard) {
+			m := &g.colony.graveyard[i]
+			cost := revive_cost(m)
+			label := fmt.ctprintf("Revive %s  Lv%d", m.creature.name, m.creature.level)
+			draw_trade_button(trade_revive_rect(i), label, colony_total_gold(&g.colony) >= cost, fmt.ctprintf("%dg", cost))
+		}
+	}
+
+	hint := cstring("T / Esc to close")
+	hw := rl.MeasureText(hint, 16)
+	rl.DrawText(hint, i32(p.x) + i32(p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
+}
+
+Terrain_Legend_Entry :: struct {
+	terrain: Terrain,
+	label:   cstring,
+}
+
+draw_terrain_legend :: proc() {
+	entries := [?]Terrain_Legend_Entry{
+		{.CAVE,         "Cave"},
+		{.WATER,        "Water"},
+		{.DUNGEON,      "Dungeon"},
+		{.GROVE,        "Grove"},
+		{.TRADING_POST, "Trading Post"},
+		{.BOSS_ROOM,    "Boss Room"},
+	}
+	sh := f32(rl.GetScreenHeight())
+	x := i32(20)
+	y := i32(sh) - 250
+	rl.DrawText("TERRAIN", x, y - 24, 16, rl.Color{150, 150, 170, 255})
+	for e, i in entries {
+		ey := y + i32(i) * 22
+		rl.DrawRectangle(x, ey, 16, 16, terrain_color(e.terrain))
+		rl.DrawRectangleLines(x, ey, 16, 16, rl.Color{20, 20, 20, 255})
+		rl.DrawText(e.label, x + 26, ey - 1, 15, rl.Color{170, 170, 190, 255})
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Starter screen
+// ----------------------------------------------------------------------------
 
 starter_rect :: proc(i: int) -> rl.Rectangle {
 	sw := f32(rl.GetScreenWidth())
@@ -535,7 +785,7 @@ draw_starter :: proc() {
 	title := cstring("CHOOSE YOUR STARTER")
 	tw := rl.MeasureText(title, 38)
 	rl.DrawText(title, i32(sw) / 2 - tw / 2, 34, 38, rl.Color{225, 225, 240, 255})
-	sub := cstring("Each has its own deck, a per-level learnset (auto-learned) and a wider move pool (reward choices)")
+	sub := cstring("Build a colony, raise your monsters, and delve to floor 10")
 	sw2 := rl.MeasureText(sub, 16)
 	rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, 82, 16, rl.Color{140, 140, 160, 255})
 
@@ -608,168 +858,119 @@ draw_starter :: proc() {
 	}
 }
 
-draw_map :: proc(g: ^Game) {
-	rl.ClearBackground(rl.Color{13, 13, 20, 255})
+// ----------------------------------------------------------------------------
+// Game over
+// ----------------------------------------------------------------------------
 
-	draw_connections(&g.renderer, &g.graph)
-
-	hovered := hex_renderer_hovered(&g.renderer)
-	is_move := !g.cleared && can_travel_to(&g.graph, hovered)
-
-	for n in g.graph.nodes {
-		if is_current(&g.graph, n.hex) {
-			continue
-		}
-		if !n.revealed {
-			continue // fog of war: unexplored tiles are hidden
-		}
-		draw_map_node(&g.renderer, n.hex, n.kind, n.revealed, n.visited, false, is_move && hex_equal(n.hex, hovered))
-	}
-	for n in g.graph.nodes {
-		if !is_current(&g.graph, n.hex) {
-			continue
-		}
-		draw_map_node(&g.renderer, n.hex, n.kind, n.revealed, n.visited, true, false)
-	}
-
-	draw_hover_marker(&g.renderer, hovered, is_move)
-	draw_hud(g)
-}
-
-draw_connections :: proc(r: ^Hex_Renderer, g: ^Map_Graph) {
-	for n in g.nodes {
-		ax, ay := hex_to_screen(r, n.hex)
-		for c in n.connections {
-			if !hex_less(n.hex, c) {
-				continue
-			}
-			dst, ok := map_node_at(g, c)
-			if !ok {
-				continue
-			}
-			// Only draw links between explored tiles (fog of war).
-			if !n.revealed || !dst.revealed {
-				continue
-			}
-			bx, by := hex_to_screen(r, c)
-
-			color := rl.Color{38, 38, 52, 255}
-			thick := 3.0 * r.zoom
-			if n.visited && dst.visited {
-				color = rl.Color{70, 130, 100, 255}
-				thick = 5.0 * r.zoom
-			} else {
-				color = rl.Color{55, 55, 74, 255}
-			}
-			rl.DrawLineEx(rl.Vector2{ax, ay}, rl.Vector2{bx, by}, thick, color)
-		}
-	}
-}
-
-// Deterministic ordering so shared edges are only drawn once.
-hex_less :: proc(a, b: Hex) -> bool {
-	if a.r != b.r {
-		return a.r < b.r
-	}
-	return a.q < b.q
-}
-
-draw_hover_marker :: proc(r: ^Hex_Renderer, hex: Hex, active: bool) {
-	if !active {
-		return
-	}
-	t := f32(rl.GetTime())
-	pulse := 0.5 + 0.5 * abs(math.sin(t * 4.0))
-	color := rl.Color{255, 245, 140, u8(120 + 100 * pulse)}
-	draw_hex_outline(r, hex, color, (3.0 + 2.0 * pulse) * r.zoom)
-}
-
-draw_hud :: proc(g: ^Game) {
+draw_colony_game_over :: proc(turns: int) {
 	sw := f32(rl.GetScreenWidth())
 	sh := f32(rl.GetScreenHeight())
 
-	rl.DrawText("THE UNDERGROUND", 20, 18, 28, rl.Color{210, 210, 230, 255})
-	revealed_count := 0
-	for n in g.graph.nodes {
-		if n.revealed {
-			revealed_count += 1
-		}
-	}
-	seed_text := fmt.ctprintf("seed %d   depth %d / %d   moves %d   explored %d / %d", g.graph.seed, depth_of(&g.graph), g.graph.max_depth, g.moves, revealed_count, len(g.graph.nodes))
-	rl.DrawText(seed_text, 20, 52, 18, rl.Color{120, 120, 145, 255})
+	rl.ClearBackground(rl.Color{28, 8, 12, 255})
 
-	cur_kind := map_node_kind(&g.graph, g.graph.current_hex)
-	here := fmt.ctprintf("You are here: %s", node_type_name(cur_kind))
-	rl.DrawText(here, 20, 76, 18, node_type_color(cur_kind))
+	title := cstring("YOUR COLONY HAS FALLEN")
+	tw := rl.MeasureText(title, 56)
+	rl.DrawText(title, i32(sw) / 2 - tw / 2, i32(sh) / 2 - 100, 56, rl.Color{220, 60, 60, 255})
 
-	// Party list.
-	y := i32(108)
-	for &c, i in g.party {
-		active := i == g.active
-		col := rl.Color{170, 170, 190, 255}
-		if active {
-			col = rl.Color{140, 240, 190, 255}
-		}
-		mark := "  "
-		if active {
-			mark = "> "
-		}
-		line := fmt.ctprintf("%s%s  Lv%d  %d/%d  %s", mark, c.name, c.level, c.hp, c.max_hp, element_name(creature_element(&c)))
-		rl.DrawText(line, 20, y + i32(i) * 22, 16, col)
-	}
+	sub := fmt.ctprintf("Your last monster fell on turn %d.", turns)
+	sw2 := rl.MeasureText(sub, 22)
+	rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, i32(sh) / 2 - 10, 22, rl.Color{228, 228, 238, 255})
 
-	rl.DrawText("LMB move to any adjacent tile (backtracking allowed)  |  RMB/WASD pan  |  wheel zoom  |  R recenter", 20, i32(sh) - 74, 16, rl.Color{110, 110, 130, 255})
-	rl.DrawText("V view deck  |  N new run", 20, i32(sh) - 50, 16, rl.Color{110, 110, 130, 255})
-
-	if g.cleared {
-		msg := cstring("DUNGEON CLEARED - press N to descend again")
-		w := rl.MeasureText(msg, 30)
-		rl.DrawText(msg, i32(sw) / 2 - w / 2, i32(sh) - 130, 30, rl.Color{255, 220, 120, 255})
-	}
-
-	draw_legend(sw, sh)
-
-	mini := rl.Rectangle{sw - 250, 20, 230, 170}
-	hexes := make([dynamic]Hex, 0)
-	defer delete(hexes)
-	for n in g.graph.nodes {
-		if n.revealed {
-			append(&hexes, n.hex)
-		}
-	}
-	draw_minimap(&g.renderer, hexes[:], g.graph.current_hex, mini)
+	hint := cstring("Press N to begin again")
+	hw := rl.MeasureText(hint, 26)
+	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) / 2 + 56, 26, rl.Color{220, 180, 120, 255})
 }
 
-depth_of :: proc(g: ^Map_Graph) -> int {
-	if n := map_get(g, g.current_hex); n != nil {
-		return n.depth
+// ----------------------------------------------------------------------------
+// Deck viewer (shows a roster monster's deck)
+// ----------------------------------------------------------------------------
+
+DV_COLS   :: 7
+DV_CW     :: f32(104)
+DV_CH     :: f32(140)
+DV_GAP    :: f32(10)
+DV_TOP    :: f32(176)
+DV_BOTTOM :: f32(64)
+
+deck_max_scroll :: proc(g: ^Game) -> f32 {
+	if len(g.colony.roster) == 0 {
+		return 0
 	}
-	return 0
+	n := len(g.colony.roster[g.view_index].creature.deck)
+	rows := (n + DV_COLS - 1) / DV_COLS
+	content := f32(rows) * (DV_CH + DV_GAP) - DV_GAP
+	visible := f32(rl.GetScreenHeight()) - DV_TOP - DV_BOTTOM
+	return max(f32(0), content - visible)
 }
 
-Legend_Entry :: struct {
-	kind:  Node_Type,
-	label: cstring,
+update_deck_viewer :: proc(g: ^Game, dt: f32) {
+	if len(g.colony.roster) == 0 {
+		g.show_deck = false
+		return
+	}
+	if g.view_index < 0 || g.view_index >= len(g.colony.roster) {
+		g.view_index = 0
+	}
+	if rl.IsKeyPressed(.V) || rl.IsKeyPressed(.ESCAPE) {
+		g.show_deck = false
+		return
+	}
+	n := len(g.colony.roster)
+	if rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressed(.E) {
+		g.view_index = (g.view_index + 1) % n
+		g.view_scroll = 0
+	}
+	if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressed(.Q) {
+		g.view_index = (g.view_index - 1 + n) % n
+		g.view_scroll = 0
+	}
+	g.view_scroll -= rl.GetMouseWheelMove() * 60
+	if rl.IsKeyDown(.DOWN) { g.view_scroll += 600 * dt }
+	if rl.IsKeyDown(.UP) { g.view_scroll -= 600 * dt }
+	g.view_scroll = clamp(g.view_scroll, 0, deck_max_scroll(g))
 }
 
-draw_legend :: proc(sw, sh: f32) {
-	entries := [?]Legend_Entry{
-		{.START,  "Entrance"},
-		{.COMBAT, "Combat"},
-		{.ELITE,  "Elite"},
-		{.REST,   "Campfire"},
-		{.SHOP,   "Shop"},
-		{.EVENT,  "Event"},
-		{.BOSS,   "Boss"},
-	}
+draw_deck_viewer :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
 
-	x := i32(20)
-	y := i32(sh) - 268
-	rl.DrawText("LEGEND", x, y - 24, 16, rl.Color{150, 150, 170, 255})
-	for e, i in entries {
-		ey := y + i32(i) * 24
-		rl.DrawRectangle(x, ey, 16, 16, node_type_color(e.kind))
-		rl.DrawRectangleLines(x, ey, 16, 16, rl.Color{20, 20, 20, 255})
-		rl.DrawText(e.label, x + 26, ey - 1, 16, rl.Color{170, 170, 190, 255})
+	c := &g.colony.roster[g.view_index].creature
+	element := creature_element(c)
+
+	name := fmt.ctprintf("%s's Deck", c.name)
+	rl.DrawText(name, 40, 26, 34, rl.Color{235, 235, 245, 255})
+	sub := fmt.ctprintf("Lv %d   %s   HP %d/%d   PWR +%d   DEF %d   SPD %d   Energy %s max (%s regen)   %d cards",
+		c.level, element_name(element), c.hp, c.max_hp, c.power, creature_defense(c), c.speed,
+		fmt_num(c.energy_max), fmt_num(c.energy_regen), len(c.deck))
+	rl.DrawText(sub, 40, 68, 18, element_color(element))
+	pager := fmt.ctprintf("monster %d / %d   -   Left/Right or Q/E to switch", g.view_index + 1, len(g.colony.roster))
+	rl.DrawText(pager, 40, 96, 16, rl.Color{150, 150, 170, 255})
+
+	n := len(c.deck)
+	total_w := f32(DV_COLS) * DV_CW + f32(DV_COLS - 1) * DV_GAP
+	start_x := sw / 2 - total_w / 2
+	base_y := DV_TOP - g.view_scroll
+	mp := rl.GetMousePosition()
+
+	// Leave headroom above the grid so a hovered (lifted) top-row card is not
+	// clipped by the scissor region.
+	clip_top := i32(DV_TOP) - 36
+	clip_bottom := i32(sh - DV_BOTTOM) + 8
+	rl.BeginScissorMode(0, clip_top, i32(sw), clip_bottom - clip_top)
+	for i in 0..<n {
+		col := i % DV_COLS
+		row := i / DV_COLS
+		rec := rl.Rectangle{start_x + f32(col) * (DV_CW + DV_GAP), base_y + f32(row) * (DV_CH + DV_GAP), DV_CW, DV_CH}
+		if rec.y + DV_CH < f32(clip_top) - 4 || rec.y > f32(clip_bottom) + 4 {
+			continue
+		}
+		hovered := rl.CheckCollisionPointRec(mp, rec)
+		draw_card(c.deck[i], rec, true, hovered)
 	}
+	rl.EndScissorMode()
+
+	hint := cstring("V / Esc close   |   wheel or Up/Down to scroll")
+	hw := rl.MeasureText(hint, 16)
+	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 32, 16, rl.Color{140, 140, 160, 255})
 }

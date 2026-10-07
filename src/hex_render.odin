@@ -71,8 +71,9 @@ hex_corners :: proc(r: ^Hex_Renderer, cx, cy: f32) -> [6]rl.Vector2 {
 
 draw_hex_filled :: proc(r: ^Hex_Renderer, hex: Hex, color: rl.Color) {
 	cx, cy := hex_to_screen(r, hex)
-	corners := hex_corners(r, cx, cy)
-	rl.DrawTriangleFan(&corners[0], 6, color)
+	// DrawPoly draws a regular polygon from angle 0, matching our flat-top
+	// corner angles (0, 60, 120, ...). DrawTriangleFan is unreliable here.
+	rl.DrawPoly(rl.Vector2{cx, cy}, 6, r.hex_size * r.zoom, 0, color)
 }
 
 draw_hex_outline :: proc(r: ^Hex_Renderer, hex: Hex, color: rl.Color, thickness: f32) {
