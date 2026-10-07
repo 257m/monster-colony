@@ -1,6 +1,8 @@
 package main
 
 import rl "vendor:raylib"
+import "core:fmt"
+import "core:math"
 
 // ============================================================================
 // COLONY LAYER
@@ -26,8 +28,15 @@ MAX_MONSTERS_PER_TILE :: 6
 REFILL_FRAC           :: f32(0.5) // of max satiation gained per fed turn
 STARVE_FRAC           :: f32(0.3) // of max satiation lost per starving turn
 STORAGE_CAP           :: 100
+BASE_GOLD_CAP         :: 100 // the stockpile's own cap; treasuries add storage beyond it
 FEED_RADIUS           :: 4
 DELIVER_RADIUS        :: 4
+MAX_WILDS              :: 30
+SIM_DISTANCE           :: 6    // spawn/despawn radius around your nearest monster
+DESPAWN_DISTANCE       :: 8    // beyond this, wilds may wander off
+DESPAWN_CHANCE         :: f32(0.25)
+CROWD_LIMIT            :: 3    // per tile; more than this and they may fight
+CROWD_FIGHT_CHANCE     :: f32(0.30)
 
 terrain_name :: proc(t: Terrain) -> cstring {
 	switch t {
@@ -122,14 +131,17 @@ Tile :: struct {
 	improvement:    Improvement,
 	improvement_hp: int,
 	stored:         int, // food (Granary) or gold (Treasury)
+	scuffle:        int, // turns a "fight happened here" marker lingers
 }
 
 Monster :: struct {
+	id:       int,
 	creature: Creature,
 	pos:      Hex,
 	wild:     bool,
 	energy:   f32, // movement energy for the current turn
 	food:     f32, // satiation bar 0..100
+	xp:       int, // experience toward the next level
 	genetics: [5]int,
 }
 
@@ -141,6 +153,7 @@ Colony :: struct {
 	height:    int,
 	gold:      int, // the player's base (spendable) gold
 	crystals:  int,
+	capture_cards: int, // consumable capture cards (buy at a Trading Post)
 	gold_cap:  int,
 	food_cap:  int,
 	turn:      int,
@@ -148,6 +161,9 @@ Colony :: struct {
 	seed:      u64,
 	rng:       Rng,
 	start_hex: Hex,
+	next_id:   int,
+	pending_tiles: [dynamic]Hex, // tiles where wilds and your monsters share a tile
+	messages:  [dynamic]string, // recent world notifications
 }
 
 // ----------------------------------------------------------------------------
@@ -220,6 +236,9 @@ colony_generate :: proc(seed: u64, width, height: int) -> Colony {
 	c.tiles = make([dynamic]Tile, 0, width * height)
 	c.roster = make([dynamic]Monster, 0)
 	c.graveyard = make([dynamic]Monster, 0)
+	c.pending_tiles = make([dynamic]Hex, 0)
+	c.next_id = 1
+	c.messages = make([dynamic]string, 0)
 
 	for col in 0..<width {
 		for row in 0..<height {
@@ -281,9 +300,16 @@ colony_free :: proc(c: ^Colony) {
 	delete(c.roster)
 	delete(c.graveyard)
 	delete(c.tiles)
+	delete(c.pending_tiles)
+	for s in c.messages {
+		delete(s)
+	}
+	delete(c.messages)
 	c.roster = make([dynamic]Monster, 0)
 	c.graveyard = make([dynamic]Monster, 0)
 	c.tiles = make([dynamic]Tile, 0)
+	c.pending_tiles = make([dynamic]Hex, 0)
+	c.messages = make([dynamic]string, 0)
 }
 
 // ----------------------------------------------------------------------------
@@ -323,6 +349,22 @@ monster_upkeep :: proc(m: ^Monster) -> int {
 monster_satiety_max :: proc(m: ^Monster) -> f32 {
 	base := f32(SPECIES[m.creature.species].base_satiety)
 	return base * level_scale(m.creature.level)
+}
+
+xp_to_next :: proc(level: int) -> int {
+	return 40 + level * 30
+}
+
+// Grants XP and levels the monster up as thresholds are crossed.
+monster_add_xp :: proc(m: ^Monster, amount: int) -> bool {
+	m.xp += amount
+	leveled := false
+	for m.xp >= xp_to_next(m.creature.level) {
+		m.xp -= xp_to_next(m.creature.level)
+		creature_level_up(&m.creature)
+		leveled = true
+	}
+	return leveled
 }
 
 terrain_move_cost :: proc(t: Terrain) -> f32 {
@@ -466,7 +508,7 @@ colony_spend_gold :: proc(c: ^Colony, amount: int) -> bool {
 }
 
 colony_recompute_caps :: proc(c: ^Colony) {
-	gold_cap := 100
+	gold_cap := BASE_GOLD_CAP
 	food_cap := 0
 	for t in c.tiles {
 		#partial switch t.improvement {
@@ -477,6 +519,31 @@ colony_recompute_caps :: proc(c: ^Colony) {
 	}
 	c.gold_cap = gold_cap
 	c.food_cap = food_cap
+}
+
+// Deposits gold into a Treasury within range first, then the stockpile (which
+// is capped at the *base* cap, not the total). Returns the amount actually kept.
+colony_deposit_gold :: proc(c: ^Colony, from: Hex, amount: int) -> int {
+	kept := 0
+	remaining := amount
+	if gi := nearest_improvement_within(c, from, DELIVER_RADIUS, .TREASURY); gi >= 0 {
+		t := &c.tiles[gi]
+		m := min(remaining, STORAGE_CAP - t.stored)
+		if m > 0 {
+			t.stored += m
+			remaining -= m
+			kept += m
+		}
+	}
+	if remaining > 0 {
+		room := BASE_GOLD_CAP - c.gold
+		m := min(remaining, max(room, 0))
+		if m > 0 {
+			c.gold += m
+			kept += m
+		}
+	}
+	return kept
 }
 
 granary_count :: proc(c: ^Colony) -> int {
@@ -507,6 +574,19 @@ energy_cost :: proc(m: ^Monster) -> int {
 
 revive_cost :: proc(m: ^Monster) -> int {
 	return 30 + m.creature.level * 5
+}
+
+capture_card_cost :: proc() -> int {
+	return 40
+}
+
+// 0 ok, 2 not enough gold.
+colony_buy_capture_card :: proc(c: ^Colony) -> int {
+	if !colony_spend_gold(c, capture_card_cost()) {
+		return 2
+	}
+	c.capture_cards += 1
+	return 0
 }
 
 // 0 ok, 1 no monster, 2 not enough gold.
@@ -592,7 +672,8 @@ colony_end_turn :: proc(c: ^Colony) {
 		farm_pool[i] = 0
 	}
 
-	// 1. Mines: staffed mines deliver gold to a treasury within range.
+	// 1. Mines: a staffed mine deposits gold (to a treasury in range, else to
+	// the stockpile, which caps at the base cap).
 	for t in c.tiles {
 		if t.improvement != .MINE {
 			continue
@@ -600,12 +681,7 @@ colony_end_turn :: proc(c: ^Colony) {
 		if monsters_on_tile(c, t.hex, false) == 0 {
 			continue
 		}
-		gi := nearest_improvement_within(c, t.hex, DELIVER_RADIUS, .TREASURY)
-		if gi >= 0 {
-			g := &c.tiles[gi]
-			g.stored = min(g.stored + 4, STORAGE_CAP)
-		}
-		// else wasted
+		colony_deposit_gold(c, t.hex, 4)
 	}
 
 	// 2. Farms: staffed farms produce a local pool.
@@ -688,7 +764,336 @@ colony_end_turn :: proc(c: ^Colony) {
 		i += 1
 	}
 
+	// 6. Wild monsters: spawn near you, roam, wander off, squabble, then act.
+	for s in c.messages {
+		delete(s)
+	}
+	clear(&c.messages)
+	for i in 0..<len(c.tiles) {
+		if c.tiles[i].scuffle > 0 {
+			c.tiles[i].scuffle -= 1
+		}
+	}
+
+	colony_spawn_wilds(c)
+	colony_roam_wilds(c)
+	colony_despawn_wilds(c)
+	colony_crowd_fights(c)
+	colony_resolve_wild_actions(c)
+
 	c.turn += 1
+}
+
+// ----------------------------------------------------------------------------
+// Wild monsters: spawning, roaming and attacks (Phase 3)
+// ----------------------------------------------------------------------------
+
+monster_by_id :: proc(c: ^Colony, id: int) -> int {
+	for m, i in c.roster {
+		if m.id == id {
+			return i
+		}
+	}
+	return -1
+}
+
+remove_monster_at :: proc(c: ^Colony, i: int, to_graveyard: bool) {
+	if to_graveyard {
+		append(&c.graveyard, c.roster[i])
+	} else {
+		creature_free_all(&c.roster[i].creature)
+	}
+	unordered_remove(&c.roster, i)
+}
+
+player_monsters :: proc(c: ^Colony) -> int {
+	n := 0
+	for m in c.roster {
+		if !m.wild {
+			n += 1
+		}
+	}
+	return n
+}
+
+wild_monsters :: proc(c: ^Colony) -> int {
+	n := 0
+	for m in c.roster {
+		if m.wild {
+			n += 1
+		}
+	}
+	return n
+}
+
+tile_prevents_spawn :: proc(t: ^Tile) -> bool {
+	return t.improvement == .FARM || t.improvement == .MINE
+}
+
+terrain_spawn_chance :: proc(t: Terrain) -> f32 {
+	switch t {
+	case .CAVE:         return 0.06
+	case .WATER:        return 0.03
+	case .GROVE:        return 0.06
+	case .DUNGEON:      return 0.18
+	case .TRADING_POST: return 0.0
+	case .BOSS_ROOM:    return 0.0
+	}
+	return 0.0
+}
+
+spawn_species_for :: proc(t: Terrain, rng: ^Rng) -> int {
+	#partial switch t {
+	case .CAVE:         return 3
+	case .GROVE:        return 6
+	case .WATER:        return 5
+	case .DUNGEON:      return rng_f32(rng) < 0.35 ? 7 : 4
+	case .BOSS_ROOM:    return 8
+	case:               return 3
+	}
+}
+
+spawn_level_for :: proc(c: ^Colony) -> int {
+	return 1 + c.floor / 2 + rng_below(&c.rng, 2)
+}
+
+spawn_wild_at :: proc(c: ^Colony, hex: Hex, species: int, level: int) {
+	m := Monster{
+		id       = c.next_id,
+		creature = creature_make(species, level, SPECIES[species].name),
+		pos      = hex,
+		wild     = true,
+	}
+	c.next_id += 1
+	append(&c.roster, m)
+}
+
+nearest_player_distance :: proc(c: ^Colony, hex: Hex) -> int {
+	best := 1 << 30
+	for m in c.roster {
+		if !m.wild {
+			d := hex_distance(m.pos, hex)
+			if d < best {
+				best = d
+			}
+		}
+	}
+	return best
+}
+
+nearest_player_hex :: proc(c: ^Colony, hex: Hex) -> Hex {
+	best := 1 << 30
+	res := hex
+	for m in c.roster {
+		if !m.wild {
+			d := hex_distance(m.pos, hex)
+			if d < best {
+				best = d
+				res = m.pos
+			}
+		}
+	}
+	return res
+}
+
+colony_notify :: proc(c: ^Colony, format: string, args: ..any) {
+	append(&c.messages, fmt.aprintf(format, ..args))
+	for len(c.messages) > 5 {
+		delete(c.messages[0])
+		ordered_remove(&c.messages, 0)
+	}
+}
+
+// Rough compass direction ("north", "southeast", ...) from one hex to another.
+compass_dir :: proc(from, to: Hex) -> cstring {
+	if hex_equal(from, to) {
+		return "here"
+	}
+	x := f32(to.q - from.q)
+	y := f32(to.r-from.r) + 0.5 * f32(to.q-from.q)
+	ang := math.atan2(y, x) * 180.0 / math.PI
+	switch {
+	case ang >= -22.5 && ang < 22.5:    return "east"
+	case ang >= 22.5 && ang < 67.5:     return "southeast"
+	case ang >= 67.5 && ang < 112.5:    return "south"
+	case ang >= 112.5 && ang < 157.5:   return "southwest"
+	case ang >= 157.5 || ang < -157.5:  return "west"
+	case ang >= -157.5 && ang < -112.5: return "northwest"
+	case ang >= -112.5 && ang < -67.5:  return "north"
+	case:                               return "northeast"
+	}
+}
+
+colony_spawn_wilds :: proc(c: ^Colony) {
+	for i in 0..<len(c.tiles) {
+		if wild_monsters(c) >= MAX_WILDS {
+			return
+		}
+		t := &c.tiles[i]
+		if tile_prevents_spawn(t) {
+			continue
+		}
+		if monsters_on_tile(c, t.hex, false) > 0 {
+			continue // guarded
+		}
+		// Simulated on all tiles near your monsters, explored or not.
+		if nearest_player_distance(c, t.hex) > SIM_DISTANCE {
+			continue
+		}
+		if rng_f32(&c.rng) >= terrain_spawn_chance(t.terrain) {
+			continue
+		}
+		sp := spawn_species_for(t.terrain, &c.rng)
+		spawn_wild_at(c, t.hex, sp, spawn_level_for(c))
+	}
+}
+
+// Wilds far from your presence may wander off, and excess is culled from the
+// farthest tiles, so the world doesn't fill up.
+colony_despawn_wilds :: proc(c: ^Colony) {
+	i := 0
+	for i < len(c.roster) {
+		m := &c.roster[i]
+		if !m.wild {
+			i += 1
+			continue
+		}
+		if nearest_player_distance(c, m.pos) > DESPAWN_DISTANCE && rng_f32(&c.rng) < DESPAWN_CHANCE {
+			if rng_f32(&c.rng) < 0.25 {
+				dir := compass_dir(nearest_player_hex(c, m.pos), m.pos)
+				colony_notify(c, "Something skitters away into the dark %s.", fmt.ctprintf("to the %s", dir))
+			}
+			remove_monster_at(c, i, false)
+			continue
+		}
+		i += 1
+	}
+	// Hard cap: cull the wild farthest from you.
+	for wild_monsters(c) > MAX_WILDS - 6 {
+		far_i := -1
+		far_d := -1
+		for m, k in c.roster {
+			if !m.wild {
+				continue
+			}
+			d := nearest_player_distance(c, m.pos)
+			if d > far_d {
+				far_d = d
+				far_i = k
+			}
+		}
+		if far_i < 0 {
+			break
+		}
+		remove_monster_at(c, far_i, false)
+	}
+}
+
+// Too many wilds on one tile: they turn on each other and one dies.
+colony_crowd_fights :: proc(c: ^Colony) {
+	i := 0
+	for i < len(c.roster) {
+		if !c.roster[i].wild {
+			i += 1
+			continue
+		}
+		hex := c.roster[i].pos
+		if monsters_on_tile(c, hex, true) <= CROWD_LIMIT {
+			i += 1
+			continue
+		}
+		if rng_f32(&c.rng) < CROWD_FIGHT_CHANCE {
+			t := tile_at(c, hex)
+			revealed := t != nil && t.revealed
+			if t != nil {
+				t.scuffle = 3
+			}
+			dir := compass_dir(nearest_player_hex(c, hex), hex)
+			if revealed {
+				colony_notify(c, "A scuffle breaks out %s.", dir == "here" ? "right here" : fmt.ctprintf("to the %s", dir))
+			} else {
+				colony_notify(c, "Snarling in the fog %s.", fmt.ctprintf("to the %s", dir))
+			}
+			// One wild on this tile loses the scrap.
+			remove_monster_at(c, i, false)
+			continue
+		}
+		i += 1
+	}
+}
+
+colony_roam_wilds :: proc(c: ^Colony) {
+	for i in 0..<len(c.roster) {
+		m := &c.roster[i]
+		if !m.wild {
+			continue
+		}
+		if rng_f32(&c.rng) >= 0.6 {
+			continue // sometimes stay put
+		}
+		ns := hex_neighbors(m.pos)
+		start := rng_below(&c.rng, 6)
+		for k in 0..<6 {
+			n := ns[(start + k) % 6]
+			if tile_at(c, n) != nil {
+				m.pos = n
+				break
+			}
+		}
+	}
+}
+
+damage_improvement :: proc(c: ^Colony, t: ^Tile, dmg: int) {
+	t.improvement_hp -= dmg
+	if t.improvement_hp <= 0 {
+		// Destroyed: contents are lost.
+		t.stored = 0
+		t.improvement = .NONE
+		t.improvement_hp = 0
+		colony_recompute_caps(c)
+	}
+}
+
+// Wilds that ended their move on a defended tile queue that tile for battle;
+// wilds on an unguarded improved tile damage it.
+colony_resolve_wild_actions :: proc(c: ^Colony) {
+	clear(&c.pending_tiles)
+	for i in 0..<len(c.roster) {
+		m := &c.roster[i]
+		if !m.wild {
+			continue
+		}
+		if monsters_on_tile(c, m.pos, false) > 0 {
+			already := false
+			for h in c.pending_tiles {
+				if hex_equal(h, m.pos) {
+					already = true
+					break
+				}
+			}
+			if !already {
+				append(&c.pending_tiles, m.pos)
+			}
+			continue
+		}
+		if t := tile_at(c, m.pos); t != nil && t.improvement != .NONE {
+			damage_improvement(c, t, 6 + m.creature.level * 3)
+		}
+	}
+}
+
+// Turns a defeated-in-spirit wild into one of yours (used on capture).
+colony_capture :: proc(c: ^Colony, wild_id: int) -> bool {
+	i := monster_by_id(c, wild_id)
+	if i < 0 || !c.roster[i].wild {
+		return false
+	}
+	m := &c.roster[i]
+	m.wild = false
+	creature_free_piles(&m.creature)
+	m.food = monster_satiety_max(m)
+	m.energy = monster_energy_max(m)
+	return true
 }
 
 // ----------------------------------------------------------------------------
@@ -697,9 +1102,11 @@ colony_end_turn :: proc(c: ^Colony) {
 
 colony_add_starter :: proc(c: ^Colony, species_idx: int) -> int {
 	m := Monster{
+		id       = c.next_id,
 		creature = creature_make(species_idx, 1, SPECIES[species_idx].name),
 		pos      = c.start_hex,
 	}
+	c.next_id += 1
 	m.energy = monster_energy_max(&m)
 	m.food = monster_satiety_max(&m)
 	append(&c.roster, m)

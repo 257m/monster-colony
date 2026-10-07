@@ -5,7 +5,16 @@ import "core:time"
 import "core:math"
 import "core:fmt"
 
-Game_Mode :: enum { STARTER, MAP, GAME_OVER }
+Game_Mode :: enum { STARTER, MAP, BATTLE, GAME_OVER }
+
+Battle_Results :: struct {
+	gold:    int,
+	xp:      int,
+	food:    int,
+	kills:   int,
+	card:    string,
+	leveled: bool,
+}
 
 Game :: struct {
 	mode:     Game_Mode,
@@ -27,6 +36,15 @@ Game :: struct {
 	build_hex:  Hex,
 	has_build:  bool,
 	trade_open: bool,
+
+	// Phase 3: wild attacks -> battles
+	battle:             Battle,
+	has_battle:         bool,
+	battle_choice_open: bool,
+	battle_hex:         Hex,
+	battle_auto:        bool,
+	results_open:       bool,
+	results:            Battle_Results,
 
 	seed_rng: Rng,
 }
@@ -65,6 +83,11 @@ main :: proc() {
 // ----------------------------------------------------------------------------
 
 end_run :: proc(g: ^Game) {
+	if g.has_battle {
+		battle_free(&g.battle)
+		g.battle = Battle{}
+		g.has_battle = false
+	}
 	if g.has_colony {
 		colony_free(&g.colony)
 		g.has_colony = false
@@ -74,6 +97,8 @@ end_run :: proc(g: ^Game) {
 reset_to_starter :: proc(g: ^Game) {
 	end_run(g)
 	g.show_deck = false
+	g.battle_choice_open = false
+	g.results_open = false
 	g.mode = .STARTER
 }
 
@@ -106,6 +131,14 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_deck_viewer(g, dt)
 		return
 	}
+	if g.battle_choice_open {
+		update_battle_choice(g)
+		return
+	}
+	if g.results_open {
+		update_results(g)
+		return
+	}
 	if g.mode == .MAP && len(g.colony.roster) > 0 && rl.IsKeyPressed(.V) {
 		g.show_deck = true
 		g.view_index = clamp(g.selected, 0, len(g.colony.roster) - 1)
@@ -118,6 +151,8 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_starter(g)
 	case .MAP:
 		update_colony(g, dt)
+	case .BATTLE:
+		update_battle(g, dt)
 	case .GAME_OVER:
 		if rl.IsKeyPressed(.N) {
 			reset_to_starter(g)
@@ -217,6 +252,11 @@ update_colony :: proc(g: ^Game, dt: f32) {
 			switch res {
 			case 0:
 				set_status(g, "Moved.")
+				// Moving into a tile with wilds starts a battle.
+				if monsters_on_tile(&g.colony, hovered, true) > 0 {
+					g.battle_hex = hovered
+					g.battle_choice_open = true
+				}
 			case 2:
 				set_status(g, "Blocked (water needs a water monster or bridge).")
 			case 3:
@@ -304,6 +344,11 @@ update_trade :: proc(g: ^Game) {
 			return
 		}
 	}
+	if rl.CheckCollisionPointRec(mp, trade_capture_rect()) {
+		res := colony_buy_capture_card(&g.colony)
+		set_status(g, res == 0 ? "Bought a capture card." : "Not enough gold.")
+		return
+	}
 	for i in 0..<len(g.colony.graveyard) {
 		if rl.CheckCollisionPointRec(mp, trade_revive_rect(i)) {
 			res := colony_revive(&g.colony, i)
@@ -325,9 +370,369 @@ do_end_turn :: proc(g: ^Game) {
 	colony_end_turn(&g.colony)
 	if player_monster_count(&g.colony) == 0 {
 		g.mode = .GAME_OVER
-	} else {
-		set_status(g, "Turn advanced.")
+		return
 	}
+	set_status(g, "Turn advanced.")
+	start_next_attack(g)
+}
+
+// ----------------------------------------------------------------------------
+// Phase 3: wild attacks -> battles
+// ----------------------------------------------------------------------------
+
+start_next_attack :: proc(g: ^Game) {
+	for len(g.colony.pending_tiles) > 0 {
+		hex := pop(&g.colony.pending_tiles)
+		if monsters_on_tile(&g.colony, hex, false) == 0 || monsters_on_tile(&g.colony, hex, true) == 0 {
+			continue
+		}
+		g.battle_hex = hex
+		g.battle_choice_open = true
+		return
+	}
+	g.battle_choice_open = false
+}
+
+choice_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	return rl.Rectangle{sw / 2 - 250, sh / 2 - 160, 500, 320}
+}
+
+choice_auto_rect :: proc() -> rl.Rectangle {
+	p := choice_panel_rect()
+	return rl.Rectangle{p.x + 30, p.y + 190, 200, 58}
+}
+
+choice_manual_rect :: proc() -> rl.Rectangle {
+	p := choice_panel_rect()
+	return rl.Rectangle{p.x + p.width - 230, p.y + 190, 200, 58}
+}
+
+update_battle_choice :: proc(g: ^Game) {
+	if !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := rl.GetMousePosition()
+	if rl.CheckCollisionPointRec(mp, choice_auto_rect()) {
+		begin_battle(g, true)
+		return
+	}
+	if rl.CheckCollisionPointRec(mp, choice_manual_rect()) {
+		begin_battle(g, false)
+		return
+	}
+}
+
+// Both parties come from the contested tile: your monsters vs the wilds on it.
+begin_battle :: proc(g: ^Game, auto: bool) {
+	hex := g.battle_hex
+	defs := make([dynamic]^Creature, 0)
+	defer delete(defs)
+	enemies := make([dynamic]^Creature, 0)
+	defer delete(enemies)
+	ids := make([dynamic]int, 0)
+	defer delete(ids)
+
+	for &m in g.colony.roster {
+		if !hex_equal(m.pos, hex) {
+			continue
+		}
+		if m.wild {
+			append(&enemies, &m.creature)
+			append(&ids, m.id)
+		} else if m.creature.hp > 0 {
+			append(&defs, &m.creature)
+		}
+	}
+	if len(defs) == 0 || len(enemies) == 0 {
+		g.battle_choice_open = false
+		start_next_attack(g)
+		return
+	}
+
+	g.battle = battle_start(defs[:], enemies[:], ids[:], &g.seed_rng)
+	g.battle.capture_cards = g.colony.capture_cards
+	g.battle.auto_play = auto
+	g.has_battle = true
+	g.battle_auto = auto
+	g.battle_choice_open = false
+	g.mode = .BATTLE
+	set_status(g, auto ? "Auto-fighting..." : "Battle!")
+}
+
+update_battle :: proc(g: ^Game, dt: f32) {
+	battle_update(&g.battle, dt)
+	battle_input(&g.battle)
+
+	if g.battle.timer <= 0.4 {
+		return
+	}
+	cont := rl.IsMouseButtonPressed(.LEFT) ||
+		rl.IsKeyPressed(.SPACE) || rl.IsKeyPressed(.ENTER)
+	if !cont {
+		return
+	}
+	#partial switch g.battle.phase {
+	case .WON:
+		resolve_won(g)
+	case .LOST:
+		resolve_lost(g)
+	case:
+	}
+}
+
+finish_battle :: proc(g: ^Game) {
+	g.colony.capture_cards = g.battle.capture_cards
+	battle_free(&g.battle)
+	g.battle = Battle{}
+	g.has_battle = false
+}
+
+grant_card_to_defender :: proc(g: ^Game, hex: Hex) -> (string, bool) {
+	idx := -1
+	for &m, i in g.colony.roster {
+		if !m.wild && hex_equal(m.pos, hex) && m.creature.hp > 0 {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return "", false
+	}
+	c := &g.colony.roster[idx].creature
+	pool := SPECIES[c.species].move_pool
+	unknown := make([dynamic]Move_Id, 0)
+	defer delete(unknown)
+	for id in pool {
+		if !creature_knows(c, id) {
+			append(&unknown, id)
+		}
+	}
+	if len(unknown) > 0 {
+		id := unknown[rng_below(&g.colony.rng, len(unknown))]
+		append(&c.deck, id)
+		return MOVE_DATA[id].name, true
+	}
+	return "", false
+}
+
+resolve_won :: proc(g: ^Game) {
+	hex := g.battle_hex
+
+	// Tally results from the wilds on the tile before anything is removed.
+	res: Battle_Results
+	food_amt := 0
+	killed_levels := 0
+	for m in g.colony.roster {
+		if !m.wild || !hex_equal(m.pos, hex) {
+			continue
+		}
+		// Skip ones we captured (they live).
+		captured := false
+		for id in g.battle.captured_ids {
+			if id == m.id {
+				captured = true
+				break
+			}
+		}
+		if captured {
+			continue
+		}
+		lv := m.creature.level
+		res.kills += 1
+		res.gold += lv * 3 + rng_below(&g.colony.rng, lv + 1)
+		killed_levels += lv
+		food_amt += lv * 2
+	}
+	res.xp = killed_levels * 10
+	res.gold = colony_deposit_gold(&g.colony, hex, res.gold)
+
+	// Captured enemies become yours.
+	for id in g.battle.captured_ids {
+		colony_capture(&g.colony, id)
+	}
+
+	// Free the battle BEFORE reaping the dead so no stale enemy pointer is used.
+	finish_battle(g)
+
+	// Reap the defeated wilds.
+	i := 0
+	for i < len(g.colony.roster) {
+		m := &g.colony.roster[i]
+		if m.wild && hex_equal(m.pos, hex) {
+			remove_monster_at(&g.colony, i, false)
+			continue
+		}
+		i += 1
+	}
+
+	// Food drops go to a granary within range.
+	if gi := nearest_improvement_within(&g.colony, hex, DELIVER_RADIUS, .GRANARY); gi >= 0 {
+		amt := min(food_amt, STORAGE_CAP - g.colony.tiles[gi].stored)
+		if amt > 0 {
+			g.colony.tiles[gi].stored += amt
+			res.food = amt
+		}
+	}
+
+	// XP to surviving defenders on the tile.
+	for &m in g.colony.roster {
+		if !m.wild && hex_equal(m.pos, hex) && m.creature.hp > 0 {
+			if monster_add_xp(&m, res.xp) {
+				res.leveled = true
+			}
+		}
+	}
+
+	// Rare reward card.
+	if rng_f32(&g.colony.rng) < 0.18 {
+		if name, ok := grant_card_to_defender(g, hex); ok {
+			res.card = name
+		}
+	}
+
+	g.results = res
+	g.results_open = true
+	g.mode = .MAP
+}
+
+results_continue_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	return rl.Rectangle{sw / 2 - 90, sh / 2 + 130, 180, 50}
+}
+
+update_results :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.SPACE) || rl.IsKeyPressed(.ENTER) {
+		g.results_open = false
+		start_next_attack(g)
+		return
+	}
+	if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(rl.GetMousePosition(), results_continue_rect()) {
+		g.results_open = false
+		start_next_attack(g)
+	}
+}
+
+draw_results :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 170})
+
+	w := f32(420)
+	h := f32(320)
+	p := rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2 - 20, w, h}
+	rl.DrawRectangleRounded(p, 0.05, 8, rl.Color{20, 26, 22, 248})
+	rl.DrawRectangleRoundedLinesEx(p, 0.05, 8, 3, rl.Color{120, 220, 150, 255})
+
+	title := cstring("VICTORY")
+	tw := rl.MeasureText(title, 32)
+	rl.DrawText(title, i32(p.x + p.width / 2) - tw / 2, i32(p.y) + 18, 32, rl.Color{130, 235, 160, 255})
+
+	r := g.results
+	y := i32(p.y) + 74
+	rl.DrawText(fmt.ctprintf("Wilds defeated: %d", r.kills), i32(p.x) + 30, y, 20, rl.Color{220, 220, 235, 255}); y += 30
+	rl.DrawText(fmt.ctprintf("Gold  +%d", r.gold), i32(p.x) + 30, y, 20, rl.Color{240, 205, 90, 255}); y += 28
+	rl.DrawText(fmt.ctprintf("XP    +%d", r.xp), i32(p.x) + 30, y, 20, rl.Color{150, 210, 255, 255}); y += 28
+	if r.food > 0 {
+		rl.DrawText(fmt.ctprintf("Food  +%d (to granary)", r.food), i32(p.x) + 30, y, 20, rl.Color{140, 220, 130, 255}); y += 28
+	}
+	if r.card != "" {
+		rl.DrawText(fmt.ctprintf("New move: %s", r.card), i32(p.x) + 30, y, 20, rl.Color{210, 160, 255, 255}); y += 28
+	}
+	if r.leveled {
+		rl.DrawText("A monster levelled up!", i32(p.x) + 30, y, 20, rl.Color{255, 235, 140, 255}); y += 28
+	}
+
+	btn := results_continue_rect()
+	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), btn)
+	rl.DrawRectangleRounded(btn, 0.25, 8, hover ? rl.Color{95, 175, 130, 255} : rl.Color{70, 130, 100, 255})
+	rl.DrawRectangleRoundedLinesEx(btn, 0.25, 8, 2, rl.Color{210, 230, 220, 255})
+	bt := cstring("Continue")
+	bw := rl.MeasureText(bt, 20)
+	rl.DrawText(bt, i32(btn.x + btn.width / 2) - bw / 2, i32(btn.y + btn.height / 2) - 10, 20, rl.Color{240, 255, 245, 255})
+}
+
+resolve_lost :: proc(g: ^Game) {
+	finish_battle(g)
+	i := 0
+	for i < len(g.colony.roster) {
+		if !g.colony.roster[i].wild && g.colony.roster[i].creature.hp <= 0 {
+			remove_monster_at(&g.colony, i, true)
+			continue
+		}
+		i += 1
+	}
+	g.mode = .MAP
+	if player_monster_count(&g.colony) == 0 {
+		g.mode = .GAME_OVER
+		g.battle_choice_open = false
+	} else {
+		start_next_attack(g)
+		set_status(g, "Your defenders fell...")
+	}
+}
+
+draw_battle_choice :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 175})
+
+	p := choice_panel_rect()
+	rl.DrawRectangleRounded(p, 0.04, 8, rl.Color{22, 18, 24, 248})
+	rl.DrawRectangleRoundedLinesEx(p, 0.04, 8, 3, rl.Color{220, 90, 90, 255})
+
+	rl.DrawText("ATTACK!", i32(p.x) + 24, i32(p.y) + 16, 26, rl.Color{240, 120, 110, 255})
+
+	hex := g.battle_hex
+	wilds := 0
+	for m in g.colony.roster {
+		if m.wild && hex_equal(m.pos, hex) {
+			wilds += 1
+		}
+	}
+	line := fmt.ctprintf("%d wild%s on this tile!", wilds, wilds == 1 ? "" : "s")
+	rl.DrawText(line, i32(p.x) + 24, i32(p.y) + 60, 20, rl.Color{230, 230, 240, 255})
+
+	rl.DrawText("Attackers:", i32(p.x) + 24, i32(p.y) + 96, 16, rl.Color{220, 150, 150, 255})
+	ax := i32(p.x) + 24
+	for &m in g.colony.roster {
+		if m.wild && hex_equal(m.pos, hex) {
+			label := fmt.ctprintf("%s Lv%d", m.creature.name, m.creature.level)
+			rl.DrawText(label, ax, i32(p.y) + 118, 15, rl.Color{235, 180, 180, 255})
+			ax += rl.MeasureText("XXXXXXXXXXXXXXXXXX", 15) + 8
+		}
+	}
+
+	rl.DrawText("Defenders:", i32(p.x) + 24, i32(p.y) + 142, 16, rl.Color{170, 190, 170, 255})
+	dx := i32(p.x) + 24
+	for &m in g.colony.roster {
+		if !m.wild && hex_equal(m.pos, hex) {
+			label := fmt.ctprintf("%s Lv%d", m.creature.name, m.creature.level)
+			rl.DrawText(label, dx, i32(p.y) + 164, 15, rl.Color{200, 220, 200, 255})
+			dx += rl.MeasureText("XXXXXXXXXXXXXXXXXX", 15) + 8
+		}
+	}
+	_ = sh
+
+	mp := rl.GetMousePosition()
+	auto_rec := choice_auto_rect()
+	manual_rec := choice_manual_rect()
+	auto_hover := rl.CheckCollisionPointRec(mp, auto_rec)
+	manual_hover := rl.CheckCollisionPointRec(mp, manual_rec)
+
+	rl.DrawRectangleRounded(auto_rec, 0.22, 8, auto_hover ? rl.Color{70, 120, 90, 255} : rl.Color{50, 80, 62, 255})
+	rl.DrawRectangleRoundedLinesEx(auto_rec, 0.22, 8, 2, rl.Color{180, 220, 190, 255})
+	at := cstring("Auto-fight")
+	aw := rl.MeasureText(at, 20)
+	rl.DrawText(at, i32(auto_rec.x + auto_rec.width / 2) - aw / 2, i32(auto_rec.y + auto_rec.height / 2) - 12, 20, rl.Color{235, 245, 240, 255})
+
+	rl.DrawRectangleRounded(manual_rec, 0.22, 8, manual_hover ? rl.Color{90, 90, 130, 255} : rl.Color{60, 60, 86, 255})
+	rl.DrawRectangleRoundedLinesEx(manual_rec, 0.22, 8, 2, rl.Color{200, 200, 240, 255})
+	mt := cstring("Fight myself")
+	mw := rl.MeasureText(mt, 20)
+	rl.DrawText(mt, i32(manual_rec.x + manual_rec.width / 2) - mw / 2, i32(manual_rec.y + manual_rec.height / 2) - 12, 20, rl.Color{235, 235, 250, 255})
 }
 
 player_monster_count :: proc(c: ^Colony) -> int {
@@ -356,10 +761,18 @@ game_draw :: proc(g: ^Game) {
 		if g.trade_open {
 			draw_trade_panel(g)
 		}
+	case .BATTLE:
+		draw_battle(&g.battle)
 	case .GAME_OVER:
 		draw_colony_game_over(g.colony.turn)
 	}
 
+	if g.battle_choice_open {
+		draw_battle_choice(g)
+	}
+	if g.results_open {
+		draw_results(g)
+	}
 	if g.show_deck {
 		draw_deck_viewer(g)
 	}
@@ -385,6 +798,7 @@ draw_colony :: proc(g: ^Game) {
 
 	draw_move_highlights(g)
 	draw_map_monsters(g)
+	draw_scuffles(g)
 	draw_hover_marker(&g.renderer, hex_renderer_hovered(&g.renderer), true)
 	draw_colony_hud(g)
 	draw_roster_panel(g)
@@ -399,13 +813,14 @@ draw_map_monsters :: proc(g: ^Game) {
 		if t == nil || !t.revealed {
 			continue
 		}
+		// Ring position among ALL monsters on the tile (yours and wilds).
 		idx := 0
 		for j in 0..<i {
-			if !g.colony.roster[j].wild && hex_equal(g.colony.roster[j].pos, m.pos) {
+			if hex_equal(g.colony.roster[j].pos, m.pos) {
 				idx += 1
 			}
 		}
-		n := max(monsters_on_tile(&g.colony, m.pos, false), 1)
+		n := max(monsters_on_tile(&g.colony, m.pos, false) + monsters_on_tile(&g.colony, m.pos, true), 1)
 		cx, cy := hex_to_screen(&g.renderer, m.pos)
 		px, py := f32(cx), f32(cy)
 		if n > 1 {
@@ -415,13 +830,37 @@ draw_map_monsters :: proc(g: ^Game) {
 		}
 		radius := 9.0 * g.renderer.zoom
 		rl.DrawCircleV(rl.Vector2{px, py}, radius, creature_color(&m.creature))
-		rl.DrawCircleLinesV(rl.Vector2{px, py}, radius, element_color(creature_element(&m.creature)))
-		if i == g.selected {
-			rl.DrawCircleLinesV(rl.Vector2{px, py}, radius + 3 * g.renderer.zoom, rl.Color{255, 245, 140, 255})
+		if m.wild {
+			// Wilds: red ring so they read as hostile.
+			rl.DrawCircleLinesV(rl.Vector2{px, py}, radius, rl.Color{240, 70, 70, 255})
+			rl.DrawCircleLinesV(rl.Vector2{px, py}, radius + 2.0 * g.renderer.zoom, rl.Color{120, 20, 20, 255})
+		} else {
+			rl.DrawCircleLinesV(rl.Vector2{px, py}, radius, element_color(creature_element(&m.creature)))
+			if i == g.selected {
+				rl.DrawCircleLinesV(rl.Vector2{px, py}, radius + 3 * g.renderer.zoom, rl.Color{255, 245, 140, 255})
+			}
+			if m.food < 40 {
+				rl.DrawCircleV(rl.Vector2{px + 7 * g.renderer.zoom, py - 7 * g.renderer.zoom}, 4 * g.renderer.zoom, rl.Color{220, 70, 70, 255})
+			}
 		}
-		if m.food < 40 {
-			rl.DrawCircleV(rl.Vector2{px + 7 * g.renderer.zoom, py - 7 * g.renderer.zoom}, 4 * g.renderer.zoom, rl.Color{220, 70, 70, 255})
+	}
+}
+
+// "Signs of a scuffle": a lingering marker where wilds fought each other.
+draw_scuffles :: proc(g: ^Game) {
+	for t in g.colony.tiles {
+		if !t.revealed || t.scuffle <= 0 {
+			continue
 		}
+		cx, cy := hex_to_screen(&g.renderer, t.hex)
+		z := g.renderer.zoom
+		// dim red splat + a small mark
+		rl.DrawCircleV(rl.Vector2{cx - 5 * z, cy + 4 * z}, 4 * z, rl.Color{150, 40, 40, 170})
+		rl.DrawCircleV(rl.Vector2{cx + 6 * z, cy + 7 * z}, 3 * z, rl.Color{150, 40, 40, 150})
+		rl.DrawCircleV(rl.Vector2{cx + 2 * z, cy - 6 * z}, 3 * z, rl.Color{150, 40, 40, 150})
+		lbl := cstring("x")
+		lw := rl.MeasureText(lbl, 18)
+		rl.DrawText(lbl, i32(cx) - lw / 2, i32(cy) - 9, 18, rl.Color{220, 100, 100, 220})
 	}
 }
 
@@ -434,7 +873,6 @@ draw_hover_marker :: proc(r: ^Hex_Renderer, hex: Hex, active: bool) {
 	color := rl.Color{255, 245, 140, u8(120 + 100 * pulse)}
 	draw_hex_outline(r, hex, color, (3.0 + 2.0 * pulse) * r.zoom)
 }
-
 draw_move_highlights :: proc(g: ^Game) {
 	if g.selected < 0 || g.selected >= len(g.colony.roster) {
 		return
@@ -498,18 +936,74 @@ draw_colony_hud :: proc(g: ^Game) {
 			upkeep += monster_upkeep(&m)
 		}
 	}
-	up := fmt.ctprintf("Upkeep %d food/turn    Monsters %d", upkeep, player_monster_count(&g.colony))
+	up := fmt.ctprintf("Upkeep %d food/turn   Monsters %d   Capture cards %d", upkeep, player_monster_count(&g.colony), g.colony.capture_cards)
 	rl.DrawText(up, 20, 106, 16, rl.Color{150, 150, 175, 255})
 
-	// Hovered tile info + selected monster.
+	// Hovered tile info + occupants (inspect without attacking).
 	hovered := hex_renderer_hovered(&g.renderer)
 	if t := tile_at(&g.colony, hovered); t != nil && t.revealed {
 		info := fmt.ctprintf("Tile: %s%s", terrain_name(t.terrain), t.improvement != .NONE ? " (improved)" : "")
 		rl.DrawText(info, 20, 130, 16, rl.Color{180, 180, 200, 255})
+
+		oy := i32(152)
+		// Improvement production status (explains why it may be idle).
+		green := rl.Color{150, 220, 150, 255}
+		amber := rl.Color{235, 185, 120, 255}
+		#partial switch t.improvement {
+		case .MINE:
+			staffed := monsters_on_tile(&g.colony, hovered, false) > 0
+			near := nearest_improvement_within(&g.colony, hovered, DELIVER_RADIUS, .TREASURY) >= 0
+			line: cstring
+			if !staffed {
+				line = "Mine: idle - put a monster here to work it"
+			} else if near {
+				line = "Mine: +4 gold/turn (to treasury)"
+			} else {
+				line = fmt.ctprintf("Mine: +4 gold/turn to stockpile (%d/%d - build a Treasury near the mine)", g.colony.gold, BASE_GOLD_CAP)
+			}
+			rl.DrawText(line, 20, oy, 14, staffed ? green : amber)
+			oy += 18
+		case .FARM:
+			staffed := monsters_on_tile(&g.colony, hovered, false) > 0
+			line: cstring
+			if staffed {
+				line = "Farm: feeding your monsters within 4 tiles"
+			} else {
+				line = "Farm: idle - put a monster here to work it"
+			}
+			rl.DrawText(line, 20, oy, 14, staffed ? green : amber)
+			oy += 18
+		case:
+		}
+
+		// Occupants on this tile.
+		count := monsters_on_tile(&g.colony, hovered, false) + monsters_on_tile(&g.colony, hovered, true)
+		if count == 0 {
+			rl.DrawText("no monsters here", 20, oy, 14, rl.Color{120, 120, 140, 255})
+		} else {
+			for &m in g.colony.roster {
+				if !hex_equal(m.pos, hovered) {
+					continue
+				}
+				col := m.wild ? rl.Color{240, 110, 110, 255} : rl.Color{140, 230, 160, 255}
+				tag := m.wild ? "wild" : "yours"
+				line := fmt.ctprintf("%s Lv%d  %d/%d  XP %d/%d  (%s)", m.creature.name, m.creature.level, m.creature.hp, m.creature.max_hp, m.xp, xp_to_next(m.creature.level), tag)
+				rl.DrawText(line, 20, oy, 14, col)
+				oy += 18
+			}
+		}
 	}
 
 	rl.DrawText("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck", 20, i32(sh) - 70, 16, rl.Color{120, 120, 145, 255})
 	rl.DrawText("RMB/WASD pan  |  wheel zoom  |  R recenter  |  N new run", 20, i32(sh) - 46, 16, rl.Color{120, 120, 145, 255})
+
+	// World notifications (scuffles in the distance, things slipping away).
+	my := i32(sh) - 130 - i32(len(g.colony.messages)) * 22
+	for msg, i in g.colony.messages {
+		text := fmt.ctprintf("%s", msg)
+		w := rl.MeasureText(text, 18)
+		rl.DrawText(text, i32(sw) / 2 - w / 2, my + i32(i) * 22, 18, rl.Color{225, 195, 150, 255})
+	}
 
 	if g.status_timer > 0 {
 		w := rl.MeasureText(g.status, 22)
@@ -523,7 +1017,7 @@ draw_colony_hud :: proc(g: ^Game) {
 
 roster_entry_rect :: proc(i: int) -> rl.Rectangle {
 	sw := f32(rl.GetScreenWidth())
-	return rl.Rectangle{sw - 240, 180 + f32(i) * 60, 224, 56}
+	return rl.Rectangle{sw - 240, 180 + f32(i) * 66, 224, 62}
 }
 
 draw_roster_panel :: proc(g: ^Game) {
@@ -559,6 +1053,15 @@ draw_roster_panel :: proc(g: ^Game) {
 		pct := int(m.food / max(monster_satiety_max(&m), 1.0) * 100)
 		food := fmt.ctprintf("Food %d%%   En %s", pct, fmt_num(m.energy))
 		rl.DrawText(food, i32(rec.x) + 48, i32(rec.y) + 39, 12, rl.Color{150, 210, 150, 255})
+
+		// XP progress bar.
+		need := xp_to_next(m.creature.level)
+		frac := clamp(f32(m.xp) / f32(max(need, 1)), 0, 1)
+		xp_rec := rl.Rectangle{rec.x + 8, rec.y + 54, rec.width - 16, 4}
+		rl.DrawRectangleRec(xp_rec, rl.Color{44, 44, 58, 255})
+		if frac > 0 {
+			rl.DrawRectangleRec(rl.Rectangle{xp_rec.x, xp_rec.y, xp_rec.width * frac, xp_rec.height}, rl.Color{150, 210, 255, 255})
+		}
 	}
 }
 
@@ -661,7 +1164,7 @@ draw_build_panel :: proc(g: ^Game) {
 trade_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(rl.GetScreenWidth())
 	sh := f32(rl.GetScreenHeight())
-	return rl.Rectangle{sw / 2 - 230, sh / 2 - 210, 460, 420}
+	return rl.Rectangle{sw / 2 - 230, sh / 2 - 240, 460, 480}
 }
 
 trade_heal_rect :: proc() -> rl.Rectangle {
@@ -674,9 +1177,14 @@ trade_energy_rect :: proc() -> rl.Rectangle {
 	return rl.Rectangle{p.x + 20, p.y + 144, p.width - 40, 50}
 }
 
+trade_capture_rect :: proc() -> rl.Rectangle {
+	p := trade_panel_rect()
+	return rl.Rectangle{p.x + 20, p.y + 204, p.width - 40, 50}
+}
+
 trade_revive_rect :: proc(i: int) -> rl.Rectangle {
 	p := trade_panel_rect()
-	return rl.Rectangle{p.x + 20, p.y + 220 + f32(i) * 58, p.width - 40, 52}
+	return rl.Rectangle{p.x + 20, p.y + 286 + f32(i) * 58, p.width - 40, 52}
 }
 
 draw_trade_button :: proc(rec: rl.Rectangle, label: cstring, enabled: bool, cost_text: cstring) {
@@ -719,9 +1227,12 @@ draw_trade_panel :: proc(g: ^Game) {
 		draw_trade_button(trade_energy_rect(), fmt.ctprintf("Refill movement energy"), colony_total_gold(&g.colony) >= ec, fmt.ctprintf("%dg", ec))
 	}
 
-	rl.DrawText("FALLEN (revive)", i32(p.x) + 20, i32(p.y) + 202, 15, rl.Color{180, 150, 150, 255})
+	ccost := capture_card_cost()
+	draw_trade_button(trade_capture_rect(), fmt.ctprintf("Buy Capture Card (have %d)", g.colony.capture_cards), colony_total_gold(&g.colony) >= ccost, fmt.ctprintf("%dg", ccost))
+
+	rl.DrawText("FALLEN (revive)", i32(p.x) + 20, i32(p.y) + 264, 15, rl.Color{180, 150, 150, 255})
 	if len(g.colony.graveyard) == 0 {
-		rl.DrawText("None", i32(p.x) + 20, i32(p.y) + 226, 15, rl.Color{130, 130, 145, 255})
+		rl.DrawText("None", i32(p.x) + 20, i32(p.y) + 290, 15, rl.Color{130, 130, 145, 255})
 	} else {
 		for i in 0..<len(g.colony.graveyard) {
 			m := &g.colony.graveyard[i]
@@ -940,8 +1451,9 @@ draw_deck_viewer :: proc(g: ^Game) {
 
 	name := fmt.ctprintf("%s's Deck", c.name)
 	rl.DrawText(name, 40, 26, 34, rl.Color{235, 235, 245, 255})
-	sub := fmt.ctprintf("Lv %d   %s   HP %d/%d   PWR +%d   DEF %d   SPD %d   Energy %s max (%s regen)   %d cards",
-		c.level, element_name(element), c.hp, c.max_hp, c.power, creature_defense(c), c.speed,
+	sub := fmt.ctprintf("Lv %d   %s   HP %d/%d   XP %d/%d   PWR +%d   DEF %d   SPD %d   Energy %s max (%s regen)   %d cards",
+		c.level, element_name(element), c.hp, c.max_hp, g.colony.roster[g.view_index].xp, xp_to_next(c.level),
+		c.power, creature_defense(c), c.speed,
 		fmt_num(c.energy_max), fmt_num(c.energy_regen), len(c.deck))
 	rl.DrawText(sub, 40, 68, 18, element_color(element))
 	pager := fmt.ctprintf("monster %d / %d   -   Left/Right or Q/E to switch", g.view_index + 1, len(g.colony.roster))

@@ -18,9 +18,10 @@ creature battle from the current build stays and is what resolves combat.
 
 - A tile can hold **up to 6 monsters**.
 - Wild monsters **roam** and attack improvements / your monsters.
-- Attacking a tile defended by your monster(s) triggers a **battle**: choose **auto-fight** (your side AI-controlled) or **manual**.
+- Attacking a tile defended by your monster(s) triggers a **battle**: the attackers are **all wilds on the attacking tile**, the defenders are **all your monsters on the defended tile** (not your whole roster). Moving one of your monsters **into a tile with wilds** also starts a battle. Choose **auto-fight** (your side AI-controlled) or **manual**.
 - A tile with one of your monsters is **guarded** → no mob spawns there.
 - You **send monsters each turn**; moving costs **energy** based on the monster's **Speed** and the destination tile.
+- **Capturing** a wild in battle uses a **capture card** (bought at a Trading Post), not a free action. Success chance scales with how wounded the target is.
 - Each species has **separate base stats** for food: **`base_satiety`** (bar capacity) and **`base_upkeep`** (food consumed per turn), both scaled by level. Feeding refills 50% of the bar, starvation drains 30%; a full bar heals over time.
 
 ## Terrain
@@ -41,7 +42,7 @@ Spawn tables differ per terrain, with some mobs **unique to a tile type**.
 | Improvement | On | Effect |
 |---|---|---|
 | **Farm** | Grove | **staffed** by one of your monsters: feeds your monsters within 4 tiles; surplus is delivered to a **Granary within 4** (else wasted) |
-| **Mine** | Cave | **staffed**: delivers gold to a **Treasury within 4** (else wasted) |
+| **Mine** | Cave | **staffed**: delivers gold to a **Treasury within 4**; with none in range it goes to your **stockpile** (up to the gold cap) |
 | **Bridge** | Water | lets non-water monsters cross |
 | **Granary** | Cave, Grove | stores food; feeds your monsters within 4 |
 | **Treasury** | Cave | stores gold (counts as spendable) |
@@ -63,6 +64,7 @@ Spawn tables differ per terrain, with some mobs **unique to a tile type**.
 - Reward cards are **no longer given after every battle** — they become **rare drops**.
 - Drop tables are **per species and per level**.
 - Many **special moves** only come from reward cards.
+- **Kills grant XP** (scaled by the defeated monster's level); surviving defenders level up as thresholds are crossed. A **post-fight results screen** shows gold, XP, any food delivered and any card gained.
 
 ## Floors
 
@@ -88,5 +90,5 @@ Spawn tables differ per terrain, with some mobs **unique to a tile type**.
 
 - Phase 1 ✅ colony foundation (regular grid + terrain, currencies, roster on tiles, turn loop, movement energy, food upkeep).
 - Phase 2 ✅ improvements & economy (build with gold, staffed production, range-gated food logistics, Trading Post: heal / energy / revive) + graveyard.
-- Phase 3 ⏳ threats & combat hooks.
+- Phase 3 ✅ threats & combat: per-terrain spawn tables, roaming wilds, guarding (no spawns on defended/Farm/Mine tiles), improvement damage & destruction (contents lost), auto/manual deck battles, loot (gold + rare reward cards), and the all-monsters-dead lose condition.
 
