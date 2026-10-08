@@ -204,12 +204,6 @@ Colony :: struct {
 // Grid helpers
 // ----------------------------------------------------------------------------
 
-hex_from_offset :: proc(col, row: int) -> Hex {
-	q := col
-	r := row - (col - (col & 1)) / 2
-	return Hex{q = q, r = r}
-}
-
 hex_key :: proc(h: Hex) -> u64 {
 	return u64(u32(h.q)) << 32 | u64(u32(h.r))
 }
@@ -244,13 +238,6 @@ materialize_around :: proc(c: ^Colony, center: Hex, radius: int) {
 			_ = ensure_tile(c, Hex{q = center.q + dq, r = center.r + dr})
 		}
 	}
-}
-
-tile_terrain :: proc(c: ^Colony, hex: Hex) -> Terrain {
-	if t := tile_at(c, hex); t != nil {
-		return t.terrain
-	}
-	return .CAVE
 }
 
 colony_reveal_around :: proc(c: ^Colony, hex: Hex) {
@@ -583,19 +570,6 @@ monsters_on_tile :: proc(c: ^Colony, hex: Hex, wild: bool) -> int {
 		}
 	}
 	return n
-}
-
-first_player_monster_on :: proc(c: ^Colony, hex: Hex) -> int {
-	for m, i in c.roster {
-		if !m.wild && hex_equal(m.pos, hex) {
-			return i
-		}
-	}
-	return -1
-}
-
-monster_energy_max :: proc(m: ^Monster) -> f32 {
-	return 4.0 + f32(m.creature.speed) * 0.35
 }
 
 // Per-turn consumption: the species' base_upkeep scaled by level.

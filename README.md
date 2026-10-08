@@ -40,6 +40,9 @@ make clean   # remove bin/
 Battles are played with `1`–`5` / clicks to play cards, `E` to end your turn,
 `C` to use a capture card, `T` to switch.
 
-## Design
+## Design & code docs
 
-See [DESIGN.md](DESIGN.md) for the full spec, systems and phased roadmap.
+- [DESIGN.md](DESIGN.md) — the design spec, systems and phased roadmap.
+- [docs/](docs/README.md) — a code guide for modifying the game: architecture,
+  the colony layer, the battle engine, content tables, UI/input, and a
+  recipes/gotchas/hacking guide.

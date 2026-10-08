@@ -136,20 +136,6 @@ prepare_piles :: proc(c: ^Creature, rng: ^Rng) {
 	shuffle_cards(&c.draw_pile, rng)
 }
 
-pick_wild :: proc(kind: Node_Type, depth: int, rng: ^Rng) -> (int, int) {
-	level := 1 + depth / 2
-	#partial switch kind {
-	case .BOSS:
-		return 8, max(level, 4)
-	case .ELITE:
-		return 7, max(level, 3)
-	case:
-		wilds := [?]int{3, 4, 5, 6}
-		idx := wilds[rng_below(rng, len(wilds))]
-		return idx, max(level, 1)
-	}
-}
-
 battle_start :: proc(defenders: []^Creature, enemies: []^Creature, enemy_ids: []int, seed_rng: ^Rng) -> Battle {
 	b := Battle{}
 	b.rng = rng_make(rng_next_u64(seed_rng))
@@ -1009,14 +995,6 @@ draw_bar :: proc(rec: rl.Rectangle, value, max_value: int, fill: rl.Color) {
 	rl.DrawRectangleRoundedLinesEx(rec, 0.5, 8, 2, rl.Color{12, 12, 16, 255})
 }
 
-draw_badge :: proc(center: rl.Vector2, value: int, color: rl.Color) {
-	rl.DrawCircleV(center, 16, color)
-	rl.DrawCircleLinesV(center, 16, rl.Color{240, 240, 250, 255})
-	txt := fmt.ctprintf("%d", value)
-	w := rl.MeasureText(txt, 18)
-	rl.DrawText(txt, i32(center.x) - w / 2, i32(center.y) - 9, 18, rl.Color{255, 255, 255, 255})
-}
-
 shake_offset :: proc(mag: f32) -> (f32, f32) {
 	t := f32(rl.GetTime())
 	return math.sin(t * 71.0) * mag, math.cos(t * 57.0) * mag
@@ -1620,23 +1598,4 @@ draw_center_overlay :: proc(title, sub: cstring, color: rl.Color, timer: f32) {
 		sw2 := rl.MeasureText(sub, 23)
 		rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, i32(sh) / 2 + 18, 23, COL_TEXT)
 	}
-}
-
-draw_game_over :: proc(moves: int) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
-
-	rl.ClearBackground(rl.Color{28, 8, 12, 255})
-
-	title := cstring("YOUR PARTY HAS FALLEN")
-	tw := rl.MeasureText(title, 58)
-	rl.DrawText(title, i32(sw) / 2 - tw / 2, i32(sh) / 2 - 100, 58, rl.Color{220, 60, 60, 255})
-
-	sub := fmt.ctprintf("You travelled %d rooms into the underground.", moves)
-	sw2 := rl.MeasureText(sub, 22)
-	rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, i32(sh) / 2 - 10, 22, COL_TEXT)
-
-	hint := cstring("Press N to choose a new starter")
-	hw := rl.MeasureText(hint, 26)
-	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) / 2 + 56, 26, rl.Color{220, 180, 120, 255})
 }

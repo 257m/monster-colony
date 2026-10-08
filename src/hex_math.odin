@@ -97,18 +97,3 @@ hex_round_axial :: proc(q_f, r_f: f32) -> Hex {
 	}
 	return Hex{q = rx, r = rz}
 }
-
-hex_bounds :: proc(hexes: []Hex) -> (min_q, max_q, min_r, max_r: int) {
-	if len(hexes) == 0 {
-		return
-	}
-	min_q, max_q = hexes[0].q, hexes[0].q
-	min_r, max_r = hexes[0].r, hexes[0].r
-	for h in hexes {
-		if h.q < min_q { min_q = h.q }
-		if h.q > max_q { max_q = h.q }
-		if h.r < min_r { min_r = h.r }
-		if h.r > max_r { max_r = h.r }
-	}
-	return
-}
