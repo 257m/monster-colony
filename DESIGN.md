@@ -1,4 +1,4 @@
-# Vibegambling — Colony Hexcrawl Design
+# Monster Colony — Colony Hexcrawl Design
 
 Pivot: the hex map becomes a **colony / management layer**. The deck-based
 creature battle from the current build stays and is what resolves combat.

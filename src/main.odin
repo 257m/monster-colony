@@ -62,7 +62,7 @@ Game :: struct {
 
 main :: proc() {
 	rl.SetConfigFlags({.WINDOW_RESIZABLE, .MSAA_4X_HINT})
-	rl.InitWindow(1280, 720, "Vibegambling - Colony")
+	rl.InitWindow(1280, 720, "Monster Colony")
 	defer rl.CloseWindow()
 	// Escape is raylib's default exit key; we use it to close panels instead.
 	rl.SetExitKey(.KEY_NULL)

@@ -11,7 +11,7 @@ run:
 # Build a standalone executable into bin/.
 build:
 	@mkdir -p $(BIN)
-	$(ODIN) build $(SRC) -out:$(BIN)/vibegambling -o:speed
+	$(ODIN) build $(SRC) -out:$(BIN)/monster-colony -o:speed
 
 # Type/compile check without running.
 check:
