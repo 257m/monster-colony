@@ -37,8 +37,8 @@ make clean   # remove bin/
 | `M` | monster encyclopedia |
 | RMB / `WASD` | pan, wheel to zoom |
 
-Battles are played with `1`–`5` / clicks to play cards, `E` to end your turn,
-`C` to use a capture card, `T` to switch.
+Battles are played with `1`–`5` / clicks to play cards, `E` to end your turn, and
+`C` to use a capture card.
 
 ## Design & code docs
 

@@ -93,10 +93,14 @@ the hit-test (update) and the draw. Keep them in sync when you move things.
 | `1`–`9` / click a card | play that card |
 | click an enemy | target it |
 | `Space` / `E` / button | end your turn |
-| `T` | switch monster (the switch menu opens; `Esc`/`T` cancels) |
 | `C` / button | use a capture card |
 
-The switch/attack overlays are modal and consume input before the mode runs.
+Every one of your monsters takes its own turn in the Speed queue — the player
+panel and hand follow whichever monster is currently acting, and **End Turn**
+ends just that monster's turn. The party list (right) highlights the current
+actor and is otherwise informational (there is no switching).
+
+The attack overlays are modal and consume input before the mode runs.
 
 ## Rendering (`hex_render.odin`)
 

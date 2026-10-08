@@ -77,12 +77,17 @@ seed_rng
 ### `Battle` (`battle.odin`)
 ```
 party, enemies: [dynamic]^Creature   // pointers INTO colony Monsters
-enemy_ids: [dynamic]int
-target, enemy_acting, captured_ids, capture_cards
-phase: Battle_Phase, round, acting, player_done, timer
-order, order_pos                     // the initiative queue
+party_done:   [dynamic]bool          // per party member: ended its turn this turn
+enemy_ids, captured_ids: [dynamic]int
+target, active, enemy_acting, capture_cards
+phase: Battle_Phase, round, timer
+order: [dynamic]Actor, order_pos     // the initiative queue (every living monster)
 rng, log, popups, shake
 ```
+
+`Actor` is `{ side: Battle_Side, index: int }` — all of your party and every
+wild share one Speed-sorted queue. `active` is just "the party member whose turn
+it currently is" (for the UI); there is no benched party.
 
 **Ownership rule:** `Battle.party`/`enemies` are *borrowed pointers* to
 `Creature`s owned by `Colony.roster`. The battle never clones them; it mutates

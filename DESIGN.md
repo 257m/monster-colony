@@ -63,7 +63,7 @@ Weaken / Disarm / Sunder / Corrode are available to every species as **reward ca
 
 ### Turn order
 
-Combat uses a **per-monster initiative queue**. Each turn, every living monster (your active monster and each wild) is sorted by **Speed** (highest first; exact ties are a coin flip). The queue is then cycled: each monster plays **one card** when its slot comes up, and the queue wraps around until nobody can act. Only then does a new **turn** begin — fresh hands, energy and Block. So hands/energy refresh once per *turn*, while each pass through the queue is just an exchange. Extra wilds each get their own slot, so numbers and Speed both matter.
+Combat uses a **per-monster initiative queue**. Each turn, every living monster on the field — **all of your party and every wild** — is sorted by **Speed** (highest first; exact ties are a coin flip). The queue is then cycled: each monster plays **one card** when its slot comes up, and the queue wraps around until nobody can act. Only then does a new **turn** begin — fresh hands, energy and Block. So hands/energy refresh once per *turn*, while each pass through the queue is just an exchange. Extra monsters each get their own slot, so numbers and Speed both matter.
 
 ## Terrain
 

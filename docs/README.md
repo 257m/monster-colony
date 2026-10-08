@@ -10,7 +10,7 @@ Start here, then jump to the topic you need.
 |---|---|
 | [architecture.md](architecture.md) | The big picture: modules, data flow, the `Game`/`Colony`/`Battle`/`Creature` types, a full turn from keypress to results |
 | [colony.md](colony.md) | The map (infinite, biomes, specials), tiles, improvements & economy, the turn loop, movement/energy, wild monster AI |
-| [battle.md](battle.md) | The symmetric deck-builder engine: initiative queue, damage formula, cards/statuses, capture/switch, enemy AI |
+| [battle.md](battle.md) | The symmetric deck-builder engine: initiative queue, damage formula, cards/statuses, capture, enemy AI |
 | [content.md](content.md) | Elements, species, creatures & levelling, the move table, synergies |
 | [ui-and-input.md](ui-and-input.md) | Game modes, every screen/panel, the input map, and the hex renderer/camera |
 | [hacking.md](hacking.md) | Step-by-step recipes (add a move/species/terrain/improvement/card effect), all tuning knobs, Gotchas, and dead code |

@@ -50,9 +50,15 @@ Popup :: struct {
 	max_life: f32,
 }
 
+Actor :: struct {
+	side:  Battle_Side,
+	index: int, // party index (PLAYER) or enemy index (WILD)
+}
+
 Battle :: struct {
 	party:         [dynamic]^Creature, // defenders (external creatures), array owned here
-	active:        int,
+	active:        int,                // party member currently taking its turn (for the UI)
+	party_done:    [dynamic]bool,      // per party member: ended its turn this turn
 	enemies:       [dynamic]^Creature, // the attacking wilds (external)
 	enemy_ids:     [dynamic]int,       // colony ids, parallel to enemies
 	target:        int,                // currently targeted enemy
@@ -62,15 +68,9 @@ Battle :: struct {
 	auto_play:     bool,               // AI plays the player's side
 	phase:         Battle_Phase,
 	round:         int,
-	acting:        Battle_Side,
-	player_first:  bool,
-	player_done:   bool,
-	enemy_done:    bool,
-	order:         [dynamic]int, // initiative queue: -1 = your active, else enemy index
-	order_pos:     int,          // next slot to consider (wraps each pass)
+	order:         [dynamic]Actor, // initiative queue: every living monster
+	order_pos:     int,            // next slot to consider (wraps each pass)
 	timer:         f32,
-	switch_menu:   bool,
-	forced_switch: bool,
 	rng:           Rng,
 	log:           [dynamic]string,
 	popups:        [dynamic]Popup,
@@ -101,6 +101,8 @@ battle_free :: proc(b: ^Battle) {
 	}
 	delete(b.party)
 	b.party = make([dynamic]^Creature, 0)
+	delete(b.party_done)
+	b.party_done = make([dynamic]bool, 0)
 	delete(b.enemies)
 	b.enemies = make([dynamic]^Creature, 0)
 	delete(b.enemy_ids)
@@ -108,7 +110,7 @@ battle_free :: proc(b: ^Battle) {
 	delete(b.captured_ids)
 	b.captured_ids = make([dynamic]int, 0)
 	delete(b.order)
-	b.order = make([dynamic]int, 0)
+	b.order = make([dynamic]Actor, 0)
 	for s in b.log {
 		delete(s)
 	}
@@ -142,13 +144,15 @@ battle_start :: proc(defenders: []^Creature, enemies: []^Creature, enemy_ids: []
 	b.log = make([dynamic]string, 0)
 	b.popups = make([dynamic]Popup, 0)
 	b.party = make([dynamic]^Creature, 0)
+	b.party_done = make([dynamic]bool, 0)
 	b.enemies = make([dynamic]^Creature, 0)
 	b.enemy_ids = make([dynamic]int, 0)
 	b.captured_ids = make([dynamic]int, 0)
-	b.order = make([dynamic]int, 0)
+	b.order = make([dynamic]Actor, 0)
 
 	for c in defenders {
 		append(&b.party, c)
+		append(&b.party_done, false)
 	}
 	for e, i in enemies {
 		append(&b.enemies, e)
@@ -238,19 +242,19 @@ remove_enemy_index :: proc(b: ^Battle, i: int) {
 		unordered_remove(&b.enemy_ids, i)
 	}
 	// Keep the initiative queue consistent: drop the removed enemy and shift
-	// any later indices down.
+	// any later enemy indices down (player indices are untouched).
 	k := 0
 	for k < len(b.order) {
 		a := b.order[k]
-		if a == i {
+		if a.side == .WILD && a.index == i {
 			ordered_remove(&b.order, k)
 			if b.order_pos > k {
 				b.order_pos -= 1
 			}
 			continue
 		}
-		if a > i {
-			b.order[k] = a - 1
+		if a.side == .WILD && a.index > i {
+			b.order[k].index = a.index - 1
 		}
 		k += 1
 	}
@@ -300,16 +304,21 @@ creature_end_round :: proc(c: ^Creature) {
 // then a new turn begins (fresh hands + energy).
 // ----------------------------------------------------------------------------
 
-actor_speed :: proc(b: ^Battle, actor: int) -> f32 {
-	return actor < 0 ? b.party[b.active].speed : b.enemies[actor].speed
+actor_speed :: proc(b: ^Battle, a: Actor) -> f32 {
+	return a.side == .PLAYER ? b.party[a.index].speed : b.enemies[a.index].speed
 }
 
 build_order :: proc(b: ^Battle) {
 	clear(&b.order)
-	append(&b.order, -1) // your active monster
+	// Every living monster on the field: all of your party + all wilds.
+	for i in 0..<len(b.party) {
+		if b.party[i].hp > 0 {
+			append(&b.order, Actor{.PLAYER, i})
+		}
+	}
 	for i in 0..<len(b.enemies) {
 		if b.enemies[i].hp > 0 {
-			append(&b.order, i)
+			append(&b.order, Actor{.WILD, i})
 		}
 	}
 	// Shuffle so equal speeds are a coin flip, then stable-sort fastest first.
@@ -330,10 +339,13 @@ build_order :: proc(b: ^Battle) {
 	}
 }
 
-actor_can_act :: proc(b: ^Battle, actor: int) -> bool {
-	if actor < 0 {
-		c := b.party[b.active]
-		if b.player_done || c.hp <= 0 {
+actor_can_act :: proc(b: ^Battle, a: Actor) -> bool {
+	if a.side == .PLAYER {
+		if a.index < 0 || a.index >= len(b.party) {
+			return false
+		}
+		c := b.party[a.index]
+		if b.party_done[a.index] || c.hp <= 0 {
 			return false
 		}
 		for m in c.hand {
@@ -343,21 +355,20 @@ actor_can_act :: proc(b: ^Battle, actor: int) -> bool {
 		}
 		return false
 	}
-	if actor >= len(b.enemies) {
+	if a.index < 0 || a.index >= len(b.enemies) {
 		return false
 	}
-	e := b.enemies[actor]
+	e := b.enemies[a.index]
 	return e.hp > 0 && enemy_has_card(e)
 }
 
-set_actor :: proc(b: ^Battle, actor: int) {
-	if actor < 0 {
-		b.acting = .PLAYER
+set_actor :: proc(b: ^Battle, a: Actor) {
+	if a.side == .PLAYER {
+		b.active = a.index
 		b.phase = .PLAYER_ACTION
 		b.timer = b.auto_play ? 0.55 : 0
 	} else {
-		b.acting = .WILD
-		b.enemy_acting = actor
+		b.enemy_acting = a.index
 		b.phase = .ENEMY_ACTION
 		b.timer = 0.6
 	}
@@ -374,10 +385,10 @@ advance :: proc(b: ^Battle) {
 		if b.order_pos >= n {
 			b.order_pos = 0
 		}
-		actor := b.order[b.order_pos]
+		a := b.order[b.order_pos]
 		b.order_pos = (b.order_pos + 1) % n
-		if actor_can_act(b, actor) {
-			set_actor(b, actor)
+		if actor_can_act(b, a) {
+			set_actor(b, a)
 			return
 		}
 	}
@@ -396,16 +407,19 @@ begin_round :: proc(b: ^Battle) {
 		return
 	}
 	if b.round > 0 {
-		creature_end_round(b.party[b.active])
+		for p in b.party {
+			creature_end_round(p)
+		}
 		for e in b.enemies {
 			creature_end_round(e)
 		}
 	}
 	b.round += 1
-	b.player_done = false
-	b.enemy_done = false
 
-	creature_begin_round(b.party[b.active], &b.rng)
+	for i in 0..<len(b.party) {
+		b.party_done[i] = false
+		creature_begin_round(b.party[i], &b.rng)
+	}
 	for e in b.enemies {
 		creature_begin_round(e, &b.rng)
 	}
@@ -413,9 +427,10 @@ begin_round :: proc(b: ^Battle) {
 	build_order(b)
 	b.order_pos = 0
 	if len(b.order) > 0 {
+		first := b.order[0]
 		lead := string("You")
-		if b.order[0] >= 0 {
-			lead = b.enemies[b.order[0]].name
+		if first.side == .WILD {
+			lead = b.enemies[first.index].name
 		}
 		battle_log(b, "Turn %d - %s fastest.", b.round, lead)
 	}
@@ -615,8 +630,10 @@ player_end_round :: proc(b: ^Battle) {
 	if b.phase != .PLAYER_ACTION {
 		return
 	}
-	b.player_done = true
-	battle_log(b, "You end your turn.")
+	if b.active >= 0 && b.active < len(b.party_done) {
+		b.party_done[b.active] = true
+	}
+	battle_log(b, "%s ends its turn.", b.party[b.active].name)
 	advance(b)
 }
 
@@ -649,7 +666,6 @@ enemy_step :: proc(b: ^Battle) {
 		return
 	}
 	wild := b.enemies[b.enemy_acting]
-	target := b.party[b.active]
 
 	if wild.hp <= 0 {
 		advance(b)
@@ -662,36 +678,50 @@ enemy_step :: proc(b: ^Battle) {
 		return
 	}
 
+	target := pick_party_target(b)
+	if target == nil {
+		advance(b)
+		return
+	}
+
 	m := move_data(wild.hand[idx])
 	play_creature_card(b, wild, target, idx, &b.rng)
-	battle_log(b, "%s uses %s.", wild.name, m.name)
+	battle_log(b, "%s uses %s on %s.", wild.name, m.name, target.name)
 
 	if target.hp <= 0 {
 		target.hp = 0
-		handle_player_faint(b)
-		return
+		battle_log(b, "%s fainted!", target.name)
+		if !party_has_alive(b) {
+			b.phase = .LOST
+			b.timer = 0
+			battle_log(b, "Your party has fallen...")
+			return
+		}
 	}
 	advance(b)
 }
 
-handle_player_faint :: proc(b: ^Battle) {
-	fainted := b.party[b.active]
-	battle_log(b, "%s fainted!", fainted.name)
-	for m in fainted.hand {
-		append(&fainted.discard, m)
+// A wild picks a random living party member to attack (no taunt/front line).
+pick_party_target :: proc(b: ^Battle) -> ^Creature {
+	alive := 0
+	for p in b.party {
+		if p.hp > 0 {
+			alive += 1
+		}
 	}
-	clear(&fainted.hand)
-
-	if party_has_alive(b) {
-		b.forced_switch = true
-		b.switch_menu = true
-		b.phase = .PLAYER_ACTION
-		b.timer = 0
-	} else {
-		b.phase = .LOST
-		b.timer = 0
-		battle_log(b, "Your party has fallen...")
+	if alive == 0 {
+		return nil
 	}
+	k := rng_below(&b.rng, alive)
+	for p in b.party {
+		if p.hp > 0 {
+			if k == 0 {
+				return p
+			}
+			k -= 1
+		}
+	}
+	return nil
 }
 
 party_has_alive :: proc(b: ^Battle) -> bool {
@@ -704,7 +734,7 @@ party_has_alive :: proc(b: ^Battle) -> bool {
 }
 
 // ----------------------------------------------------------------------------
-// Player-only actions: capture + switching
+// Player-only actions: capture
 // ----------------------------------------------------------------------------
 
 capture_chance :: proc(b: ^Battle) -> f32 {
@@ -717,7 +747,7 @@ capture_chance :: proc(b: ^Battle) -> f32 {
 }
 
 attempt_capture :: proc(b: ^Battle) {
-	if b.phase != .PLAYER_ACTION || b.forced_switch {
+	if b.phase != .PLAYER_ACTION {
 		return
 	}
 	if len(b.enemies) == 0 {
@@ -750,33 +780,6 @@ attempt_capture :: proc(b: ^Battle) {
 		battle_log(b, "Capture failed! (%d%% chance)", int(chance * 100))
 		advance(b)
 	}
-}
-
-switch_to :: proc(b: ^Battle, index: int) {
-	if b.phase != .PLAYER_ACTION || b.forced_switch {
-		return
-	}
-	if index == b.active || index < 0 || index >= len(b.party) || b.party[index].hp <= 0 {
-		return
-	}
-	// Switching uses your action for the round.
-	creature_end_round(b.party[b.active])
-	b.active = index
-	b.player_done = true
-	b.switch_menu = false
-	battle_log(b, "You send out %s.", b.party[index].name)
-	advance(b)
-}
-
-forced_switch_to :: proc(b: ^Battle, index: int) {
-	if index < 0 || index >= len(b.party) || b.party[index].hp <= 0 {
-		return
-	}
-	b.active = index
-	b.forced_switch = false
-	b.switch_menu = false
-	battle_log(b, "You send out %s.", b.party[index].name)
-	begin_round(b)
 }
 
 // ----------------------------------------------------------------------------
@@ -875,38 +878,12 @@ battle_input :: proc(b: ^Battle) {
 	}
 	mp := rl.GetMousePosition()
 
-	if b.switch_menu {
-		if rl.IsMouseButtonPressed(.LEFT) {
-			for i in 0..<len(b.party) {
-				if i == b.active || b.party[i].hp <= 0 {
-					continue
-				}
-				if rl.CheckCollisionPointRec(mp, party_entry_rect(i)) {
-					if b.forced_switch {
-						forced_switch_to(b, i)
-					} else {
-						switch_to(b, i)
-					}
-					return
-				}
-			}
-		}
-		if !b.forced_switch && (rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.T)) {
-			b.switch_menu = false
-		}
-		return
-	}
-
 	if b.phase != .PLAYER_ACTION {
 		return
 	}
 
 	if rl.IsKeyPressed(.E) || rl.IsKeyPressed(.SPACE) {
 		player_end_round(b)
-		return
-	}
-	if rl.IsKeyPressed(.T) {
-		b.switch_menu = true
 		return
 	}
 	if rl.IsKeyPressed(.C) {
@@ -933,15 +910,6 @@ battle_input :: proc(b: ^Battle) {
 		for i in 0..<len(b.enemies) {
 			if b.enemies[i].hp > 0 && rl.CheckCollisionPointRec(mp, enemy_rect(i, len(b.enemies))) {
 				b.target = i
-				return
-			}
-		}
-		for i in 0..<len(b.party) {
-			if i == b.active || b.party[i].hp <= 0 {
-				continue
-			}
-			if rl.CheckCollisionPointRec(mp, party_entry_rect(i)) {
-				b.switch_menu = true
 				return
 			}
 		}
@@ -1173,10 +1141,6 @@ draw_battle :: proc(b: ^Battle) {
 
 	draw_buttons(b)
 	draw_battle_log(b)
-
-	if b.switch_menu {
-		draw_switch_overlay(b)
-	}
 
 	if b.phase == .WON {
 		draw_center_overlay("VICTORY", "Click to claim your reward", rl.Color{120, 230, 150, 255}, b.timer)
@@ -1496,7 +1460,7 @@ draw_hand :: proc(b: ^Battle) {
 	tgt := target_enemy(b)
 	for id, i in hand {
 		rec := hand_card_rect(i, len(hand))
-		playable := b.phase == .PLAYER_ACTION && !b.switch_menu && b.party[b.active].energy >= move_data(id).cost
+		playable := b.phase == .PLAYER_ACTION && b.party[b.active].energy >= move_data(id).cost
 		hovered := rl.CheckCollisionPointRec(mp, rec)
 		draw_card(id, rec, playable, hovered)
 		if hovered {
@@ -1516,7 +1480,7 @@ draw_buttons :: proc(b: ^Battle) {
 	cap := capture_rect()
 	cap_hover := rl.CheckCollisionPointRec(mp, cap)
 	chance := int(capture_chance(b) * 100)
-	can_cap := b.phase == .PLAYER_ACTION && !b.switch_menu && b.capture_cards > 0 && len(b.enemies) > 0
+	can_cap := b.phase == .PLAYER_ACTION && b.capture_cards > 0 && len(b.enemies) > 0
 	cap_col := rl.Color{70, 100, 150, 255}
 	if !can_cap {
 		cap_col = rl.Color{45, 52, 66, 255}
@@ -1533,56 +1497,24 @@ draw_buttons :: proc(b: ^Battle) {
 	btn := end_turn_rect()
 	btn_hover := rl.CheckCollisionPointRec(mp, btn)
 	btn_col := rl.Color{70, 130, 100, 255}
-	if b.phase != .PLAYER_ACTION || b.switch_menu {
+	if b.phase != .PLAYER_ACTION {
 		btn_col = rl.Color{45, 60, 55, 255}
 	} else if btn_hover {
 		btn_col = rl.Color{95, 175, 130, 255}
 	}
 	rl.DrawRectangleRounded(btn, 0.25, 8, btn_col)
 	rl.DrawRectangleRoundedLinesEx(btn, 0.25, 8, 2, rl.Color{210, 230, 220, 255})
-	et := cstring("End My Turn (E)")
+	et := cstring("End Turn (E)")
 	ew := rl.MeasureText(et, 18)
 	rl.DrawText(et, i32(btn.x + btn.width / 2) - ew / 2, i32(btn.y + btn.height / 2) - 9, 18, rl.Color{240, 255, 245, 255})
 
-	hint := cstring("V deck  |  T switch  |  C capture")
+	hint := cstring("V deck  |  C capture")
 	rl.DrawText(hint, i32(btn.x), i32(cap.y) - 26, 15, COL_MUTED)
 }
 
 draw_battle_log :: proc(b: ^Battle) {
 	for msg, i in b.log {
 		rl.DrawText(fmt.ctprintf("%s", msg), 16, 196 + i32(i) * 21, 15, COL_MUTED)
-	}
-}
-
-draw_switch_overlay :: proc(b: ^Battle) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
-	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 150})
-
-	title := cstring("Choose a creature to send out")
-	if b.forced_switch {
-		title = "Your creature fainted - choose a replacement"
-	}
-	tw := rl.MeasureText(title, 26)
-	rl.DrawText(title, i32(sw) / 2 - tw / 2, 70, 26, COL_TEXT)
-
-	for i in 0..<len(b.party) {
-		if i == b.active {
-			continue
-		}
-		rec := party_entry_rect(i)
-		dead := b.party[i].hp <= 0
-		if dead {
-			rl.DrawRectangleRounded(rec, 0.18, 6, rl.Color{30, 26, 30, 255})
-		} else if rl.CheckCollisionPointRec(rl.GetMousePosition(), rec) {
-			rl.DrawRectangleRounded(rec, 0.18, 6, rl.Color{50, 60, 52, 255})
-		}
-	}
-
-	if !b.forced_switch {
-		hint := cstring("Esc / T to cancel")
-		hw := rl.MeasureText(hint, 18)
-		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 60, 18, COL_MUTED)
 	}
 }
 
