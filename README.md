@@ -12,12 +12,6 @@ Built with [Odin](https://odin-lang.org/) and [raylib](https://www.raylib.com/).
 
 ▶️ **[Watch the full-quality `out.mp4`](out.mp4)** (48s, 1080p)
 
-> GitHub strips `<video>` tags in READMEs, so the inline preview above is an
-> animated GIF (`demo.gif`). For a native inline player with sound, drag
-> `out.mp4` into a GitHub issue/comment and replace the GIF line with the
-> returned `https://github.com/user-attachments/assets/…` URL inside a
-> `<video>` tag.
-
 ## Build & run
 
 You need **Odin** with its bundled raylib bindings (and the usual raylib system
