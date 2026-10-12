@@ -79,7 +79,11 @@ when ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32 {
 	@(export)
 	web_window_size_changed :: proc "c" (w, h: c.int) {
 		context = web_context
-		// The renderer reads rl.GetScreenWidth/Height every frame, so nothing
-		// to do here yet.
+		// Match the render target to the browser viewport so the game fills the
+		// screen (and reflows on resize / fullscreen). rl.GetScreenWidth/Height
+		// then report the new size to the game's layout.
+		if web_ready && w > 0 && h > 0 {
+			rl.SetWindowSize(w, h)
+		}
 	}
 }

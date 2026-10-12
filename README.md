@@ -45,7 +45,8 @@ script fetches the raylib web library into `web/lib/` if it is missing.
 **Hosted from this repo:** `.github/workflows/web.yml` builds the web version on
 every push to `main` and deploys it to GitHub Pages:
 **https://257m.github.io/monster-colony/** (enable it once under
-*Settings → Pages → Source: GitHub Actions*).
+*Settings → Pages → Source: GitHub Actions*). The game fills the browser window;
+press **F** (or the **⛶ Fullscreen** button) to go fullscreen.
 
 ### Controls (colony)
 
