@@ -42,6 +42,11 @@ WASM can't be loaded from `file://`, so serve `build/web/` over http (any static
 host works — GitHub Pages, itch.io, `python3 -m http.server`, …). The build
 script fetches the raylib web library into `web/lib/` if it is missing.
 
+**Hosted from this repo:** `.github/workflows/web.yml` builds the web version on
+every push to `main` and deploys it to GitHub Pages:
+**https://257m.github.io/monster-colony/** (enable it once under
+*Settings → Pages → Source: GitHub Actions*).
+
 ### Controls (colony)
 
 | Key | Action |
