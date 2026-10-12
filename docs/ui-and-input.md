@@ -29,7 +29,7 @@ otherwise switch mode:
 ### Draw dispatch (`game_draw`)
 ```
 switch mode: STARTER|MAP(+build/trade panels)|BATTLE|GAME_OVER
-then overlays on top: attack_select, battle_choice, results, deck viewer, encyclopedia
+then overlays on top: attack_select, battle_choice, results, deck viewer, encyclopedia, improvements dex, item bag
 ```
 
 **Checklist for a new overlay:** add a field to `Game`; an early-return branch
@@ -45,12 +45,37 @@ Draws the world, then `draw_colony_hud`, `draw_roster_panel`,
   production and upkeep, and, for the hovered tile, its name, improvement +
   **HP**, production status, and occupants.
 - `draw_roster_panel` lists your monsters (compact — wilds aren't drawn) with HP,
-  food, **energy** and an XP bar.
+  their **ability** (right-aligned on the HP row), food, **energy** and an XP bar.
 - `draw_move_highlights` shows, for the selected monster, each neighbour as an
   **outline only**: green = can move, red = blocked/full, amber = not enough
   energy (plus the move cost when valid).
-- `draw_map_monsters` draws creatures as coloured dots (red ring = wild); a
-  small red dot marks a hungry monster.
+- `draw_map_monsters` draws creatures as coloured dots with a ground shadow and a
+  gentle idle bob; wilds get a pulsing red ring and the selected monster a pulsing
+  ring; a small red dot marks a hungry monster.
+- **Improvements are animated icons** (`src/improvement_icons.odin`): farms sway,
+  mines sparkle, wells ripple, watchtowers pulse, treasuries spawn floating
+  coins, granaries bob, and Walls/Bridges are drawn as bricks/planks. Water tiles
+  shimmer. All animation is driven by `rl.GetTime()`, so there is no per-frame
+  state.
+- **Tiles have procedural detail** (`src/tile_detail.odin`): caves scatter rocks,
+  groves grow grass and a tree, mushroom groves sprout mushrooms, ruins have
+  broken pillars, tundra has snow and ice, jungle is dense grass, lava has
+  pulsing cracks, desert has dunes, quicksand swirls, trading posts show a stall,
+  and boss rooms a skull. Positions come from a per-hex hash (stable); water,
+  mushrooms, lava and quicksand animate off `rl.GetTime()`.
+- **Production popups**: when the turn loop produces or moves food/gold,
+  `colony_end_turn` records a short-lived `Tile_Float` on the tile, and
+  `draw_tile_floats` draws it rising + fading with a burst ring — `+4g` on a
+  working Mine, `+6f` on a Farm/Well, `+Nf` into a Granary, and `-Nf` when a
+  Granary feeds a monster.
+- **Damage feedback**: when a wild hits an improvement (`damage_improvement`),
+  the tile records `hit_t0`, so for `HIT_LIFE` seconds the icon **shakes**, a
+  red flash + ring pulses, and a red `-N` float pops.
+- **Coverage radii** (`draw_inspect_radii` + `improvement_rings`): a tinted hex
+  area with a bright boundary ring shows an improvement's coverage. It appears
+  when you hover a build option (preview), when a tile is selected in build mode,
+  and when you hover a built tile to inspect it. The build panel tags stackable
+  improvements with **`+stack`**.
 
 ## Panels / overlays
 
@@ -63,7 +88,26 @@ Draws the world, then `draw_colony_hud`, `draw_roster_panel`,
 | Results | after a battle | `update_results` | `draw_results` |
 | Deck viewer | `V` | `update_deck_viewer` | `draw_deck_viewer` |
 | Encyclopedia | `M` | `update_encyclopedia` | `draw_encyclopedia` |
+| Improvements dex | `I` | `update_improvements` | `draw_improvements` |
+| Item bag | `G` | `update_bag` | `draw_bag` |
 | Starter picker | mode STARTER | `update_starter` | `draw_starter` |
+
+The **deck viewer** (`draw_deck_viewer`) lists the selected monster's stats, its
+**ability** and **item** (name + description), and its full deck as a scrollable
+card grid. The top-right **Equip item** button moves the next bagged item into
+this monster's slot (old item returns to the bag); **Unequip** drops it back.
+
+The **improvements dex** (`draw_improvements`, `I`) is a browsable reference for
+all 23 improvements: a scrolling list on the left and, on the right, the animated
+icon, base cost, HP, category, the terrains it can be built on (chips coloured by
+terrain), the short effect line, and a long-form `improvement_detail` paragraph
+(word-wrapped by `draw_text_wrapped`).
+
+The **item bag** (`draw_bag`, `G`) lists the items in `Colony.items` with a
+colour-coded dot; the right side shows the selected item's icon, description and
+an **effect breakdown** (`draw_item_effects`), plus **Equip to selected monster**
+(`equip_bag_item` — swaps the item onto the map-selected monster, returning its
+old item to the bag). Items can also be cycled on in the deck viewer.
 
 Each panel has small `*_rect()` helpers returning `rl.Rectangle`s, used by both
 the hit-test (update) and the draw. Keep them in sync when you move things.
@@ -97,10 +141,17 @@ the hit-test (update) and the draw. Keep them in sync when you move things.
 
 Every one of your monsters takes its own turn in the Speed queue — the player
 panel and hand follow whichever monster is currently acting, and **End Turn**
-ends just that monster's turn. The party list (right) highlights the current
-actor and is otherwise informational (there is no switching).
+ends just that monster's turn. Your whole party is drawn **on the field** as info
+cards (`draw_party_field`): avatar, name, level/element, HP numbers, an energy
+bar, active buff chips, and its ability/item. The acting monster is ringed,
+monsters that have ended their turn are dimmed with an `ENDED` tag, and the dead
+are greyed out (there is no switching).
 
-The attack overlays are modal and consume input before the mode runs.
+The attacker picker (`draw_attack_select`) is a two-column panel: **your
+monsters** (checkboxed) on the left and **the enemies on the tile** on the right
+(name, level, element, HP, ability and rarity), so you can see what you're
+picking a fight with. The attack overlays are modal and consume input before the
+mode runs.
 
 ## Rendering (`hex_render.odin`)
 

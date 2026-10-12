@@ -8,9 +8,13 @@
 | `src/colony.odin` | ~1600 | Map generation, tiles, improvements, economy, turn loop, wild-monster AI |
 | `src/battle.odin` | ~1600 | The battle engine + battle rendering |
 | `src/creature.odin` | ~590 | `Species` table, `Creature` struct, stat/level helpers |
+| `src/abilities.odin` | ~130 | Species ability pools, names/descriptions, battle-start hook |
+| `src/items.odin` | ~110 | Item table, effects, battle-start hook |
 | `src/moves.odin` | ~292 | `Element` chart, `Move` struct, `MOVE_DATA`, `Move_Id` enum |
 | `src/hex_math.odin` | ~100 | Axial hex coordinate math |
 | `src/hex_render.odin` | ~127 | Hex <-> screen transforms, camera, hex drawing |
+| `src/improvement_icons.odin` | ~155 | Animated improvement icons drawn on the map |
+| `src/tile_detail.odin` | ~140 | Procedural per-terrain tile detail (rocks, grass, mushrooms…) |
 | `src/rng.odin` | ~49 | SplitMix64 PRNG |
 
 \* Approximate; use `wc -l` for exact counts.
@@ -59,6 +63,9 @@ gold, crystals, capture_cards, gold_cap, food_cap
 turn, floor, seed, rng, start_hex, next_id
 pending_tiles: [dynamic]Hex   // tiles where a wild and your monster share
 messages: [dynamic]string     // world notifications
+floats:   [dynamic]Tile_Float // transient per-tile production popups
+shop:     [dynamic]Shop_Offer // Trading Post stock, rerolled each turn
+items:    [dynamic]Item       // unequipped item bag
 ```
 
 ### `Game` (`main.odin`)
@@ -154,6 +161,7 @@ in `reset_to_starter`. See [ui-and-input.md](ui-and-input.md).
 | A card's numbers or add a card | `Move_Id` + `MOVE_DATA` in `moves.odin` |
 | How much damage a hit does | `apply_damage` / `estimate_damage` in `battle.odin` |
 | Turn order in battle | `build_order` / `advance` / `begin_round` in `battle.odin` |
+| A species' abilities | `ABILITY_POOLS` / `ability_*` in `abilities.odin` |
 | Terrain effects / spawn rates | `terrain_*` procs in `colony.odin` |
 | What an improvement does / costs | `improvement_*` procs in `colony.odin` |
 | The economy / turn loop | `colony_end_turn` in `colony.odin` |

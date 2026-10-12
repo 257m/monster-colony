@@ -42,6 +42,15 @@ Key knobs: `TERRAIN_SCALE` (region size), the band thresholds in `biome_at`.
 `pick_terrain_at(seed, origin, hex)` layers **Trading Posts (~1.5%, ≥2 from the
 entrance)** and **Boss Rooms (~0.8%, ≥6 away)** on top of the biome.
 
+### Trading Post & rarity
+Every species has a `Rarity` (`COMMON..LEGENDARY`) that scales capture odds,
+kill loot and the shop. The Post's **stock of monsters for sale is rerolled each
+turn**: `colony_roll_shop` (called from `colony_end_turn`) makes two
+rarity-weighted picks via `shop_pick_species`, prices them with `recruit_price`,
+and `colony_buy_recruit` places a bought monster at `find_placement_tile`
+(entrance or beside it). The heal / energy / revive / capture-card services
+remain. Kill loot uses `species_loot_gold`.
+
 ### A safe entrance
 - `choose_start_hex(seed)` scans ~13×13 hexes around the origin and picks the
   one with the most neutral (walkable-by-anyone) tiles in a 3-ring, so no
@@ -65,23 +74,50 @@ for call-site compatibility).
 | `LAVA` | needs `.EMBER` |
 | `QUICKSAND` | needs `.GROUND` |
 | any + `WALL` improvement | blocked unless `.AIR` |
+| any + `GATE` improvement | blocked for **wilds only**; your monsters pass |
 | everything else | open |
 
 `move_block_reason` turns a blocked move into a readable status line.
 
 `terrain_spawn_chance(t)` is the per-tile wild spawn probability;
-`terrain_move_cost(t)` is the movement cost multiplier.
+`terrain_move_cost(t)` is the movement cost multiplier. Step cost goes through
+`monster_step_cost(c, m, hex)` (which applies a `ROAD` discount).
 
 ## 3. Improvements
 
-`Improvement` enum: `NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL`.
+`Improvement` enum: `NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY`.
+
+Beyond production, several are **defensive** and there's now an **energy network**:
+`GATE`/`DRAWBRIDGE` block wilds (the drawbridge toggles raised/lowered);
+a wild whose step is blocked by a `WALL`/`GATE` (or a raised `DRAWBRIDGE`) **batters
+the blocker** instead of walking around — see `colony_roam_wilds` and
+`improvement_blocks_wilds`, using `wild_improvement_damage`;
+`SPIKE_TRAP`/`TURRET` deal damage (`colony_apply_traps` / `colony_turrets`),
+`SCARECROW` deters spawns and spooks nearby wilds into **moving a couple of tiles
+away** (they don't despawn), `WATCHTOWER` reveals and gives defenders starting
+Block, and `BEACON` reveals over a wider radius and makes attacking wilds start
+**Vulnerable** (`BEACON_VULN`, applied in `begin_battle`).
+`FOUNTAIN` hands energy to the closest unit or Turret (`colony_fountains`);
+`TURRET` needs that charge to fire. `MARKETPLACE` boosts nearby Mines,
+`KITCHEN` spends food for battle-start Strength, and `BARRACKS` eats food to
+heal + train nearby monsters. `QUARRY`/`LUMBER_MILL` are the second producer
+chain (Lumber needs water adjacent). `ROAD` halves step cost, `SILO` adds food
+storage, and `CRYSTAL_REFINERY` converts gold into crystals each turn.
+
+**Stacking:** `improvement_stacks(im)` is true for `ROAD`. Such an improvement is
+stored in a tile's `overlay` slot instead of replacing the building, so a Road
+can sit under a Farm. `tile_has(t, im)` checks building *or* overlay, and
+`improvement_count`/`near_improvement`/`nearest_improvement_within` use it. When
+the building is later replaced the overlay survives; wilds only ever damage the
+building.
 
 | Proc | Purpose |
 |---|---|
 | `improvement_valid_on(im, terrain)` | which terrains allow it |
 | `improvement_cost(im)` | base price |
 | `improvement_cost_scaled(c, im)` | `base + base·count / divisor` |
-| `improvement_cost_divisor(im)` | 6 for Walls (they scale at half rate), else 3 |
+| `improvement_cost_divisor(im)` | 6 for Walls/Gates/Roads/Scarecrows/Spike Traps (bulk), else 3 |
+| `improvement_max_hp(im)` | per-type health (Gate 30 < Wall 50, etc.) |
 | `improvement_effect(im)` | the build-panel blurb |
 | `can_build` / `buildable_improvements` | placement rules |
 | `colony_build(c, hex, im)` | spends gold and **replaces** anything already there |
@@ -134,6 +170,9 @@ Runs in a fixed order. **Read this top-to-bottom before changing any economy.**
 4. **Feed monsters** (range-gated): eat from a Granary, else a Farm/Well pool.
    Fed → `+REFILL_FRAC` satiety (full bar heals); unfed → `−STARVE_FRAC`, and at
    zero satiety the monster takes damage.
+
+Steps 1–4 also call `colony_add_float` so the map shows a brief `+4g`/`+6f`
+production popup on the tile (see [ui-and-input.md](ui-and-input.md)).
 5. **Deaths & regen** — 0-HP monsters go to the graveyard; survivors gain
    `energy_regen` (capped at `energy_max`).
 6. **Wilds** — load the neighbourhood, tick down `scuffle` markers, then:
@@ -168,7 +207,8 @@ Then `c.turn += 1`.
   monster pushes that tile onto `pending_tiles`, which `start_next_attack`
   turns into an **ambush** battle.
 
-`damage_improvement` reduces HP, and on destruction notifies, drops `stored`,
+`damage_improvement` reduces HP, records `hit_t0` (for the map's damage shake +
+red flash) and a `.DAMAGE` float, and on destruction notifies, drops `stored`,
 resets to `NONE`, and recomputes caps.
 
 ## 8. Notifications

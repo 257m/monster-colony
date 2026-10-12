@@ -1,0 +1,2 @@
+# Odin default output when building a package without -out
+*.bin

@@ -50,6 +50,7 @@ base_energy, base_energy_max: int
 base_power, base_defense, base_speed: f32   // power is a MULTIPLIER (~1.0)
 base_satiety, base_upkeep: int              // food capacity / per-turn cost
 color, role: Species_Role
+rarity: Rarity                             // COMMON..LEGENDARY (capture/shop/loot)
 starter:  []Move_Id              // the deck the monster is born with
 learnset: []Learn_Entry          // moves auto-learned at a level
 move_pool: []Move_Id             // candidates for reward-card picks
@@ -64,6 +65,28 @@ move_pool: []Move_Id             // candidates for reward-card picks
 
 `COMMON_MOVES` are reward-only options available to every species.
 
+## Abilities (`abilities.odin`)
+
+`Ability :: enum { NONE, Berserk, Guardian, Thick_Hide, Swift, Lucky, Vampiric, Regenerator, Intimidate }`.
+
+`ABILITY_POOLS: [27][3]Ability` gives each species **three** options;
+`creature_make(species, level, name, rng)` rolls one with `creature_roll_ability`
+and stores it in `Creature.ability`. Effects and hook points are in
+[battle.md](battle.md#species-abilities-abilitiesodin). To add an ability:
+extend the enum, add its case to `ability_name` / `ability_desc`, add its effect
+to the right hook, then list it in one or more species' pools.
+
+## Items (`items.odin`)
+
+`Item :: enum { NONE, Ember_Charm, … Snare_Kit }` with `ITEM_DATA: [Item]Item_Info`
+(name, desc + effect fields). Every `Creature` has one `item` slot. Items are
+found as battle loot into `Colony.items` and equipped from the deck viewer. To
+add an item: extend the enum, add an `ITEM_DATA` entry (set the fields it uses),
+and add it to `ITEM_IDS` (for random drops). Stat fields feed
+`creature_recompute_stats`; the rest hook into `item_battle_start`,
+`creature_begin_round`, `play_creature_card`, `colony_end_turn`, and
+`capture_chance`.
+
 ## Creatures & stats (`creature.odin`)
 
 `Creature` is documented in [architecture.md](architecture.md#creature-creatureodin).
@@ -73,10 +96,12 @@ Stat scaling:
 level_scale(level)              = 1 + 0.15*(level-1)
 creature_stats_for_level(...)   = base * level_scale, with
     energy_regen = clamp(base_energy * scale, base_energy, 6)
-    energy_max   = clamp(base_energy_max * scale, energy_regen, 8)
+    energy_max   = clamp(base_energy_max * scale, energy_regen, 16)
 ```
 
 So `power`, `defense`, `speed`, `energy_*` all grow ~15% per level; HP too.
+Species `base_energy_max` is **8** (10 for elites/bosses) versus `base_energy` 3–4,
+so the bank is ~2.7× the regen and saving for expensive cards is worth it.
 
 - `creature_make(species, level, name)` builds a fresh creature + starter deck.
 - `creature_level_up` recomputes stats and learns any `learnset` moves whose

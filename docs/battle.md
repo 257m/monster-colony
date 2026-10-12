@@ -73,6 +73,28 @@ Speed-sorted queue of every living monster.
 So each actor can act **once per pass**, and passes repeat until everyone is out
 of cards/energy. **Energy and hands refresh once per turn, not per pass.**
 
+`actor_speed` adds each creature's per-battle `speed_buff`, so the `Swift`
+ability changes initiative without touching the map-movement Speed stat.
+
+## Species abilities (`src/abilities.odin`)
+
+Each species has a 3-ability pool (`ABILITY_POOLS`); `creature_make(..., rng)`
+rolls one at spawn into `Creature.ability`. Hooks:
+
+| Ability | Hook |
+|---|---|
+| Berserk / Guardian / Thick Hide / Swift / Intimidate | `ability_battle_start` (called from `battle_start` after the reset) |
+| Lucky | `creature_begin_round` (draws 5 + `ABILITY_LUCKY_DRAW`) |
+| Regenerator | `creature_end_round` |
+| Vampiric | `play_creature_card` (heals on a landed hit) |
+
+Items hook the same points: `item_battle_start` (buffs), the draw in
+`creature_begin_round`, the on-hit heal in `play_creature_card`, and
+`capture_chance`. Stat items are folded into `creature_recompute_stats`.
+
+`creature_end_round` (not `creature_begin_round`) clears **Block**, so a
+battle-start Block like Guardian or War Banner survives turn one.
+
 ## Damage — `apply_damage(attacker, target, base, elem)`
 
 ```
@@ -80,7 +102,7 @@ str   = max(1 + 0.1*attacker.strength, 0.1)     // +10% per Strength, floored
 dmg   = base * attacker.power * str             // power is a multiplier stat
 dmg  *= element_multiplier(elem, def) for EACH defender element   // 2x / 0.5x
 dmg  *= 1.5 if the move matches one of the attacker's elements      // STAB
-dmg  *= 1.5 if target.vulnerable > 0
+dmg  *= 1 + 0.5*target.vulnerable   if target.vulnerable > 0
 dmg  *= 10 / (10 + creature_defense(target))    // defence scales it down
 d      = int(dmg)
 absorb = min(target.block, d); target.block -= absorb
@@ -113,7 +135,7 @@ DEBUFF, DEFEND, WEAKEN, SHATTER, CAPTURE`).
 | Status | Where | Effect |
 |---|---|---|
 | `block` | reset each turn | absorbs damage before HP |
-| `vulnerable` | ticks down each turn | target takes ×1.5 |
+| `vulnerable` | ticks down each turn | target takes ×(1 + 0.5·stacks) |
 | `strength` | persists (can go negative) | ±10% outgoing damage |
 | `defense_buff` / `defense_debuff` | persists | raise/lower the defense divisor |
 | `played` | reset each turn | enables combo synergies |
@@ -133,7 +155,8 @@ chips with their multipliers.
   is **no** switching. The fight continues with the survivors, and goes to
   `LOST` only when all of them are down.
 - **Capture**: `attempt_capture` spends a capture card; `capture_chance` scales
-  with how wounded the target is. Captured ids land in `captured_ids`.
+  with how wounded the target is, and falls with the target's **level** and
+  **species rarity** (`rarity_catch_mult`). Captured ids land in `captured_ids`.
 
 ## Enemy AI
 
@@ -152,12 +175,25 @@ chips with their multipliers.
 
 ## Battle rendering
 
-`draw_battle` (in `battle.odin`) draws everything: `draw_enemies` (name, HP bar,
-energy bar, modifier chip column), `draw_player_panel` (name, stats, HP, **XP
-bar**, energy, deck size, modifier row), `draw_party` (the right-hand roster),
-`draw_hand`, `draw_card_estimate` (hover damage preview), `draw_buttons`
-(capture / end-turn), `draw_battle_log`, `draw_popups`, and the win/lose
-overlays. Geometry helpers (`*_rect`) live next to their use. `PARTY_MAX` is 6.
+`draw_battle` (in `battle.odin`) draws everything: `draw_enemies` (name, ability,
+HP bar, energy bar with `En cur/max +regen`, modifier chip row),
+`draw_player_panel` (name, ability, stats, HP, **XP bar**, an energy bar that
+shows a dim **regen preview** and `cur / max +regen per turn`, deck size,
+modifier row), `draw_party_field` (your whole party as info cards on the field —
+avatar, name, level/element, HP numbers, energy bar, active buff chips, and
+ability/item; the acting monster is ringed, ended-turn ones are dimmed with an
+`ENDED` tag, the dead are greyed), `draw_hand`,
+`draw_card_estimate` (hover damage preview), `draw_buttons` (capture / end-turn),
+`draw_battle_log`, `draw_popups`, and the win/lose overlays. Geometry helpers
+(`*_rect`) live next to their use. `PARTY_MAX` is 6.
+
+**Effect feedback.** Playing a card spawns a `Popup` (`draw_popups`, floating
+`-12` / `+8 blk` / `+4 str` … text, coloured by `popup_color`) *and* a
+`creature_burst` on the affected creature — an expanding coloured ring drawn by
+`draw_creature_avatar` and aged down in `battle_update` (`fx_t`/`fx_dur`/`fx_col`).
+Heals from the **Regenerator** ability (at the round transition in `begin_round`)
+and **Vampiric** (in `play_creature_card`) get the same green burst + popup, so
+healing is visible even when it isn't from a card.
 
 If you add a battle status, update **both** `build_effects` (the chip) and
 `draw_*` uses, and the damage/defense formula where relevant.

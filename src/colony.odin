@@ -22,13 +22,14 @@ import "core:math"
 // ============================================================================
 
 Terrain :: enum { CAVE, WATER, DUNGEON, GROVE, TRADING_POST, BOSS_ROOM, MUSHROOM, RUINS, TUNDRA, JUNGLE, LAVA, DESERT, QUICKSAND }
-Improvement :: enum { NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL }
+Improvement :: enum { NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON }
 
 MAX_MONSTERS_PER_TILE :: 6
 REFILL_FRAC           :: f32(0.5) // of max satiation gained per fed turn
 STARVE_FRAC           :: f32(0.3) // of max satiation lost per starving turn
 STORAGE_CAP           :: 100
 BASE_GOLD_CAP         :: 100 // the stockpile's own cap; treasuries add storage beyond it
+STARTING_CAPTURE_CARDS :: 3   // capture cards you begin the run with
 FEED_RADIUS           :: 4
 DELIVER_RADIUS        :: 4
 MAX_WILDS              :: 30
@@ -44,6 +45,34 @@ WATCHTOWER_REVEAL      :: 6    // tiles revealed around a Watchtower
 WATCHTOWER_DETER       :: 4    // radius in which a Watchtower stops spawns
 WATCHTOWER_GUARD       :: 4    // radius in which defenders get starting Block
 WATCHTOWER_GUARD_BLOCK :: 6    // Block granted to those defenders at battle start
+SPIKE_TRAP_DAMAGE      :: 8    // HP a wild loses per turn standing on a Spike Trap
+SCARECROW_DETER        :: 2    // radius a Scarecrow keeps spawns out of
+SCARECROW_PANIC        :: 3    // radius a Scarecrow makes wilds likelier to flee
+SCARECROW_PANIC_CHANCE :: f32(0.5)
+CRYSTAL_REFINERY_COST  :: 15   // gold converted into 1 crystal per turn
+ROAD_MOVE_FACTOR       :: f32(0.5)
+// Phase B — energy network + builders
+FOUNTAIN_RANGE         :: 4    // a Fountain supplies the closest recipient in range
+FOUNTAIN_OUTPUT        :: 3    // energy handed out per turn
+TURRET_RANGE           :: 4    // a Turret shoots the nearest wild in range
+TURRET_DAMAGE          :: 10
+TURRET_COST            :: 2    // charge spent per shot
+TURRET_CAP             :: 6    // max charge a Turret can hold
+MARKET_RADIUS          :: 3    // a Marketplace boosts Mines within this radius
+MARKET_BONUS           :: f32(0.5)
+QUARRY_GOLD_YIELD      :: 5
+LUMBER_FOOD_YIELD      :: 5
+KITCHEN_RADIUS         :: 4    // a Kitchen buffs defenders near the fight
+KITCHEN_FOOD_COST      :: 6
+KITCHEN_STRENGTH       :: 2
+BARRACKS_RANGE         :: 4
+BARRACKS_UPKEEP        :: 2    // food consumed per turn
+BARRACKS_HEAL          :: 3
+BARRACKS_XP            :: 1
+BEACON_REVEAL          :: 8
+BEACON_DETER           :: 5
+BEACON_GUARD           :: 5
+BEACON_VULN            :: 2    // Vulnerable applied to wilds attacking near a Beacon
 
 terrain_name :: proc(t: Terrain) -> cstring {
 	switch t {
@@ -94,26 +123,44 @@ improvement_name :: proc(im: Improvement) -> cstring {
 	case .WATCHTOWER: return "Watchtower"
 	case .WALL:      return "Wall"
 	case .WELL:      return "Well"
-	}
-	return ""
-}
-
-improvement_label :: proc(im: Improvement) -> cstring {
-	switch im {
-	case .NONE:      return ""
-	case .FARM:      return "F"
-	case .MINE:      return "M"
-	case .BRIDGE:    return "="
-	case .GRANARY:   return "G"
-	case .TREASURY:  return "T"
-	case .WATCHTOWER: return "!"
-	case .WALL:      return "#"
-	case .WELL:      return "~"
+	case .GATE:      return "Gate"
+	case .SPIKE_TRAP: return "Spike Trap"
+	case .SCARECROW: return "Scarecrow"
+	case .ROAD:      return "Road"
+	case .SILO:      return "Silo"
+	case .CRYSTAL_REFINERY: return "Crystal Refinery"
+	case .FOUNTAIN:  return "Fountain"
+	case .TURRET:    return "Turret"
+	case .DRAWBRIDGE: return "Drawbridge"
+	case .QUARRY:    return "Quarry"
+	case .LUMBER_MILL: return "Lumber Mill"
+	case .MARKETPLACE: return "Marketplace"
+	case .KITCHEN:   return "Kitchen"
+	case .BARRACKS:  return "Barracks"
+	case .BEACON:    return "Beacon"
 	}
 	return ""
 }
 
 IMPROVEMENT_HP :: 50
+
+// Health per improvement. Gates are deliberately frailer than Walls.
+improvement_max_hp :: proc(im: Improvement) -> int {
+	#partial switch im {
+	case .NONE:             return 0
+	case .GATE:             return 30
+	case .SPIKE_TRAP:       return 25
+	case .SCARECROW:        return 20
+	case .ROAD:             return 40
+	case .SILO:             return 50
+	case .CRYSTAL_REFINERY: return 45
+	case .TURRET:           return 35
+	case .DRAWBRIDGE:       return 40
+	case .FOUNTAIN:         return 45
+	case .BEACON:           return 55
+	}
+	return IMPROVEMENT_HP
+}
 
 improvement_cost :: proc(im: Improvement) -> int {
 	switch im {
@@ -126,6 +173,21 @@ improvement_cost :: proc(im: Improvement) -> int {
 	case .WATCHTOWER: return 25
 	case .WALL:     return 15
 	case .WELL:     return 20
+	case .GATE:     return 12
+	case .SPIKE_TRAP: return 18
+	case .SCARECROW: return 8
+	case .ROAD:     return 10
+	case .SILO:     return 18
+	case .CRYSTAL_REFINERY: return 30
+	case .FOUNTAIN: return 24
+	case .TURRET:   return 28
+	case .DRAWBRIDGE: return 16
+	case .QUARRY:   return 22
+	case .LUMBER_MILL: return 22
+	case .MARKETPLACE: return 26
+	case .KITCHEN:  return 24
+	case .BARRACKS: return 26
+	case .BEACON:   return 40
 	}
 	return 0
 }
@@ -140,6 +202,21 @@ improvement_valid_on :: proc(im: Improvement, t: Terrain) -> bool {
 	case .WATCHTOWER: return t == .CAVE || t == .GROVE || t == .MUSHROOM || t == .RUINS || t == .TUNDRA || t == .DESERT || t == .JUNGLE
 	case .WALL:       return t == .CAVE || t == .RUINS || t == .GROVE || t == .MUSHROOM || t == .TUNDRA || t == .DESERT
 	case .WELL:       return t == .CAVE || t == .GROVE || t == .MUSHROOM || t == .JUNGLE || t == .DESERT
+	case .GATE:       return t == .CAVE || t == .RUINS || t == .GROVE || t == .MUSHROOM
+	case .SPIKE_TRAP: return t == .CAVE || t == .RUINS || t == .GROVE
+	case .SCARECROW:  return t == .GROVE || t == .MUSHROOM || t == .JUNGLE
+	case .ROAD:       return t == .CAVE || t == .GROVE || t == .DUNGEON || t == .RUINS || t == .DESERT || t == .TUNDRA || t == .MUSHROOM || t == .JUNGLE
+	case .SILO:       return t == .CAVE || t == .GROVE
+	case .CRYSTAL_REFINERY: return t == .RUINS || t == .CAVE || t == .DUNGEON
+	case .FOUNTAIN:   return t == .CAVE || t == .GROVE || t == .MUSHROOM || t == .RUINS || t == .DESERT || t == .TUNDRA
+	case .TURRET:     return t == .CAVE || t == .RUINS || t == .DESERT || t == .GROVE || t == .TUNDRA
+	case .DRAWBRIDGE: return t == .WATER
+	case .QUARRY:     return t == .RUINS || t == .DESERT || t == .TUNDRA
+	case .LUMBER_MILL: return t == .GROVE || t == .MUSHROOM || t == .JUNGLE
+	case .MARKETPLACE: return t == .CAVE || t == .GROVE || t == .MUSHROOM || t == .RUINS || t == .DESERT
+	case .KITCHEN:    return t == .CAVE || t == .GROVE || t == .MUSHROOM
+	case .BARRACKS:   return t == .CAVE || t == .RUINS || t == .GROVE || t == .DESERT
+	case .BEACON:     return t == .RUINS || t == .CAVE
 	case:             return false
 	}
 }
@@ -155,6 +232,106 @@ improvement_effect :: proc(im: Improvement) -> cstring {
 	case .WATCHTOWER: return "reveals 6, deters spawns 4, guards within 4 (+6 block)"
 	case .WALL:     return "wilds won't roam across it"
 	case .WELL:     return "feeds within 4, +2 (needs water nearby)"
+	case .GATE:     return "wilds can't cross; your monsters can"
+	case .SPIKE_TRAP: return "wilds standing here take 8 dmg/turn"
+	case .SCARECROW: return "cheap; keeps spawns out (r2), spooks wilds (r3)"
+	case .ROAD:     return "monsters cross for half the energy"
+	case .SILO:     return "extra food storage"
+	case .CRYSTAL_REFINERY: return "spends 15 gold/turn to make 1 crystal"
+	case .FOUNTAIN: return "gives energy to the closest unit or Turret nearby"
+	case .TURRET:   return "needs Fountain energy; shoots a wild within 4"
+	case .DRAWBRIDGE: return "a Bridge you can raise (blocks wilds) or lower"
+	case .QUARRY:   return "staffed: gold to treasury within 4"
+	case .LUMBER_MILL: return "staffed: food (needs water nearby)"
+	case .MARKETPLACE: return "+50% gold from Mines within 3"
+	case .KITCHEN:  return "spends food so defenders start with +2 Str"
+	case .BARRACKS: return "heals & grants a little XP (eats 2 food/turn)"
+	case .BEACON:   return "reveals 8, deters 5, attacking wilds start Vulnerable"
+	}
+	return ""
+}
+
+// Stackable improvements sit in a tile's `overlay` slot instead of replacing the
+// building, so e.g. a Road can be laid under a Farm.
+improvement_stacks :: proc(im: Improvement) -> bool {
+	return im == .ROAD
+}
+
+// Every buildable improvement, in build-panel order (used by the improvements dex).
+ALL_IMPROVEMENTS := [?]Improvement{
+	.FARM, .MINE, .WELL, .BRIDGE, .GRANARY, .TREASURY, .WATCHTOWER, .WALL,
+	.GATE, .SPIKE_TRAP, .SCARECROW, .ROAD, .SILO, .CRYSTAL_REFINERY, .FOUNTAIN,
+	.TURRET, .DRAWBRIDGE, .QUARRY, .LUMBER_MILL, .MARKETPLACE, .KITCHEN,
+	.BARRACKS, .BEACON,
+}
+
+// Grouping shown in the improvements dex header.
+improvement_category :: proc(im: Improvement) -> cstring {
+	switch im {
+	case .FARM, .WELL, .LUMBER_MILL:                                     return "Food"
+	case .MINE, .QUARRY, .CRYSTAL_REFINERY, .MARKETPLACE:                return "Gold"
+	case .GRANARY, .SILO, .TREASURY:                                     return "Storage"
+	case .WALL, .GATE, .DRAWBRIDGE, .SPIKE_TRAP, .SCARECROW, .WATCHTOWER: return "Defense"
+	case .BEACON:                                                        return "Defense"
+	case .FOUNTAIN, .TURRET:                                             return "Energy"
+	case .KITCHEN, .BARRACKS:                                            return "Support"
+	case .BRIDGE, .ROAD:                                                 return "Traversal"
+	case .NONE:                                                          return "-"
+	}
+	return "-"
+}
+
+// Long-form description for the improvements dex.
+improvement_detail :: proc(im: Improvement) -> cstring {
+	switch im {
+	case .NONE:
+		return ""
+	case .FARM:
+		return "Staffed by one of your monsters standing on the tile. Makes food each turn into a local pool that is delivered to the nearest Granary within 4 tiles; food past the Granary's storage is lost, so pair it with a Granary (or Silo) in range. Wilds will not spawn on a staffed Farm, making it a safe tile to hold."
+	case .MINE:
+		return "Staffed by a monster on the tile. Produces gold into the nearest Treasury within 4 tiles. A Marketplace within 3 tiles boosts its output by 50%. No wilds spawn while it is staffed. Cheaper and safer than a Quarry, but yields less."
+	case .BRIDGE:
+		return "Built on Water. Lets your ground monsters cross the water tile, and turns it into a normal traversable hex. Permanent and cheap, but unlike a Drawbridge it can never be raised to block wilds."
+	case .GRANARY:
+		return "The food hub. Stores food up to the storage cap and feeds every monster within 4 tiles each turn. Farms, Wells and Lumber Mills within 4 deliver their output here. Any food produced without a Granary in range is wasted, so a Granary should anchor every food district."
+	case .TREASURY:
+		return "Stores gold safely and raises your effective gold cap. Mines and Quarries within 4 tiles deliver their gold here. Placing a Treasury among your mines turns a cluster into real income."
+	case .WATCHTOWER:
+		return "Reveals tiles within 6, deters wild spawns within 4, and gives defenders within 4 tiles +6 Block at the start of a battle. A solid anchor for a front-line tile you expect to be attacked."
+	case .WALL:
+		return "Ground wilds cannot move through a Wall (Air types fly over). A wild whose step is blocked by a Wall batters it instead, so even a wall line needs occasional repair — but it reliably channels wilds away from what it protects."
+	case .WELL:
+		return "Must be built adjacent to Water. Produces a small amount of food each turn into the local pool (delivered to a Granary within 4) and needs no staffing to do it. A cheap top-up for a food district near water."
+	case .GATE:
+		return "Wilds cannot pass, but your own monsters move through freely. Frailer than a Wall (30 HP) and wilds batter it down faster, so treat a Gate as a door you control rather than a wall."
+	case .SPIKE_TRAP:
+		return "Any wild standing on the tile loses 8 HP per turn. Cheap, passive attrition for a chokepoint or a tile wilds keep walking over. Your own monsters are unaffected."
+	case .SCARECROW:
+		return "The cheapest deterrent. Keeps wild spawns out of a 2-tile radius, and spooks wilds within 3 so that, instead of crossing, they step away toward open ground. Best used to keep a quiet pocket around farms and workers."
+	case .ROAD:
+		return "Stackable — it lives in the tile's overlay slot, so a Road can be laid underneath any building rather than replacing it. Your monsters cross the tile for half the usual energy, which speeds up long hauls and lets a monster cover more ground per turn."
+	case .SILO:
+		return "Adds extra food storage on top of your Granary capacity. Only useful once your food production outpaces a Granary; place it in your main food district."
+	case .CRYSTAL_REFINERY:
+		return "Spends 15 gold per turn to produce 1 crystal. Crystals are the end-game progression currency, so a Refinery is how a strong gold economy converts into lasting power. Expect to run a few once your mines are built up."
+	case .FOUNTAIN:
+		return "Each turn hands 3 energy to the closest monster, or charges the closest Turret within 4 tiles. The heart of an energy network — a Fountain next to a Turret keeps it firing, and one near your workers keeps them moving."
+	case .TURRET:
+		return "Needs energy from a nearby Fountain. Spends 2 charge to shoot the nearest wild within 4 tiles for 10 damage. Useless on its own — always pair it with a Fountain, and cluster a couple of Turrets around a single one to cover a flank."
+	case .DRAWBRIDGE:
+		return "Built on Water. Toggle it raised to block wilds or lowered to let your monsters cross. More expensive than a Bridge but reconfigurable, so you can seal a water lane when a raid approaches and reopen it afterward."
+	case .QUARRY:
+		return "Staffed by a monster on the tile. Produces noticeably more gold than a Mine into the nearest Treasury within 4 tiles. Needs Ruins, Desert or Tundra, so it is the reward for pushing into harsher biomes."
+	case .LUMBER_MILL:
+		return "Staffed by a monster on the tile and must be built next to Water. Produces food into the local pool (delivered to a Granary within 4). A second food chain alongside Farms for a colony spread across wet terrain."
+	case .MARKETPLACE:
+		return "Boosts the gold output of every Mine within 3 tiles by 50%. It produces nothing itself, so place it in the middle of a mining cluster to multiply several mines at once."
+	case .KITCHEN:
+		return "At the start of a battle, spends 6 food from a Granary within 4 tiles to give your defenders +2 Strength for the whole fight. A pre-battle buff you pay for with food, so keep a stocked Granary near the front line."
+	case .BARRACKS:
+		return "Eats 2 food per turn from a nearby Granary and, if fed, heals your monsters and grants a little XP each turn. A training and recovery hub — park wounded monsters beside it between fights."
+	case .BEACON:
+		return "The strongest lookout. Reveals tiles within 8, deters wild spawns within 5, and makes wilds attacking within 5 tiles start the battle Vulnerable (taking +50% damage). A great forward base for pushing into dangerous ground."
 	}
 	return ""
 }
@@ -164,9 +341,17 @@ Tile :: struct {
 	terrain:        Terrain,
 	revealed:       bool,
 	improvement:    Improvement,
+	overlay:        Improvement, // a stackable improvement (e.g. Road) on top of the building
 	improvement_hp: int,
-	stored:         int, // food (Granary) or gold (Treasury)
-	scuffle:        int, // turns a "fight happened here" marker lingers
+	stored:         int,   // food (Granary) / gold (Treasury) / charge (Turret)
+	scuffle:        int,   // turns a "fight happened here" marker lingers
+	hit_t0:         f32,   // rl.GetTime of the last damage (for hit shake/flash)
+	drawbridge_down: bool, // false = raised (blocks wilds), true = lowered (bridge)
+}
+
+// Does this tile contain the given improvement (as building or overlay)?
+tile_has :: proc(t: ^Tile, im: Improvement) -> bool {
+	return t.improvement == im || t.overlay == im
 }
 
 Monster :: struct {
@@ -176,6 +361,26 @@ Monster :: struct {
 	wild:     bool,
 	food:     f32, // satiation bar 0..100
 	genetics: [5]int,
+}
+
+// A short-lived floating "+N gold/food" marker at a tile, spawned by the turn
+// loop when a producer works. Drawn by draw_tile_floats; ages via rl.GetTime().
+Float_Kind :: enum { GOLD, FOOD, FOOD_IN, FOOD_OUT, DAMAGE, CRYSTAL, FLEE, ENERGY }
+FLOAT_LIFE :: f32(1.6)
+HIT_LIFE   :: f32(0.4) // improvement damage shake/flash duration
+
+Tile_Float :: struct {
+	hex:    Hex,
+	kind:   Float_Kind,
+	amount: int,
+	t0:     f32,
+}
+
+// A monster offered for sale at a Trading Post.
+Shop_Offer :: struct {
+	species: int,
+	level:   int,
+	price:   int,
 }
 
 Colony :: struct {
@@ -198,6 +403,10 @@ Colony :: struct {
 	next_id:   int,
 	pending_tiles: [dynamic]Hex, // tiles where wilds and your monsters share a tile
 	messages:  [dynamic]string, // recent world notifications
+	floats:    [dynamic]Tile_Float, // transient production popups
+	shop:      [dynamic]Shop_Offer, // Trading Post stock, rerolled each turn
+	shop_turn: int,                 // turn the current stock belongs to
+	items:     [dynamic]Item,       // unequipped item inventory
 }
 
 // ----------------------------------------------------------------------------
@@ -271,7 +480,7 @@ colony_reveal_radius :: proc(c: ^Colony, center: Hex, radius: int) {
 
 near_improvement :: proc(c: ^Colony, hex: Hex, radius: int, im: Improvement) -> bool {
 	for t in c.tiles {
-		if t.improvement == im && hex_distance(t.hex, hex) <= radius {
+		if tile_has(t, im) && hex_distance(t.hex, hex) <= radius {
 			return true
 		}
 	}
@@ -282,7 +491,7 @@ nearest_improvement_within :: proc(c: ^Colony, from: Hex, radius: int, im: Impro
 	best := -1
 	best_d := 1 << 30
 	for i in 0..<len(c.tiles) {
-		if c.tiles[i].improvement != im {
+		if !tile_has(c.tiles[i], im) {
 			continue
 		}
 		d := hex_distance(from, c.tiles[i].hex)
@@ -376,12 +585,13 @@ seed_starting_area :: proc(c: ^Colony) {
 
 colony_generate :: proc(seed: u64, width, height: int) -> Colony {
 	c := Colony{
-		width    = width,
-		height   = height,
-		seed     = seed,
-		floor    = 1,
-		gold     = 40,
-		crystals = 0,
+		width          = width,
+		height         = height,
+		seed           = seed,
+		floor          = 1,
+		gold           = 40,
+		crystals       = 0,
+		capture_cards  = STARTING_CAPTURE_CARDS,
 	}
 	c.rng = rng_make(seed)
 	c.tiles = make([dynamic]^Tile, 0)
@@ -391,6 +601,9 @@ colony_generate :: proc(seed: u64, width, height: int) -> Colony {
 	c.pending_tiles = make([dynamic]Hex, 0)
 	c.next_id = 1
 	c.messages = make([dynamic]string, 0)
+	c.floats = make([dynamic]Tile_Float, 0)
+	c.shop = make([dynamic]Shop_Offer, 0)
+	c.items = make([dynamic]Item, 0)
 
 	// Choose an open, neutral entrance; the underground extends without bound.
 	c.start_hex = choose_start_hex(seed)
@@ -416,6 +629,7 @@ colony_generate :: proc(seed: u64, width, height: int) -> Colony {
 	materialize_around(&c, c.start_hex, SIM_DISTANCE)
 	seed_starting_area(&c)
 	colony_reveal_around(&c, c.start_hex)
+	colony_roll_shop(&c)
 	return c
 }
 
@@ -499,7 +713,7 @@ biome_at :: proc(seed: u64, hex: Hex) -> Terrain {
 		switch {
 		case m < 0.28: return .DUNGEON
 		case m < 0.50: return .GROVE
-		case m < 0.66: return .MUSHROOM
+		case m < 0.58: return .MUSHROOM
 		case m < 0.84: return .JUNGLE
 		case:          return .GROVE
 		}
@@ -546,6 +760,9 @@ colony_free :: proc(c: ^Colony) {
 	delete(c.tiles)
 	delete(c.tile_index)
 	delete(c.pending_tiles)
+	delete(c.floats)
+	delete(c.shop)
+	delete(c.items)
 	for s in c.messages {
 		delete(s)
 	}
@@ -556,6 +773,9 @@ colony_free :: proc(c: ^Colony) {
 	c.tile_index = make(map[u64]int)
 	c.pending_tiles = make([dynamic]Hex, 0)
 	c.messages = make([dynamic]string, 0)
+	c.floats = make([dynamic]Tile_Float, 0)
+	c.shop = make([dynamic]Shop_Offer, 0)
+	c.items = make([dynamic]Item, 0)
 }
 
 // ----------------------------------------------------------------------------
@@ -614,6 +834,19 @@ monster_move_cost :: proc(m: ^Monster, t: Terrain) -> f32 {
 	return terrain_move_cost(t) * factor * 0.5
 }
 
+// Step cost to a specific tile, including a Road's discount.
+monster_step_cost :: proc(c: ^Colony, m: ^Monster, hex: Hex) -> f32 {
+	t := tile_at(c, hex)
+	if t == nil {
+		return 99
+	}
+	cost := monster_move_cost(m, t.terrain)
+	if tile_has(t, .ROAD) {
+		cost *= ROAD_MOVE_FACTOR
+	}
+	return cost
+}
+
 tile_passable :: proc(c: ^Colony, m: ^Monster, hex: Hex) -> bool {
 	t := tile_at(c, hex)
 	if t == nil {
@@ -621,7 +854,11 @@ tile_passable :: proc(c: ^Colony, m: ^Monster, hex: Hex) -> bool {
 	}
 	#partial switch t.terrain {
 	case .WATER:
-		if t.improvement != .BRIDGE && !creature_has_element(&m.creature, .AQUA) {
+		if t.improvement == .DRAWBRIDGE {
+			if m.wild && !t.drawbridge_down {
+				return false // raised drawbridge keeps wilds out
+			}
+		} else if t.improvement != .BRIDGE && !creature_has_element(&m.creature, .AQUA) {
 			return false
 		}
 	case .TUNDRA:
@@ -646,7 +883,24 @@ tile_passable :: proc(c: ^Colony, m: ^Monster, hex: Hex) -> bool {
 	if t.improvement == .WALL && !creature_has_element(&m.creature, .AIR) {
 		return false
 	}
+	// Gates block wilds entirely, but your own monsters pass freely.
+	if t.improvement == .GATE && m.wild {
+		return false
+	}
 	return true
+}
+
+// Improvements that stop a wild's step (so it may batter them instead of
+// walking around). Air monsters fly over Walls, so callers check passability
+// first.
+improvement_blocks_wilds :: proc(t: ^Tile) -> bool {
+	#partial switch t.improvement {
+	case .WALL, .GATE:
+		return true
+	case .DRAWBRIDGE:
+		return !t.drawbridge_down
+	}
+	return false
 }
 
 // Human-readable reason a move is blocked, for the status line. tile_passable
@@ -670,6 +924,9 @@ move_block_reason :: proc(c: ^Colony, m: ^Monster, hex: Hex) -> cstring {
 	case .QUICKSAND:
 		return "Blocked: Quicksand is Ground-only."
 	}
+	if t.improvement == .GATE && m.wild {
+		return "Blocked: a Gate keeps wilds out."
+	}
 	if t.improvement == .WALL {
 		return "Blocked: a Wall stops ground monsters (Air can fly over)."
 	}
@@ -691,8 +948,7 @@ colony_move :: proc(c: ^Colony, monster_index: int, target: Hex) -> int {
 	if monsters_on_tile(c, target, false) >= MAX_MONSTERS_PER_TILE {
 		return 3
 	}
-	t := tile_at(c, target)
-	cost := monster_move_cost(m, t.terrain)
+	cost := monster_step_cost(c, m, target)
 	if m.creature.energy < cost {
 		return 4
 	}
@@ -725,19 +981,22 @@ can_build :: proc(c: ^Colony, hex: Hex, im: Improvement) -> bool {
 	if t == nil || !improvement_valid_on(im, t.terrain) {
 		return false
 	}
-	if im == .WELL && !adjacent_to_water(c, hex) {
+	if (im == .WELL || im == .LUMBER_MILL) && !adjacent_to_water(c, hex) {
 		return false
+	}
+	if improvement_stacks(im) && t.overlay == im {
+		return false // already stacked here
 	}
 	return true
 }
 
-// Counts only improvements that currently stand. Destroyed ones are reset to
-// `.NONE`, so a replacement after a raid costs the same as building a fresh one
-// would have — the price never reflects improvements you've already lost.
+// Counts only improvements that currently stand (building or overlay). Destroyed
+// ones are reset to `.NONE`, so a replacement after a raid costs the same as
+// building a fresh one would have.
 improvement_count :: proc(c: ^Colony, im: Improvement) -> int {
 	n := 0
 	for t in c.tiles {
-		if t.improvement == im {
+		if tile_has(t, im) {
 			n += 1
 		}
 	}
@@ -752,8 +1011,9 @@ improvement_cost_scaled :: proc(c: ^Colony, im: Improvement) -> int {
 // Repeated builds get pricier; how fast depends on the improvement. Walls are
 // meant to be built in bulk, so their price climbs slowly.
 improvement_cost_divisor :: proc(im: Improvement) -> int {
-	if im == .WALL {
-		return 6
+	#partial switch im {
+	case .WALL, .GATE, .ROAD, .SCARECROW, .SPIKE_TRAP:
+		return 6 // built in bulk; price climbs slowly
 	}
 	return 3
 }
@@ -767,9 +1027,14 @@ colony_build :: proc(c: ^Colony, hex: Hex, im: Improvement) -> int {
 	if !colony_spend_gold(c, cost) {
 		return 3
 	}
-	// Replaces whatever was here (stored contents are lost).
+	if improvement_stacks(im) {
+		// Stackable (Road): lay it in the overlay slot, keep the building.
+		t.overlay = im
+		return 0
+	}
+	// Replaces the building (stored contents are lost); a Road overlay survives.
 	t.improvement = im
-	t.improvement_hp = IMPROVEMENT_HP
+	t.improvement_hp = improvement_max_hp(im)
 	t.stored = 0
 	colony_recompute_caps(c)
 	return 0
@@ -791,25 +1056,36 @@ buildable_improvements :: proc(c: ^Colony, hex: Hex, out: []Improvement) -> int 
 // Repairs cost half the improvement's base cost when fully damaged, prorated by
 // the missing HP. Repairs never scale with how many you own.
 improvement_repair_cost :: proc(im: Improvement, hp: int) -> int {
-	if im == .NONE || hp >= IMPROVEMENT_HP {
+	max_hp := improvement_max_hp(im)
+	if im == .NONE || max_hp <= 0 || hp >= max_hp {
 		return 0
 	}
-	missing := IMPROVEMENT_HP - hp
-	return max(1, (improvement_cost(im) * missing) / (2 * IMPROVEMENT_HP))
+	missing := max_hp - hp
+	return max(1, (improvement_cost(im) * missing) / (2 * max_hp))
 }
 
 // 0 ok, 1 nothing to repair, 2 not enough gold.
 colony_repair :: proc(c: ^Colony, hex: Hex) -> int {
 	t := tile_at(c, hex)
-	if t == nil || t.improvement == .NONE || t.improvement_hp >= IMPROVEMENT_HP {
+	if t == nil || t.improvement == .NONE || t.improvement_hp >= improvement_max_hp(t.improvement) {
 		return 1
 	}
 	cost := improvement_repair_cost(t.improvement, t.improvement_hp)
 	if !colony_spend_gold(c, cost) {
 		return 2
 	}
-	t.improvement_hp = IMPROVEMENT_HP
+	t.improvement_hp = improvement_max_hp(t.improvement)
 	return 0
+}
+
+// Toggle a Drawbridge: raised blocks wilds, lowered acts as a bridge.
+colony_toggle_drawbridge :: proc(c: ^Colony, hex: Hex) -> bool {
+	t := tile_at(c, hex)
+	if t == nil || t.improvement != .DRAWBRIDGE {
+		return false
+	}
+	t.drawbridge_down = !t.drawbridge_down
+	return true
 }
 
 // ----------------------------------------------------------------------------
@@ -868,7 +1144,7 @@ colony_recompute_caps :: proc(c: ^Colony) {
 	for t in c.tiles {
 		#partial switch t.improvement {
 		case .TREASURY: gold_cap += STORAGE_CAP
-		case .GRANARY:  food_cap += STORAGE_CAP
+		case .GRANARY, .SILO: food_cap += STORAGE_CAP
 		case:
 		}
 	}
@@ -899,16 +1175,6 @@ colony_deposit_gold :: proc(c: ^Colony, from: Hex, amount: int) -> int {
 		}
 	}
 	return kept
-}
-
-granary_count :: proc(c: ^Colony) -> int {
-	n := 0
-	for t in c.tiles {
-		if t.improvement == .GRANARY {
-			n += 1
-		}
-	}
-	return n
 }
 
 // Gross per-turn output for the colony HUD (before range/storage limits, so a
@@ -969,6 +1235,84 @@ colony_buy_capture_card :: proc(c: ^Colony) -> int {
 		return 2
 	}
 	c.capture_cards += 1
+	return 0
+}
+
+// ----------------------------------------------------------------------------
+// Trading Post stock: a couple of monsters for sale, rerolled each turn. Which
+// species appear (rate) and what they cost (price) both come from their rarity.
+// ----------------------------------------------------------------------------
+
+SHOP_SLOTS :: 2
+
+shop_pick_species :: proc(c: ^Colony) -> int {
+	total := 0
+	for sp in SPECIES {
+		total += rarity_weight(sp.rarity)
+	}
+	if total <= 0 {
+		return 0
+	}
+	roll := rng_below(&c.rng, total)
+	acc := 0
+	for i in 0..<len(SPECIES) {
+		acc += rarity_weight(SPECIES[i].rarity)
+		if roll < acc {
+			return i
+		}
+	}
+	return 0
+}
+
+colony_roll_shop :: proc(c: ^Colony) {
+	clear(&c.shop)
+	for _ in 0..<SHOP_SLOTS {
+		sp := shop_pick_species(c)
+		lvl := max(1, 1 + c.turn / 15 + rng_below(&c.rng, 2))
+		append(&c.shop, Shop_Offer{species = sp, level = lvl, price = recruit_price(sp, lvl)})
+	}
+	c.shop_turn = c.turn
+}
+
+// First free, passable land tile at the entrance or beside it.
+find_placement_tile :: proc(c: ^Colony, m: ^Monster) -> (Hex, bool) {
+	if t := tile_at(c, c.start_hex); t != nil && monsters_on_tile(c, c.start_hex, false) < MAX_MONSTERS_PER_TILE && tile_passable(c, m, c.start_hex) {
+		return c.start_hex, true
+	}
+	for n in hex_neighbors(c.start_hex) {
+		if t := tile_at(c, n); t != nil && monsters_on_tile(c, n, false) < MAX_MONSTERS_PER_TILE && tile_passable(c, m, n) {
+			return n, true
+		}
+	}
+	return c.start_hex, false
+}
+
+// 0 ok, 1 bad offer, 2 not enough gold, 3 no room at the entrance.
+colony_buy_recruit :: proc(c: ^Colony, offer_index: int) -> int {
+	if offer_index < 0 || offer_index >= len(c.shop) {
+		return 1
+	}
+	offer := c.shop[offer_index]
+	m := Monster{
+		id       = c.next_id,
+		creature = creature_make(offer.species, offer.level, SPECIES[offer.species].name, &c.rng),
+		pos      = c.start_hex,
+	}
+	h, room := find_placement_tile(c, &m)
+	if !room {
+		creature_free_all(&m.creature)
+		return 3
+	}
+	if !colony_spend_gold(c, offer.price) {
+		creature_free_all(&m.creature)
+		return 2
+	}
+	m.pos = h
+	c.next_id += 1
+	m.creature.energy = m.creature.energy_max
+	m.food = monster_satiety_max(&m)
+	append(&c.roster, m)
+	ordered_remove(&c.shop, offer_index)
 	return 0
 }
 
@@ -1049,7 +1393,31 @@ nearest_farm_pool :: proc(c: ^Colony, from: Hex, radius: int, pools: []int) -> i
 	return best
 }
 
+// Record a transient production popup at a tile (drawn for FLOAT_LIFE seconds).
+colony_add_float :: proc(c: ^Colony, hex: Hex, kind: Float_Kind, amount: int) {
+	if amount <= 0 {
+		return
+	}
+	append(&c.floats, Tile_Float{hex = hex, kind = kind, amount = amount, t0 = f32(rl.GetTime())})
+	if len(c.floats) > 200 {
+		ordered_remove(&c.floats, 0)
+	}
+}
+
 colony_end_turn :: proc(c: ^Colony) {
+	// Drop production popups left over from previous turns.
+	{
+		now := f32(rl.GetTime())
+		i := 0
+		for i < len(c.floats) {
+			if now - c.floats[i].t0 > FLOAT_LIFE {
+				ordered_remove(&c.floats, i)
+			} else {
+				i += 1
+			}
+		}
+	}
+
 	// farm_pool is parallel to the tile list; watchtower reveals can materialize
 	// new tiles, so pin the count we sized against.
 	n_tiles := len(c.tiles)
@@ -1059,33 +1427,57 @@ colony_end_turn :: proc(c: ^Colony) {
 		farm_pool[i] = 0
 	}
 
-	// 1. Mines: a staffed mine deposits gold (to a treasury in range, else to
-	// the stockpile, which caps at the base cap).
+	// 1. Mines & Quarries deliver gold (Marketplace boosts nearby Mines).
 	for t in c.tiles {
-		if t.improvement != .MINE {
+		if t.improvement != .MINE && t.improvement != .QUARRY {
 			continue
 		}
 		if monsters_on_tile(c, t.hex, false) == 0 {
 			continue
 		}
-		colony_deposit_gold(c, t.hex, MINE_GOLD_YIELD)
+		yield := t.improvement == .QUARRY ? QUARRY_GOLD_YIELD : MINE_GOLD_YIELD
+		if t.improvement == .MINE && near_improvement(c, t.hex, MARKET_RADIUS, .MARKETPLACE) {
+			yield += int(f32(yield) * MARKET_BONUS)
+		}
+		kept := colony_deposit_gold(c, t.hex, yield)
+		if kept > 0 {
+			colony_add_float(c, t.hex, .GOLD, kept)
+		}
 	}
 
-	// 2. Farms (staffed) and Wells produce a local food pool.
+	// 1b. Crystal refineries turn gold into crystals.
+	for t in c.tiles {
+		if t.improvement != .CRYSTAL_REFINERY {
+			continue
+		}
+		if colony_total_gold(c) >= CRYSTAL_REFINERY_COST && colony_spend_gold(c, CRYSTAL_REFINERY_COST) {
+			c.crystals += 1
+			colony_add_float(c, t.hex, .CRYSTAL, 1)
+		}
+	}
+
+	// 2. Farms / Lumber Mills (staffed) and Wells produce a local food pool.
 	for i in 0..<n_tiles {
 		t := c.tiles[i]
 		if t.improvement == .FARM && monsters_on_tile(c, t.hex, false) > 0 {
 			farm_pool[i] = FARM_FOOD_YIELD
+			colony_add_float(c, t.hex, .FOOD, FARM_FOOD_YIELD)
+		} else if t.improvement == .LUMBER_MILL && monsters_on_tile(c, t.hex, false) > 0 {
+			farm_pool[i] = LUMBER_FOOD_YIELD
+			colony_add_float(c, t.hex, .FOOD, LUMBER_FOOD_YIELD)
 		} else if t.improvement == .WELL {
 			farm_pool[i] = WELL_FOOD_YIELD
+			colony_add_float(c, t.hex, .FOOD, WELL_FOOD_YIELD)
 		}
 	}
 
-	// Watchtowers keep their surroundings revealed.
+	// Watchtowers & Beacons keep their surroundings revealed.
 	for i in 0..<n_tiles {
 		t := c.tiles[i]
 		if t.improvement == .WATCHTOWER {
 			colony_reveal_radius(c, t.hex, WATCHTOWER_REVEAL)
+		} else if t.improvement == .BEACON {
+			colony_reveal_radius(c, t.hex, BEACON_REVEAL)
 		}
 	}
 
@@ -1101,6 +1493,7 @@ colony_end_turn :: proc(c: ^Colony) {
 			if move > 0 {
 				g.stored += move
 				farm_pool[i] -= move
+				colony_add_float(c, g.hex, .FOOD_IN, move)
 			}
 		}
 	}
@@ -1116,6 +1509,7 @@ colony_end_turn :: proc(c: ^Colony) {
 		gi := nearest_improvement_within(c, m.pos, FEED_RADIUS, .GRANARY)
 		if gi >= 0 && c.tiles[gi].stored >= need {
 			c.tiles[gi].stored -= need
+			colony_add_float(c, c.tiles[gi].hex, .FOOD_OUT, need)
 			fed = true
 		}
 		if !fed {
@@ -1139,6 +1533,9 @@ colony_end_turn :: proc(c: ^Colony) {
 			}
 		}
 	}
+
+	// 4b. Barracks heal and train nearby monsters (each eats food to run).
+	colony_barracks(c, n_tiles)
 
 	// 5. Deaths + energy refill.
 	i := 0
@@ -1181,9 +1578,146 @@ colony_end_turn :: proc(c: ^Colony) {
 	colony_roam_wilds(c)
 	colony_despawn_wilds(c)
 	colony_crowd_fights(c)
+	colony_fountains(c)
+	colony_turrets(c)
+	colony_apply_traps(c)
 	colony_resolve_wild_actions(c)
 
+	// Gold Finder items trickle a little gold each turn.
+	for m in c.roster {
+		if m.wild || m.creature.hp <= 0 {
+			continue
+		}
+		if amt := ITEM_DATA[m.creature.item].gold_per_turn; amt > 0 {
+			c.gold += amt
+			colony_add_float(c, m.pos, .GOLD, amt)
+		}
+	}
+
 	c.turn += 1
+	// The Trading Post restocks each turn.
+	colony_roll_shop(c)
+}
+
+// Barracks: each one eats food from a nearby Granary and, if fed, heals and
+// grants a little XP to your monsters nearby.
+colony_barracks :: proc(c: ^Colony, n_tiles: int) {
+	for i in 0..<n_tiles {
+		t := c.tiles[i]
+		if t.improvement != .BARRACKS {
+			continue
+		}
+		gi := nearest_improvement_within(c, t.hex, DELIVER_RADIUS, .GRANARY)
+		if gi < 0 || c.tiles[gi].stored < BARRACKS_UPKEEP {
+			continue // no rations, no training
+		}
+		c.tiles[gi].stored -= BARRACKS_UPKEEP
+		for &m in c.roster {
+			if m.wild || m.creature.hp <= 0 {
+				continue
+			}
+			if hex_distance(m.pos, t.hex) <= BARRACKS_RANGE {
+				m.creature.hp = min(m.creature.hp + BARRACKS_HEAL, m.creature.max_hp)
+				_ = monster_add_xp(&m, BARRACKS_XP)
+			}
+		}
+	}
+}
+
+// Fountains hand FOUNTAIN_OUTPUT energy to the closest recipient within range:
+// a Turret that needs charge, or one of your monsters that needs energy.
+colony_fountains :: proc(c: ^Colony) {
+	for i in 0..<len(c.tiles) {
+		f := c.tiles[i]
+		if f.improvement != .FOUNTAIN {
+			continue
+		}
+		best_d := 1 << 30
+		best_turret := -1
+		best_monster := -1
+		for j in 0..<len(c.tiles) {
+			t := c.tiles[j]
+			if t.improvement != .TURRET || t.stored >= TURRET_CAP {
+				continue
+			}
+			d := hex_distance(f.hex, t.hex)
+			if d <= FOUNTAIN_RANGE && d < best_d {
+				best_d = d
+				best_turret = j
+			}
+		}
+		for k in 0..<len(c.roster) {
+			m := &c.roster[k]
+			if m.wild || m.creature.hp <= 0 || m.creature.energy >= m.creature.energy_max {
+				continue
+			}
+			d := hex_distance(f.hex, m.pos)
+			if d <= FOUNTAIN_RANGE && d < best_d {
+				best_d = d
+				best_turret = -1
+				best_monster = k
+			}
+		}
+		if best_turret >= 0 {
+			c.tiles[best_turret].stored = min(TURRET_CAP, c.tiles[best_turret].stored + FOUNTAIN_OUTPUT)
+		} else if best_monster >= 0 {
+			m := &c.roster[best_monster]
+			m.creature.energy = min(m.creature.energy_max, m.creature.energy + f32(FOUNTAIN_OUTPUT))
+			colony_add_float(c, m.pos, .ENERGY, FOUNTAIN_OUTPUT)
+		}
+	}
+}
+
+// Turrets spend stored charge to shoot the nearest wild in range.
+colony_turrets :: proc(c: ^Colony) {
+	for i in 0..<len(c.tiles) {
+		t := c.tiles[i]
+		if t.improvement != .TURRET || t.stored < TURRET_COST {
+			continue
+		}
+		best_d := 1 << 30
+		best_w := -1
+		for k in 0..<len(c.roster) {
+			m := c.roster[k]
+			if !m.wild || m.creature.hp <= 0 {
+				continue
+			}
+			d := hex_distance(t.hex, m.pos)
+			if d <= TURRET_RANGE && d < best_d {
+				best_d = d
+				best_w = k
+			}
+		}
+		if best_w < 0 {
+			continue
+		}
+		t.stored -= TURRET_COST
+		w := &c.roster[best_w]
+		w.creature.hp -= TURRET_DAMAGE
+		colony_add_float(c, w.pos, .DAMAGE, TURRET_DAMAGE)
+		if w.creature.hp <= 0 {
+			remove_monster_at(c, best_w, false)
+		}
+	}
+}
+
+// Spike traps wound any wild standing on them (they can die to the spikes).
+colony_apply_traps :: proc(c: ^Colony) {
+	i := 0
+	for i < len(c.roster) {
+		m := &c.roster[i]
+		if m.wild {
+			if t := tile_at(c, m.pos); t != nil && t.improvement == .SPIKE_TRAP {
+				m.creature.hp -= SPIKE_TRAP_DAMAGE
+				colony_add_float(c, m.pos, .DAMAGE, SPIKE_TRAP_DAMAGE)
+				if m.creature.hp <= 0 {
+					remove_monster_at(c, i, false)
+					continue
+				}
+			}
+		}
+		i += 1
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -1336,7 +1870,7 @@ spawn_level_for :: proc(c: ^Colony, hex: Hex) -> int {
 spawn_wild_at :: proc(c: ^Colony, hex: Hex, species: int, level: int) {
 	m := Monster{
 		id       = c.next_id,
-		creature = creature_make(species, level, SPECIES[species].name),
+		creature = creature_make(species, level, SPECIES[species].name, &c.rng),
 		pos      = hex,
 		wild     = true,
 	}
@@ -1415,6 +1949,12 @@ colony_spawn_wilds :: proc(c: ^Colony) {
 		if near_improvement(c, t.hex, WATCHTOWER_DETER, .WATCHTOWER) {
 			continue // watchtowers deter spawns
 		}
+		if near_improvement(c, t.hex, BEACON_DETER, .BEACON) {
+			continue // beacons deter over a wider area
+		}
+		if near_improvement(c, t.hex, SCARECROW_DETER, .SCARECROW) {
+			continue // scarecrows keep spawns out
+		}
 		// Simulated on all tiles near your monsters, explored or not.
 		if nearest_player_distance(c, t.hex) > SIM_DISTANCE {
 			continue
@@ -1444,6 +1984,43 @@ colony_despawn_wilds :: proc(c: ^Colony) {
 			}
 			remove_monster_at(c, i, false)
 			continue
+		}
+		// Scarecrows spook nearby wilds — they bolt away from it rather than
+		// vanishing outright. Tougher monsters are more likely to shrug it off.
+		if near_improvement(c, m.pos, SCARECROW_PANIC, .SCARECROW) {
+			panic := clamp(SCARECROW_PANIC_CHANCE - f32(m.creature.level) * 0.06, 0.05, SCARECROW_PANIC_CHANCE)
+			if rng_f32(&c.rng) < panic {
+				if sc_i := nearest_improvement_within(c, m.pos, SCARECROW_PANIC, .SCARECROW); sc_i >= 0 {
+					sc := c.tiles[sc_i].hex
+					start := m.pos
+					// Step up to two tiles, each time choosing the neighbour that
+					// is farthest from the Scarecrow.
+					for _ in 0 ..< 2 {
+						best := m.pos
+						best_d := hex_distance(m.pos, sc)
+						for n in hex_neighbors(m.pos) {
+							if !tile_passable(c, m, n) {
+								continue
+							}
+							if monsters_on_tile(c, n, false) > 0 {
+								continue // don't flee onto the player
+							}
+							if d := hex_distance(n, sc); d > best_d {
+								best_d = d
+								best = n
+							}
+						}
+						if hex_equal(best, m.pos) {
+							break
+						}
+						m.pos = best
+					}
+					if !hex_equal(m.pos, start) {
+						colony_notify(c, "%s bolts from a Scarecrow!", m.creature.name)
+						colony_add_float(c, start, .FLEE, 1)
+					}
+				}
+			}
 		}
 		i += 1
 	}
@@ -1514,12 +2091,29 @@ colony_roam_wilds :: proc(c: ^Colony) {
 		start := rng_below(&c.rng, 6)
 		for k in 0..<6 {
 			n := ns[(start + k) % 6]
-			if tile_at(c, n) != nil && tile_passable(c, m, n) {
+			t := tile_at(c, n)
+			if t == nil {
+				continue
+			}
+			if tile_passable(c, m, n) {
 				m.pos = n
+				break
+			}
+			// It tried to step into a fortification and couldn't, so it throws
+			// itself at it. Only the first heading it picks counts as the
+			// attempt; blocked terrain just makes it try another direction.
+			if k == 0 && improvement_blocks_wilds(t) {
+				damage_improvement(c, t, wild_improvement_damage(m))
 				break
 			}
 		}
 	}
+}
+
+// Damage a wild deals to an improvement — whether it battered a blocker on its
+// way past or is wrecking one it's standing on.
+wild_improvement_damage :: proc(m: ^Monster) -> int {
+	return 6 + m.creature.level * 3
 }
 
 damage_improvement :: proc(c: ^Colony, t: ^Tile, dmg: int) {
@@ -1527,6 +2121,8 @@ damage_improvement :: proc(c: ^Colony, t: ^Tile, dmg: int) {
 		return
 	}
 	t.improvement_hp -= dmg
+	t.hit_t0 = f32(rl.GetTime())
+	colony_add_float(c, t.hex, .DAMAGE, dmg)
 	if t.improvement_hp <= 0 {
 		// Destroyed: contents are lost.
 		colony_notify(c, "Wilds destroyed your %s!", improvement_name(t.improvement))
@@ -1560,7 +2156,7 @@ colony_resolve_wild_actions :: proc(c: ^Colony) {
 			continue
 		}
 		if t := tile_at(c, m.pos); t != nil && t.improvement != .NONE {
-			damage_improvement(c, t, 6 + m.creature.level * 3)
+			damage_improvement(c, t, wild_improvement_damage(m))
 		}
 	}
 }
@@ -1586,7 +2182,7 @@ colony_capture :: proc(c: ^Colony, wild_id: int) -> bool {
 colony_add_starter :: proc(c: ^Colony, species_idx: int) -> int {
 	m := Monster{
 		id       = c.next_id,
-		creature = creature_make(species_idx, 1, SPECIES[species_idx].name),
+		creature = creature_make(species_idx, 1, SPECIES[species_idx].name, &c.rng),
 		pos      = c.start_hex,
 	}
 	c.next_id += 1

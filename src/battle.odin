@@ -175,6 +175,17 @@ battle_start :: proc(defenders: []^Creature, enemies: []^Creature, enemy_ids: []
 		prepare_piles(b.party[i], &b.rng)
 	}
 
+	// Species abilities that fire once at the start of the fight (Intimidate
+	// needs the opposing side, so both sides are applied here), then item buffs.
+	for e in b.enemies {
+		ability_battle_start(e, b.party[:])
+		item_battle_start(e)
+	}
+	for i in 0..<len(b.party) {
+		ability_battle_start(b.party[i], b.enemies[:])
+		item_battle_start(b.party[i])
+	}
+
 	n := len(b.enemies)
 	battle_log(&b, "%d wild%s attack%s!", n, n == 1 ? "" : "s", n == 1 ? "s" : "")
 
@@ -281,11 +292,15 @@ creature_draw :: proc(c: ^Creature, n: int, rng: ^Rng) {
 }
 
 creature_begin_round :: proc(c: ^Creature, rng: ^Rng) {
-	c.block = 0
 	c.played = 0
 	// Energy is generated each round and carries over up to the bank cap.
 	c.energy = min(c.energy + c.energy_regen, c.energy_max)
-	creature_draw(c, 5, rng)
+	draw := 5
+	if c.ability == .Lucky {
+		draw += ABILITY_LUCKY_DRAW
+	}
+	draw += ITEM_DATA[c.item].draw
+	creature_draw(c, draw, rng)
 }
 
 creature_end_round :: proc(c: ^Creature) {
@@ -293,8 +308,14 @@ creature_end_round :: proc(c: ^Creature) {
 		append(&c.discard, card)
 	}
 	clear(&c.hand)
+	// Block is cleared between rounds (here rather than in begin_round so a
+	// battle-start ability like Guardian keeps its Block through turn one).
+	c.block = 0
 	if c.vulnerable > 0 {
 		c.vulnerable -= 1
+	}
+	if c.ability == .Regenerator && c.hp > 0 {
+		c.hp = min(c.hp + ABILITY_REGENERATOR_HP, c.max_hp)
 	}
 }
 
@@ -305,7 +326,12 @@ creature_end_round :: proc(c: ^Creature) {
 // ----------------------------------------------------------------------------
 
 actor_speed :: proc(b: ^Battle, a: Actor) -> f32 {
-	return a.side == .PLAYER ? b.party[a.index].speed : b.enemies[a.index].speed
+	if a.side == .PLAYER {
+		c := b.party[a.index]
+		return c.speed + c.speed_buff
+	}
+	e := b.enemies[a.index]
+	return e.speed + e.speed_buff
 }
 
 build_order :: proc(b: ^Battle) {
@@ -408,10 +434,20 @@ begin_round :: proc(b: ^Battle) {
 	}
 	if b.round > 0 {
 		for p in b.party {
+			before := p.hp
 			creature_end_round(p)
+			if p.hp > before {
+				creature_burst(p, popup_color(.HEAL), 0.6)
+				spawn_popup(b, .PLAYER, .HEAL, p.hp - before)
+			}
 		}
 		for e in b.enemies {
+			before := e.hp
 			creature_end_round(e)
+			if e.hp > before {
+				creature_burst(e, popup_color(.HEAL), 0.6)
+				spawn_popup(b, .WILD, .HEAL, e.hp - before)
+			}
 		}
 	}
 	b.round += 1
@@ -462,7 +498,7 @@ apply_damage :: proc(attacker: ^Creature, target: ^Creature, base: int, elem: El
 		}
 	}
 	if target.vulnerable > 0 {
-		dmg *= 1.5
+		dmg *= 1.0 + 0.5 * f32(target.vulnerable)
 	}
 	dmg *= 10.0 / (10.0 + creature_defense(target))
 	d := int(dmg)
@@ -507,7 +543,7 @@ estimate_damage :: proc(attacker, target: ^Creature, id: Move_Id) -> (total: int
 		}
 	}
 	if target.vulnerable > 0 {
-		f *= 1.5
+		f *= 1.0 + 0.5 * f32(target.vulnerable)
 	}
 	str_mult := max(1.0 + 0.1 * f32(attacker.strength), 0.1)
 	def_mult := 10.0 / (10.0 + creature_defense(target))
@@ -564,40 +600,62 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 		}
 		if total > 0 {
 			spawn_popup(b, target_side, .DAMAGE, total)
+			creature_burst(target, popup_color(.DAMAGE), 0.4)
 			b.shake = SHAKE_DUR
 			b.shake_mag = clamp(3.0 + f32(total) * 0.4, 3.0, 10.0)
+		}
+		// Vampiric (ability) and Vampire Fang (item) heal when a card lands.
+		heal := 0
+		if c.ability == .Vampiric {
+			heal += ABILITY_VAMPIRIC_HEAL
+		}
+		heal += ITEM_DATA[c.item].on_hit_heal
+		if heal > 0 && total > 0 {
+			before := c.hp
+			c.hp = min(c.hp + heal, c.max_hp)
+			if c.hp > before {
+				creature_burst(c, popup_color(.HEAL), 0.5)
+				spawn_popup(b, self_side, .HEAL, c.hp - before)
+			}
 		}
 		c.shake = CREATURE_SHAKE_DUR * 0.4
 	}
 	if m.block > 0 {
 		c.block += m.block
 		spawn_popup(b, self_side, .BLOCK, m.block)
+		creature_burst(c, popup_color(.BLOCK), 0.5)
 	}
 	if m.vulnerable > 0 {
 		target.vulnerable += m.vulnerable
 		spawn_popup(b, target_side, .DEBUFF, m.vulnerable)
+		creature_burst(target, popup_color(.DEBUFF), 0.5)
 	}
 	if m.strength > 0 {
 		c.strength += m.strength
 		spawn_popup(b, self_side, .BUFF, m.strength)
+		creature_burst(c, popup_color(.BUFF), 0.55)
 	}
 	if m.defense > 0 {
 		c.defense_buff += m.defense
 		spawn_popup(b, self_side, .DEFEND, int(m.defense))
+		creature_burst(c, popup_color(.DEFEND), 0.55)
 	}
 	if m.strength_down > 0 {
 		target.strength -= m.strength_down
 		spawn_popup(b, target_side, .WEAKEN, m.strength_down)
+		creature_burst(target, popup_color(.WEAKEN), 0.5)
 	}
 	if m.defense_down > 0 {
 		target.defense_debuff += m.defense_down
 		spawn_popup(b, target_side, .SHATTER, int(m.defense_down))
+		creature_burst(target, popup_color(.SHATTER), 0.5)
 	}
 	if m.heal > 0 {
 		before := c.hp
 		c.hp = min(c.hp + m.heal, c.max_hp)
 		if c.hp > before {
 			spawn_popup(b, self_side, .HEAL, c.hp - before)
+			creature_burst(c, popup_color(.HEAL), 0.6)
 		}
 	}
 	if m.draw > 0 {
@@ -743,7 +801,15 @@ capture_chance :: proc(b: ^Battle) -> f32 {
 		return 0
 	}
 	frac := f32(t.max_hp-t.hp) / f32(t.max_hp)
-	return clamp(frac, 0, 1) * 0.9
+	base := clamp(frac, 0, 1) * 0.9
+	// Higher level and rarer species are harder to catch.
+	lvl_mult := 1.0 / (1.0 + 0.08 * f32(max(t.level - 1, 0)))
+	// A Snare Kit on any of your monsters helps.
+	bonus := f32(0)
+	for p in b.party {
+		bonus = max(bonus, ITEM_DATA[p.item].capture_pct)
+	}
+	return clamp(base * lvl_mult * rarity_catch_mult(species_rarity(t.species)) + bonus, 0, 1)
 }
 
 attempt_capture :: proc(b: ^Battle) {
@@ -795,10 +861,12 @@ battle_update :: proc(b: ^Battle, dt: f32) {
 		c := b.party[i]
 		if c.shake > 0 { c.shake = max(c.shake - dt, 0) }
 		if c.flash > 0 { c.flash = max(c.flash - dt, 0) }
+		if c.fx_t > 0 { c.fx_t = max(c.fx_t - dt, 0) }
 	}
 	for e in b.enemies {
 		if e.shake > 0 { e.shake = max(e.shake - dt, 0) }
 		if e.flash > 0 { e.flash = max(e.flash - dt, 0) }
+		if e.fx_t > 0 { e.fx_t = max(e.fx_t - dt, 0) }
 	}
 
 	i := 0
@@ -854,11 +922,6 @@ player_ai_step :: proc(b: ^Battle) {
 // ----------------------------------------------------------------------------
 // Input
 // ----------------------------------------------------------------------------
-
-party_entry_rect :: proc(i: int) -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	return rl.Rectangle{sw - 236, 120 + f32(i) * 62, 216, 56}
-}
 
 end_turn_rect :: proc() -> rl.Rectangle {
 	sw := f32(rl.GetScreenWidth())
@@ -940,6 +1003,7 @@ COL_MUTED  :: rl.Color{140, 140, 158, 255}
 
 CARD_W :: f32(124)
 CARD_H :: f32(168)
+CARD_HOVER_LIFT :: f32(14) // how far a hovered hand card rises
 
 hand_card_rect :: proc(index, count: int) -> rl.Rectangle {
 	sw := f32(rl.GetScreenWidth())
@@ -1030,16 +1094,24 @@ draw_popups :: proc(b: ^Battle) {
 	}
 }
 
-draw_energy :: proc(x, y, width: f32, current, maximum: f32) {
+draw_energy :: proc(x, y, width, current, maximum: f32, preview: f32 = 0) {
 	h := f32(16)
 	rec := rl.Rectangle{x, y - h / 2, width, h}
 	rl.DrawRectangleRounded(rec, 0.5, 8, rl.Color{42, 38, 26, 255})
-	frac := clamp(current / max(maximum, 0.0001), 0, 1)
+	total := max(maximum, 0.0001)
+	frac := clamp(current / total, 0, 1)
 	if frac > 0 {
 		rl.DrawRectangleRounded(rl.Rectangle{x, y - h / 2, width * frac, h}, 0.5, 8, COL_ENERGY)
 	}
+	// Dim segment showing how much energy you'll generate next turn.
+	if preview > 0 {
+		pv := clamp((current + preview) / total, 0, 1)
+		if pv > frac {
+			rl.DrawRectangleRec(rl.Rectangle{x + width * frac, y - h / 2, width * (pv - frac), h}, rl.Color{COL_ENERGY[0], COL_ENERGY[1], COL_ENERGY[2], 120})
+		}
+	}
 	rl.DrawRectangleRoundedLinesEx(rec, 0.5, 8, 2, rl.Color{12, 12, 16, 255})
-	txt := fmt.ctprintf("%s / %s", fmt_num(current), fmt_num(maximum))
+	txt := preview > 0 ? fmt.ctprintf("%s / %s   +%s per turn", fmt_num(current), fmt_num(maximum), fmt_num(preview)) : fmt.ctprintf("%s / %s", fmt_num(current), fmt_num(maximum))
 	rl.DrawText(txt, i32(x), i32(y) + 12, 13, COL_MUTED)
 }
 
@@ -1060,13 +1132,23 @@ draw_creature_avatar :: proc(center: rl.Vector2, radius: f32, c: ^Creature, dead
 		a := u8(clamp(c.flash / 0.22, 0, 1) * 180)
 		rl.DrawCircleV(center, radius, rl.Color{255, 255, 255, a})
 	}
+
+	// Effect burst: an expanding coloured ring (heal / block / buff / debuff).
+	if c.fx_t > 0 && c.fx_dur > 0 {
+		t := 1.0 - c.fx_t / c.fx_dur
+		a := u8(clamp((1.0 - t) * 230, 0, 230))
+		col := rl.Color{c.fx_col[0], c.fx_col[1], c.fx_col[2], a}
+		ring := radius + 4 + t * 26
+		rl.DrawRing(center, ring, ring + 4, 0, 360, 48, col)
+		rl.DrawCircleV(center, radius + 2, rl.Color{c.fx_col[0], c.fx_col[1], c.fx_col[2], u8(f32(a) * 0.20)})
+	}
 }
 
 draw_card :: proc(id: Move_Id, rec: rl.Rectangle, playable, hovered: bool) {
 	m := move_data(id)
 	r := rec
 	if hovered && playable {
-		r.y -= 22
+		r.y -= CARD_HOVER_LIFT
 	}
 
 	base := element_color(m.element)
@@ -1125,7 +1207,7 @@ draw_battle :: proc(b: ^Battle) {
 	rl.DrawRectangle(0, i32(sh * 0.58), i32(sw), i32(sh * 0.42), COL_FLOOR)
 	draw_enemies(b)
 	draw_player_panel(b)
-	draw_party(b, sw)
+	draw_party_field(b, sw, sh)
 	draw_hand(b)
 	draw_popups(b)
 	rl.EndMode2D()
@@ -1198,7 +1280,7 @@ build_effects :: proc(c: ^Creature) -> ([4]Effect, int) {
 		n += 1
 	}
 	if c.vulnerable > 0 {
-		out[n] = {.VULN, c.vulnerable, 1.5}
+		out[n] = {.VULN, c.vulnerable, 1.0 + 0.5 * f32(c.vulnerable)}
 		n += 1
 	}
 	return out, n
@@ -1219,7 +1301,7 @@ effect_chip_text :: proc(e: Effect) -> cstring {
 	case .BLOCK:
 		return fmt.ctprintf("BLK %d", e.value)
 	case .VULN:
-		return fmt.ctprintf("VULN x1.50")
+		return fmt.ctprintf("VULN+%d x%.2f", e.value, e.mult)
 	}
 	return ""
 }
@@ -1294,6 +1376,12 @@ draw_enemies :: proc(b: ^Battle) {
 		lw := rl.MeasureText(lvl, 15)
 		rl.DrawText(lvl, i32(ex) - lw / 2, i32(ey) - 86, 15, element_color(creature_element(e)))
 
+		if e.ability != .NONE {
+			ab := ability_name(e.ability)
+			aw := rl.MeasureText(ab, 13)
+			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 70, 13, rl.Color{200, 180, 240, 255})
+		}
+
 		hp_rec := rl.Rectangle{ex - 70, ey + 70, 140, 18}
 		draw_bar(hp_rec, e.hp, e.max_hp, COL_HP)
 		hp_txt := fmt.ctprintf("%d/%d", e.hp, e.max_hp)
@@ -1303,13 +1391,13 @@ draw_enemies :: proc(b: ^Battle) {
 		// Energy (the same pool the wild uses on the colony map).
 		en_rec := rl.Rectangle{ex - 70, ey + 91, 140, 7}
 		draw_bar(en_rec, int(e.energy * 100), int(max(e.energy_max, 0.01) * 100), COL_ENERGY)
-		en_txt := fmt.ctprintf("En %s/%s", fmt_num(e.energy), fmt_num(e.energy_max))
+		en_txt := fmt.ctprintf("En %s/%s  +%s", fmt_num(e.energy), fmt_num(e.energy_max), fmt_num(e.energy_regen))
 		ew := rl.MeasureText(en_txt, 11)
 		rl.DrawText(en_txt, i32(ex) - ew / 2, i32(en_rec.y) + 7, 11, COL_TEXT)
 
 		// Active boosts, each with the damage multiplier it contributes.
 		effs, ne := build_effects(e)
-		draw_effects_column(effs[:ne], ex - 62, ey + 112)
+		draw_effects_row(effs[:ne], ex, ey + 104)
 
 		if i == b.target && e.hp > 0 {
 			rl.DrawCircleLinesV(rl.Vector2{ex, ey}, radius + 5, rl.Color{255, 235, 140, 255})
@@ -1335,6 +1423,11 @@ draw_player_panel :: proc(b: ^Battle) {
 
 	name := fmt.ctprintf("%s", c.name)
 	rl.DrawText(name, i32(panel.x) + 94, i32(panel.y) + 14, 22, COL_TEXT)
+	if c.ability != .NONE {
+		ab := ability_name(c.ability)
+		aw := rl.MeasureText(ab, 14)
+		rl.DrawText(ab, i32(panel.x + panel.width) - aw - 12, i32(panel.y) + 22, 14, rl.Color{200, 180, 240, 255})
+	}
 	sub := fmt.ctprintf("Lvl %d  %s  PWR x%s  DEF %s  SPD %s", c.level, element_label(c), fmt_num(c.power), fmt_num(creature_defense(c)), fmt_num(c.speed))
 	rl.DrawText(sub, i32(panel.x) + 94, i32(panel.y) + 40, 16, element_color(creature_element(c)))
 
@@ -1353,8 +1446,8 @@ draw_player_panel :: proc(b: ^Battle) {
 	}
 	rl.DrawText(fmt.ctprintf("XP %d/%d", c.xp, need), i32(panel.x) + 276, i32(panel.y) + 82, 11, rl.Color{150, 210, 255, 255})
 
-	rl.DrawText(fmt.ctprintf("Energy +%s", fmt_num(c.energy_regen)), i32(panel.x) + 94, i32(panel.y) + 96, 15, COL_MUTED)
-	draw_energy(panel.x + 156, panel.y + 104, 160, c.energy, c.energy_max)
+	rl.DrawText(fmt.ctprintf("Energy +%s/turn", fmt_num(c.energy_regen)), i32(panel.x) + 94, i32(panel.y) + 96, 15, COL_ENERGY)
+	draw_energy(panel.x + 156, panel.y + 104, 160, c.energy, c.energy_max, c.energy_regen)
 
 	piles := vfmt(b, "deck %d", len(c.deck))
 	rl.DrawText(piles, i32(panel.x) + 94, i32(panel.y) + 116, 14, COL_MUTED)
@@ -1364,40 +1457,86 @@ draw_player_panel :: proc(b: ^Battle) {
 	draw_effects_row(effs[:ne], panel.x + panel.width / 2, panel.y + 142)
 }
 
-draw_party :: proc(b: ^Battle, sw: f32) {
-	for c, i in b.party {
-		rec := party_entry_rect(i)
-		active := i == b.active
-		dead := c.hp <= 0
+// Your party, drawn as info cards on the field (bottom strip): avatar, name,
+// level/element, HP numbers, energy, active buff chips, and ability/item. The
+// acting monster is ringed, monsters that have ended their turn are dimmed, and
+// the dead are greyed out.
+draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
+	n := len(b.party)
+	if n == 0 {
+		return
+	}
+	gap := f32(10)
+	cw := min(f32(178), (sw - 60 - gap * f32(n - 1)) / f32(n))
+	ch := f32(100)
+	total := f32(n) * cw + gap * f32(n - 1)
+	start := sw / 2 - total / 2
+	// Sit above the hand *and* above the hovered card's damage tooltip.
+	top := hand_card_rect(0, 1).y - CARD_HOVER_LIFT - 60 - ch
 
-		bg := COL_PANEL
-		if active {
-			bg = rl.Color{34, 46, 42, 255}
+	for c, i in b.party {
+		x := start + f32(i) * (cw + gap)
+		rec := rl.Rectangle{x, top, cw, ch}
+		dead := c.hp <= 0
+		done := b.party_done[i]
+		active := i == b.active && b.phase == .PLAYER_ACTION && !dead
+
+		bg := rl.Color{24, 26, 34, 240}
+		if dead {
+			bg = rl.Color{20, 18, 22, 240}
+		} else if done {
+			bg = rl.Color{18, 20, 26, 240}
 		}
-		rl.DrawRectangleRounded(rec, 0.18, 6, bg)
-		border := rl.Color{60, 60, 78, 255}
+		rl.DrawRectangleRounded(rec, 0.09, 6, bg)
+		border := rl.Color{56, 58, 72, 255}
 		if active {
 			border = rl.Color{120, 230, 180, 255}
+		} else if dead {
+			border = rl.Color{74, 52, 58, 255}
 		}
-		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 6, 2, border)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.09, 6, 2, border)
 
-		ox, oy := creature_offset(b.party[i])
-		draw_creature_avatar(rl.Vector2{rec.x + 28 + ox, rec.y + 28 + oy}, 20, b.party[i], dead)
+		ox, oy := creature_offset(c)
+		draw_creature_avatar(rl.Vector2{x + 30 + ox, top + 38 + oy}, 23, c, dead)
 
 		name_col := COL_TEXT
 		if dead {
 			name_col = rl.Color{120, 120, 130, 255}
+		} else if done {
+			name_col = rl.Color{165, 165, 180, 255}
 		}
-		name := fmt.ctprintf("%s", c.name)
-		rl.DrawText(name, i32(rec.x) + 54, i32(rec.y) + 8, 15, name_col)
+		rl.DrawText(fmt.ctprintf("%s", c.name), i32(x) + 60, i32(top) + 6, 15, name_col)
+		rl.DrawText(fmt.ctprintf("Lvl %d  %s", c.level, element_label(c)), i32(x) + 60, i32(top) + 23, 13, element_color(creature_element(c)))
 
-		bar := rl.Rectangle{rec.x + 54, rec.y + 30, 150, 14}
-		draw_bar(bar, c.hp, c.max_hp, COL_HP)
-		lv := fmt.ctprintf("Lvl %d", c.level)
-		rl.DrawText(lv, i32(rec.x) + 54, i32(rec.y) + 44, 12, COL_MUTED)
+		hp := rl.Rectangle{x + 60, top + 42, cw - 72, 14}
+		draw_bar(hp, c.hp, c.max_hp, COL_HP)
+		ht := fmt.ctprintf("%d/%d", c.hp, c.max_hp)
+		hw := rl.MeasureText(ht, 12)
+		rl.DrawText(ht, i32(x + 60 + (cw - 72) / 2) - hw / 2, i32(top) + 43, 12, COL_TEXT)
 
-		if active {
-			rl.DrawText("ACTIVE", i32(rec.x) + 150, i32(rec.y) + 44, 12, rl.Color{120, 230, 180, 255})
+		en := rl.Rectangle{x + 60, top + 58, cw - 72, 6}
+		draw_bar(en, int(c.energy * 100), int(max(c.energy_max, 0.01) * 100), COL_ENERGY)
+
+		// Active buffs as chips along the bottom-left.
+		effs, ne := build_effects(c)
+		cx := x + 9
+		for e in effs[:ne] {
+			w := draw_effect_chip(cx, top + 66, effect_chip_text(e), effect_chip_color(e))
+			cx += w + 4
+			if cx > x + cw - 12 {
+				break
+			}
+		}
+
+		// Ability + item line.
+		ab := c.ability != .NONE ? ability_name(c.ability) : cstring("-")
+		it := c.item != .NONE ? item_name(c.item) : cstring("-")
+		rl.DrawText(fmt.ctprintf("%s  |  %s", ab, it), i32(x) + 9, i32(top) + 85, 11, rl.Color{180, 178, 200, 255})
+
+		if done && !dead {
+			ed := cstring("ENDED")
+			ew := rl.MeasureText(ed, 11)
+			rl.DrawText(ed, i32(x + cw) - 8 - ew, i32(top) + 4, 11, rl.Color{150, 150, 168, 255})
 		}
 	}
 }
@@ -1440,7 +1579,7 @@ draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rec
 		nw = f32(rl.MeasureText(note, 13))
 	}
 	box_w := max(lw, nw) + 24
-	box_h := has_note ? f32(50) : f32(32)
+	box_h := has_note ? f32(48) : f32(30)
 	bx := rec.x + rec.width / 2 - box_w / 2
 	sw := f32(rl.GetScreenWidth())
 	bx = clamp(bx, 6, sw - box_w - 6)
@@ -1466,7 +1605,7 @@ draw_hand :: proc(b: ^Battle) {
 		if hovered {
 			dr := rec
 			if playable {
-				dr.y -= 22 // draw_card lifts hovered playable cards
+				dr.y -= CARD_HOVER_LIFT // draw_card lifts hovered playable cards
 			}
 			draw_card_estimate(b.party[b.active], tgt, id, dr)
 		}
