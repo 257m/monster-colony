@@ -21,8 +21,26 @@ deps). Then:
 make run     # compile & play
 make build   # build bin/monster-colony
 make check   # type-check only
-make clean   # remove bin/
+make clean   # remove bin/ and build/
 ```
+
+### Play in the browser (WebAssembly)
+
+The game also builds to WebAssembly. This needs [Emscripten](https://emscripten.org/)
+(`emcc`). Easiest:
+
+```sh
+EMSDK_AUTO_INSTALL=1 make web   # downloads emsdk into ./.emsdk, then builds into build/web/
+make serve                      # builds, then serves http://localhost:8000/
+```
+
+If you already have Emscripten, just `make web` (or `EMSDK_DIR=~/emsdk make web`).
+The build script looks for `emcc` on `PATH`, then `$EMSDK_DIR`, `~/emsdk`,
+`~/.emsdk`, `/opt/emsdk`, `/usr/local/emsdk`, and `./.emsdk`.
+
+WASM can't be loaded from `file://`, so serve `build/web/` over http (any static
+host works — GitHub Pages, itch.io, `python3 -m http.server`, …). The build
+script fetches the raylib web library into `web/lib/` if it is missing.
 
 ### Controls (colony)
 
@@ -33,8 +51,10 @@ make clean   # remove bin/
 | `Space` / `E` | end turn |
 | `B` | build / repair / replace improvements |
 | `T` | Trading Post (when standing on one) |
-| `V` | view a monster's deck |
+| `V` | view a monster's deck & item |
 | `M` | monster encyclopedia |
+| `I` | improvements dex |
+| `G` | item bag |
 | RMB / `WASD` | pan, wheel to zoom |
 
 Battles are played with `1`–`5` / clicks to play cards, `E` to end your turn, and

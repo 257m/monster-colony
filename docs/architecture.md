@@ -10,6 +10,8 @@
 | `src/creature.odin` | ~590 | `Species` table, `Creature` struct, stat/level helpers |
 | `src/abilities.odin` | ~130 | Species ability pools, names/descriptions, battle-start hook |
 | `src/items.odin` | ~110 | Item table, effects, battle-start hook |
+| `src/web.odin` | ~80 | Browser (wasm) entry: exported `main_start` / `main_update` / … |
+| `src/web_allocator.odin` | ~110 | Emscripten-backed allocator used by the web build |
 | `src/moves.odin` | ~292 | `Element` chart, `Move` struct, `MOVE_DATA`, `Move_Id` enum |
 | `src/hex_math.odin` | ~100 | Axial hex coordinate math |
 | `src/hex_render.odin` | ~127 | Hex <-> screen transforms, camera, hex drawing |

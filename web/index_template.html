@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en-us">
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+
+	<title>Monster Colony</title>
+	<meta name="title" content="Monster Colony">
+	<meta name="description" content="An Odin + raylib colony builder in an infinite hex underground.">
+	<meta name="viewport" content="width=device-width">
+
+	<style>
+		html, body {
+			margin: 0px;
+			height: 100%;
+			overflow: hidden;
+			background-color: #0a0c10;
+		}
+		canvas.game_canvas {
+			border: 0px none;
+			background-color: #0a0c10;
+			padding-left: 0;
+			padding-right: 0;
+			margin-left: auto;
+			margin-right: auto;
+			display: block;
+			outline: none;
+		}
+		#loading {
+			position: absolute;
+			inset: 0;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			color: #c8c8dc;
+			font: 20px monospace;
+			pointer-events: none;
+		}
+	</style>
+</head>
+<body>
+	<div id="loading">loading Monster Colony…</div>
+	<canvas class="game_canvas" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" onmousedown="event.target.focus()" onkeydown="event.preventDefault()"></canvas>
+	<script type="text/javascript" src="odin.js"></script>
+	<script>
+		var odinMemoryInterface = new odin.WasmMemoryInterface();
+		odinMemoryInterface.setIntSize(4);
+		var odinImports = odin.setupDefaultImports(odinMemoryInterface);
+
+		// The Module is used as configuration for emscripten.
+		var Module = {
+			instantiateWasm: (imports, successCallback) => {
+				const newImports = {
+					...odinImports,
+					...imports
+				}
+
+				return WebAssembly.instantiateStreaming(fetch("index.wasm"), newImports).then(function(output) {
+					var e = output.instance.exports;
+					odinMemoryInterface.setExports(e);
+					odinMemoryInterface.setMemory(e.memory);
+					return successCallback(output.instance);
+				});
+			},
+			onRuntimeInitialized: () => {
+				var e = wasmExports;
+
+				// Calls any procedure marked with @init
+				e._start();
+
+				var loading = document.getElementById("loading");
+				if (loading) loading.remove();
+
+				// See src/web.odin for main_start / main_update / main_end.
+				e.main_start();
+
+				function send_resize() {
+					var canvas = document.getElementById('canvas');
+					e.web_window_size_changed(canvas.width, canvas.height);
+				}
+
+				window.addEventListener('resize', function(event) {
+					send_resize();
+				}, true);
+
+				send_resize();
+
+				function do_main_update() {
+					if (!e.main_update()) {
+						e.main_end();
+						// Calls procedures marked with @fini
+						e._end();
+						return;
+					}
+					window.requestAnimationFrame(do_main_update);
+				}
+
+				window.requestAnimationFrame(do_main_update);
+			},
+			print: (function() {
+				return function(text) {
+					if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+					console.log(text);
+				};
+			})(),
+			canvas: (function() {
+				return document.getElementById("canvas");
+			})()
+		};
+	</script>
+
+	<!-- Emscripten injects its javascript here -->
+	{{{ SCRIPT }}}
+</body>
+</html>

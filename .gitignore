@@ -1,2 +1,7 @@
 # Odin default output when building a package without -out
 *.bin
+
+# Web build output + local emscripten + downloaded raylib web library
+/build/
+/web/lib/
+/.emsdk/

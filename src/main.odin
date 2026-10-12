@@ -72,6 +72,9 @@ Game :: struct {
 	seed_rng: Rng,
 }
 
+// Desktop entry point. Web uses the exported hooks in web.odin instead.
+when ODIN_ARCH != .wasm32 && ODIN_ARCH != .wasm64p32 {
+
 main :: proc() {
 	rl.SetConfigFlags({.WINDOW_RESIZABLE, .MSAA_4X_HINT})
 	rl.InitWindow(1280, 720, "Monster Colony")
@@ -108,6 +111,8 @@ main :: proc() {
 		rl.EndDrawing()
 	}
 }
+
+} // when ODIN_ARCH != wasm
 
 // ----------------------------------------------------------------------------
 // Lifecycle
