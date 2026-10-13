@@ -76,6 +76,12 @@ Draws the world, then `draw_colony_hud`, `draw_roster_panel`,
   when you hover a build option (preview), when a tile is selected in build mode,
   and when you hover a built tile to inspect it. The build panel tags stackable
   improvements with **`+stack`**.
+- **Build-mode selection** (`draw_build_selection`): the tile you've picked in
+  build mode gets a bold pulsing green fill + thick outline and a `BUILD HERE`
+  label, so it's obvious which hex the panel is acting on.
+- **Overlay health**: stackable improvements (Road / Scarecrow / Spike Trap)
+  carry their own `Tile.overlay_hp`. The build panel lists the building and
+  overlay HP separately and repairs whichever is damaged (`tile_repair_target`).
 
 ## Panels / overlays
 
@@ -83,6 +89,7 @@ Draws the world, then `draw_colony_hud`, `draw_roster_panel`,
 |---|---|---|---|
 | Build / repair / replace | `B`, then click a tile | `update_build` | `draw_build_panel` |
 | Trading Post | `T` when your monster stands on one | `update_trade` | `draw_trade_panel` |
+| Arena | `T` when your monster stands on one | `update_arena` | `draw_arena` |
 | Choose attackers | attacking a tile | `update_attack_select` | `draw_attack_select` |
 | Ambush choice (Auto/Manual) | a wild ambush | `update_battle_choice` | `draw_battle_choice` |
 | Results | after a battle | `update_results` | `draw_results` |
@@ -90,15 +97,30 @@ Draws the world, then `draw_colony_hud`, `draw_roster_panel`,
 | Encyclopedia | `M` | `update_encyclopedia` | `draw_encyclopedia` |
 | Improvements dex | `I` | `update_improvements` | `draw_improvements` |
 | Item bag | `G` | `update_bag` | `draw_bag` |
+| Upgrades | `U` | `update_upgrades` | `draw_upgrades` |
+| Nursery | `C` | `update_nursery` | `draw_nursery` |
+| Monster storage | `H` | `update_storage` | `draw_storage` |
 | Starter picker | mode STARTER | `update_starter` | `draw_starter` |
 
 The **deck viewer** (`draw_deck_viewer`) lists the selected monster's stats, its
-**ability** and **item** (name + description), and its full deck as a scrollable
-card grid. The top-right **Equip item** button moves the next bagged item into
-this monster's slot (old item returns to the bag); **Unequip** drops it back.
+**genes** (`genes_label` + total), its **ability** and **item** (name +
+description), and its full deck as a scrollable card grid. The top-right
+**Equip item** button moves the next bagged item into this monster's slot (old
+item returns to the bag); **Unequip** drops it back.
+
+The **nursery panel** (`draw_nursery`, `C`) lists your Nurseries and, for the
+selected one, its breeding **pair** (2 slots, click to remove) and **babies** (4
+slots, click to take). The right side lists the monsters **beside the Nursery**
+(Lvl 5+, same species) — click one to move it in as a parent
+(`colony_assign_parent`).
+
+The **monster storage panel** (`draw_storage`, `H`) lists your Dens and, for the
+selected one, the monsters **nearby** (click to store with `colony_store_monster`)
+and those **in stasis** (click to deploy with `colony_deploy_stored`). Stored
+monsters cost no upkeep and don't count toward heat.
 
 The **improvements dex** (`draw_improvements`, `I`) is a browsable reference for
-all 23 improvements: a scrolling list on the left and, on the right, the animated
+all 26 improvements: a scrolling list on the left and, on the right, the animated
 icon, base cost, HP, category, the terrains it can be built on (chips coloured by
 terrain), the short effect line, and a long-form `improvement_detail` paragraph
 (word-wrapped by `draw_text_wrapped`).
@@ -129,6 +151,11 @@ the hit-test (update) and the draw. Keep them in sync when you move things.
 | `T` | Trading Post (only if the selected monster is on one) |
 | `V` | deck viewer |
 | `M` | encyclopedia |
+| `I` | improvements dex |
+| `G` | item bag |
+| `U` | crystal progression upgrades |
+| `C` | nursery (breeding) panel |
+| `H` | monster storage (Dens) |
 | `N` | new run (**game-over screen only**) |
 
 ### Battle (`battle_input`)

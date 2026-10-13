@@ -135,5 +135,24 @@ draw_tile_detail :: proc(ter: Terrain, hex: Hex, cx, cy, z: f32) {
 		rl.DrawCircleV(rl.Vector2{cx - 3.4 * z, cy - 2.5 * z}, 2.4 * z, rl.Color{20, 8, 10, 255})
 		rl.DrawCircleV(rl.Vector2{cx + 3.4 * z, cy - 2.5 * z}, 2.4 * z, rl.Color{20, 8, 10, 255})
 		rl.DrawLineEx(rl.Vector2{cx - 4 * z, cy + 4 * z}, rl.Vector2{cx + 4 * z, cy + 4 * z}, 1.6 * z, rl.Color{20, 8, 10, 255})
+	case .ARENA:
+		// A ringed fighting pit with crossed blades.
+		rl.DrawCircleLinesV(rl.Vector2{cx, cy}, 15 * z, rl.Color{198, 162, 86, 230})
+		rl.DrawCircleLinesV(rl.Vector2{cx, cy}, 11 * z, rl.Color{150, 116, 60, 200})
+		rl.DrawLineEx(rl.Vector2{cx - 6 * z, cy + 6.5 * z}, rl.Vector2{cx + 6 * z, cy - 5.5 * z}, 2.0 * z, rl.Color{214, 218, 228, 235})
+		rl.DrawLineEx(rl.Vector2{cx + 6 * z, cy + 6.5 * z}, rl.Vector2{cx - 6 * z, cy - 5.5 * z}, 2.0 * z, rl.Color{214, 218, 228, 235})
+	case .CRYSTAL_COVE:
+		// A cluster of glowing crystal shards.
+		pulse := 0.5 + 0.5 * math.sin(now * 1.8 + f32(hex.q) * 0.6)
+		rl.DrawCircleV(rl.Vector2{cx, cy}, 15 * z, rl.Color{140, 170, 255, u8(26 + 18 * pulse)})
+		for k in 0..<5 {
+			ox, oy := jit(hex, k, 16 * z)
+			h := (10 + tile_rand(hex, k + 4) * 11) * z
+			w := (3.6 + tile_rand(hex, k + 9) * 1.8) * z
+			base := rl.Color{150, 182, 250, 255}
+			top := rl.Color{212, 230, 255, u8(210 + 45 * pulse)}
+			rl.DrawTriangle(rl.Vector2{cx + ox - w, cy + oy + 5 * z}, rl.Vector2{cx + ox + w, cy + oy + 5 * z}, rl.Vector2{cx + ox, cy + oy + 5 * z - h}, base)
+			rl.DrawLineEx(rl.Vector2{cx + ox, cy + oy + 5 * z - h}, rl.Vector2{cx + ox, cy + oy - 1 * z}, 1.4 * z, top)
+		}
 	}
 }

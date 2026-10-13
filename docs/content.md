@@ -41,7 +41,7 @@ There are 62 moves. The `desc` string is what the card shows; keep it accurate.
 
 ## Species (`creature.odin`)
 
-`SPECIES: [27]Species` — each entry:
+`SPECIES: [Species_Id]Species` — each entry:
 
 ```
 name, elements: []Element      // 1 or 2 types, primary first
@@ -69,7 +69,7 @@ move_pool: []Move_Id             // candidates for reward-card picks
 
 `Ability :: enum { NONE, Berserk, Guardian, Thick_Hide, Swift, Lucky, Vampiric, Regenerator, Intimidate }`.
 
-`ABILITY_POOLS: [27][3]Ability` gives each species **three** options;
+`ABILITY_POOLS: [Species_Id][3]Ability` gives each species **three** options;
 `creature_make(species, level, name, rng)` rolls one with `creature_roll_ability`
 and stores it in `Creature.ability`. Effects and hook points are in
 [battle.md](battle.md#species-abilities-abilitiesodin). To add an ability:
@@ -86,6 +86,20 @@ and add it to `ITEM_IDS` (for random drops). Stat fields feed
 `creature_recompute_stats`; the rest hook into `item_battle_start`,
 `creature_begin_round`, `play_creature_card`, `colony_end_turn`, and
 `capture_chance`.
+
+## Upgrades (`upgrades.odin`)
+
+`Upgrade :: enum { NONE, Green_Thumb, … Scouts, Drills }` with
+`UPGRADES: [Upgrade]Upgrade_Info` (name, desc, max_level, per-level cost,
+`prereq` + `req_level`). Levels live on `Colony.upgrades`. Nodes form a **tree**
+(26 nodes): `upgrade_unlocked` gates a child until its parent reaches
+`req_level`, and `colony_buy_upgrade` spends crystals. `UPGRADE_ORDER` fixes the
+panel order (children listed after their parent). To add one: extend the enum,
+add an `UPGRADES` entry (set `prereq`/`req_level` for a child), read its level
+via an `upgrade_*` helper at the relevant hook (yields, `improvement_cost_scaled`,
+`improvement_hp_cap`, `storage_cap`, `monster_step_cost`, turret loop,
+`colony_barracks`, kill loot/food/XP, spawn deter, capture odds, per-battle
+Block), and add it to `UPGRADE_ORDER`.
 
 ## Creatures & stats (`creature.odin`)
 

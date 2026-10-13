@@ -60,46 +60,43 @@ ability_desc :: proc(a: Ability) -> cstring {
 }
 
 // Per-species pools, themed by role. Rolled once at spawn.
-ABILITY_POOLS := [27][3]Ability{
-	{.Berserk, .Vampiric, .Regenerator},    // 0 Emberling
-	{.Regenerator, .Guardian, .Lucky},      // 1 Tidepup
-	{.Regenerator, .Thick_Hide, .Lucky},    // 2 Sproutle
-	{.Swift, .Vampiric, .Lucky},            // 3 Cave Bat
-	{.Thick_Hide, .Berserk, .Regenerator},  // 4 Magmite
-	{.Regenerator, .Guardian, .Thick_Hide}, // 5 Bubblet
-	{.Vampiric, .Lucky, .Regenerator},      // 6 Thornkit
-	{.Guardian, .Intimidate, .Thick_Hide},  // 7 Elite Sentinel
-	{.Intimidate, .Regenerator, .Guardian}, // 8 The Deep One
-	{.Intimidate, .Regenerator, .Lucky},    // 9 Gloomling
-	{.Berserk, .Intimidate, .Vampiric},     // 10 Pyrelord
-	{.Berserk, .Regenerator, .Swift},       // 11 Krakling
-	{.Regenerator, .Guardian, .Thick_Hide}, // 12 Swampbeast
-	{.Lucky, .Swift, .Intimidate},          // 13 Wispling
-	{.Berserk, .Swift, .Vampiric},          // 14 Cindermaw
-	{.Thick_Hide, .Guardian, .Regenerator}, // 15 Rimescale
-	{.Regenerator, .Thick_Hide, .Guardian}, // 16 Mosshide
-	{.Berserk, .Regenerator, .Vampiric},    // 17 Emberbloom
-	{.Vampiric, .Thick_Hide, .Regenerator}, // 18 Bogfang
-	{.Swift, .Berserk, .Lucky},             // 19 Cinderwing
-	{.Thick_Hide, .Regenerator, .Guardian}, // 20 Frostmoss
-	{.Berserk, .Thick_Hide, .Swift},        // 21 Frostfang
-	{.Thick_Hide, .Guardian, .Intimidate},  // 22 Stonepaw
-	{.Swift, .Berserk, .Lucky},             // 23 Sparkit
-	{.Swift, .Lucky, .Berserk},             // 24 Galebeast
-	{.Vampiric, .Intimidate, .Lucky},       // 25 Venomtail
-	{.Swift, .Guardian, .Thick_Hide},       // 26 Blizzard
+ABILITY_POOLS := [Species_Id][3]Ability{
+	.Emberling     = {.Berserk, .Vampiric, .Regenerator},
+	.Tidepup       = {.Regenerator, .Guardian, .Lucky},
+	.Sproutle      = {.Regenerator, .Thick_Hide, .Lucky},
+	.Cave_Bat      = {.Swift, .Vampiric, .Lucky},
+	.Magmite       = {.Thick_Hide, .Berserk, .Regenerator},
+	.Bubblet       = {.Regenerator, .Guardian, .Thick_Hide},
+	.Thornkit      = {.Vampiric, .Lucky, .Regenerator},
+	.Elite_Sentinel = {.Guardian, .Intimidate, .Thick_Hide},
+	.Deep_One      = {.Intimidate, .Regenerator, .Guardian},
+	.Gloomling     = {.Intimidate, .Regenerator, .Lucky},
+	.Pyrelord      = {.Berserk, .Intimidate, .Vampiric},
+	.Krakling      = {.Berserk, .Regenerator, .Swift},
+	.Swampbeast    = {.Regenerator, .Guardian, .Thick_Hide},
+	.Wispling      = {.Lucky, .Swift, .Intimidate},
+	.Cindermaw     = {.Berserk, .Swift, .Vampiric},
+	.Rimescale     = {.Thick_Hide, .Guardian, .Regenerator},
+	.Mosshide      = {.Regenerator, .Thick_Hide, .Guardian},
+	.Emberbloom    = {.Berserk, .Regenerator, .Vampiric},
+	.Bogfang       = {.Vampiric, .Thick_Hide, .Regenerator},
+	.Cinderwing    = {.Swift, .Berserk, .Lucky},
+	.Frostmoss     = {.Thick_Hide, .Regenerator, .Guardian},
+	.Frostfang     = {.Berserk, .Thick_Hide, .Swift},
+	.Stonepaw      = {.Thick_Hide, .Guardian, .Intimidate},
+	.Sparkit       = {.Swift, .Berserk, .Lucky},
+	.Galebeast     = {.Swift, .Lucky, .Berserk},
+	.Venomtail     = {.Vampiric, .Intimidate, .Lucky},
+	.Blizzard      = {.Swift, .Guardian, .Thick_Hide},
 }
 
 DEFAULT_ABILITY_POOL := [3]Ability{.Berserk, .Guardian, .Thick_Hide}
 
-species_abilities :: proc(species: int) -> []Ability {
-	if species < 0 || species >= len(ABILITY_POOLS) {
-		return DEFAULT_ABILITY_POOL[:]
-	}
+species_abilities :: proc(species: Species_Id) -> []Ability {
 	return ABILITY_POOLS[species][:]
 }
 
-creature_roll_ability :: proc(species: int, rng: ^Rng) -> Ability {
+creature_roll_ability :: proc(species: Species_Id, rng: ^Rng) -> Ability {
 	pool := species_abilities(species)
 	if len(pool) == 0 {
 		return .NONE

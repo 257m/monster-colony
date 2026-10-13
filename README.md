@@ -56,11 +56,14 @@ press **F** (or the **⛶ Fullscreen** button) to go fullscreen.
 | `Tab` | cycle through your monsters |
 | `Space` / `E` | end turn |
 | `B` | build / repair / replace improvements |
-| `T` | Trading Post (when standing on one) |
+| `T` | Trading Post / Arena (when standing on one) |
 | `V` | view a monster's deck & item |
 | `M` | monster encyclopedia |
 | `I` | improvements dex |
 | `G` | item bag |
+| `U` | crystal progression upgrades |
+| `C` | nursery (breeding) panel |
+| `H` | monster storage (Dens) |
 | RMB / `WASD` | pan, wheel to zoom |
 
 Battles are played with `1`–`5` / clicks to play cards, `E` to end your turn, and

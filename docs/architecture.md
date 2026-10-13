@@ -10,6 +10,7 @@
 | `src/creature.odin` | ~590 | `Species` table, `Creature` struct, stat/level helpers |
 | `src/abilities.odin` | ~130 | Species ability pools, names/descriptions, battle-start hook |
 | `src/items.odin` | ~110 | Item table, effects, battle-start hook |
+| `src/upgrades.odin` | ~70 | Crystal progression tree: upgrades, costs, effect readers |
 | `src/web.odin` | ~80 | Browser (wasm) entry: exported `main_start` / `main_update` / … |
 | `src/web_allocator.odin` | ~110 | Emscripten-backed allocator used by the web build |
 | `src/moves.odin` | ~292 | `Element` chart, `Move` struct, `MOVE_DATA`, `Move_Id` enum |
@@ -32,6 +33,7 @@ hp, max_hp
 block, vulnerable, strength, defense_buff, defense_debuff   // per-battle state
 power, defense, speed     // floats, scaled from the species by level
 energy, energy_regen, energy_max   // ONE pool shared map <-> battle
+genes: [Gene]int          // 0-5 per-stat genetic bonus (Phase 8)
 deck, draw_pile, hand, discard     // Move_Id arrays
 played                    // cards played this turn (combo synergy)
 shake, flash              // transient draw-only feedback
@@ -44,23 +46,30 @@ shake, flash              // transient draw-only feedback
 A `Creature` **standing on the map**. Owns colony-only state:
 
 ```
-id, creature, pos: Hex, wild: bool, food, genetics[5]
+id, creature, pos: Hex, wild: bool, food, role: Wild_Role, stored: Stored_In
 ```
 
 Your party and enemy wilds are *both* `Monster`s in `Colony.roster`; `wild`
-distinguishes them. (Note: `xp` lives on `Creature` now, not `Monster`.)
+distinguishes them. `role` (Phase D) marks wilds as `WILD` (roams randomly),
+`RAIDER` (marches on your nearest monster) or `ALPHA` (hunts improvements).
+`stored` (Phase 10) is `.MAP` for monsters on the map; monsters inside a Den or
+Nursery live in `Colony.storage` instead (see below). (Note: `xp` lives on
+`Creature` now, not `Monster`.)
 
 ### `Tile` (`colony.odin`)
 ```
 hex, terrain: Terrain, revealed: bool,
-improvement: Improvement, improvement_hp, stored, scuffle
+improvement: Improvement, overlay: Improvement, improvement_hp, overlay_hp,
+stored, scuffle
 ```
-`stored` = food (Granary) or gold (Treasury).
+`stored` = food (Granary/Silo) or gold (Treasury). `overlay` is the stackable
+improvement slot (Road/Scarecrow/Spike Trap), with its own `overlay_hp`.
 
 ### `Colony` (`colony.odin`)
 ```
 tiles: [dynamic]^Tile, tile_index: map[u64]int   // the infinite map
 roster, graveyard: [dynamic]Monster
+storage: [dynamic]Monster   // monsters in Dens/Nurseries (Phase 10)
 gold, crystals, capture_cards, gold_cap, food_cap
 turn, floor, seed, rng, start_hex, next_id
 pending_tiles: [dynamic]Hex   // tiles where a wild and your monster share
@@ -68,6 +77,8 @@ messages: [dynamic]string     // world notifications
 floats:   [dynamic]Tile_Float // transient per-tile production popups
 shop:     [dynamic]Shop_Offer // Trading Post stock, rerolled each turn
 items:    [dynamic]Item       // unequipped item bag
+upgrades: [Upgrade]int        // crystal progression levels
+heat, raid_timer, raids       // Phase D: raid pressure + scheduling
 ```
 
 ### `Game` (`main.odin`)
@@ -164,7 +175,9 @@ in `reset_to_starter`. See [ui-and-input.md](ui-and-input.md).
 | How much damage a hit does | `apply_damage` / `estimate_damage` in `battle.odin` |
 | Turn order in battle | `build_order` / `advance` / `begin_round` in `battle.odin` |
 | A species' abilities | `ABILITY_POOLS` / `ability_*` in `abilities.odin` |
+| A crystal upgrade | `UPGRADES` / `upgrade_*` in `upgrades.odin` |
 | Terrain effects / spawn rates | `terrain_*` procs in `colony.odin` |
+| Raid pressure / raid timing | `colony_heat` / `colony_raids` in `colony.odin` |
 | What an improvement does / costs | `improvement_*` procs in `colony.odin` |
 | The economy / turn loop | `colony_end_turn` in `colony.odin` |
 | Wild AI (spawn/roam/attack) | `colony_spawn_wilds` … `colony_resolve_wild_actions` |

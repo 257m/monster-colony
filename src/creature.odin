@@ -28,6 +28,36 @@ Learn_Entry :: struct {
 	level: int,
 }
 
+Species_Id :: enum {
+	Emberling,     // 0
+	Tidepup,       // 1
+	Sproutle,      // 2
+	Cave_Bat,      // 3
+	Magmite,       // 4
+	Bubblet,       // 5
+	Thornkit,      // 6
+	Elite_Sentinel, // 7
+	Deep_One,      // 8
+	Gloomling,     // 9
+	Pyrelord,      // 10
+	Krakling,      // 11
+	Swampbeast,    // 12
+	Wispling,      // 13
+	Cindermaw,     // 14
+	Rimescale,     // 15
+	Mosshide,      // 16
+	Emberbloom,    // 17
+	Bogfang,       // 18
+	Cinderwing,    // 19
+	Frostmoss,     // 20
+	Frostfang,     // 21
+	Stonepaw,      // 22
+	Sparkit,       // 23
+	Galebeast,     // 24
+	Venomtail,     // 25
+	Blizzard,      // 26
+}
+
 Species :: struct {
 	name:         string,
 	elements:     []Element, // 1 or 2 types, primary first
@@ -51,9 +81,9 @@ Species :: struct {
 // grants — i.e. reward-only options.
 COMMON_MOVES := []Move_Id{.Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin, .Fang, .Exploit, .Payback, .Followup, .Second_Wind, .Gnaw, .Warcry, .Twin_Fangs, .Feint, .Weaken, .Disarm, .Sunder, .Corrode}
 
-SPECIES := [?]Species{
-	// 0 - Emberling
-	{
+SPECIES := [Species_Id]Species{
+	// Emberling
+	.Emberling = {
 		name = "Emberling", elements = []Element{.EMBER}, base_hp = 60, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 9.0, base_satiety = 100, base_upkeep = 3,
 		color = rl.Color{226, 110, 72, 255}, role = .STARTER, rarity = .COMMON,
 		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flame_Burst, .Hone, .Screech},
@@ -64,8 +94,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Cinder, .Inferno, .Blaze, .Ash_Screen, .Guard, .Hone, .Screech, .Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin},
 	},
-	// 1 - Tidepup
-	{
+	// Tidepup
+	.Tidepup = {
 		name = "Tidepup", elements = []Element{.AQUA}, base_hp = 62, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 8.0, base_satiety = 105, base_upkeep = 3,
 		color = rl.Color{86, 150, 226, 255}, role = .STARTER, rarity = .COMMON,
 		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Tidal_Slam, .Hone, .Undertow},
@@ -76,8 +106,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Aqua_Jet, .Tidal_Slam, .Undertow, .Bubble_Shield, .Torrent, .Heal_Spring, .Guard, .Hone, .Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin},
 	},
-	// 2 - Sproutle
-	{
+	// Sproutle
+	.Sproutle = {
 		name = "Sproutle", elements = []Element{.FLORA}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 7.0, base_satiety = 95, base_upkeep = 3,
 		color = rl.Color{102, 188, 112, 255}, role = .STARTER, rarity = .COMMON,
 		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Thorn_Crash, .Hone, .Screech},
@@ -88,8 +118,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Vine_Whip, .Thorn_Crash, .Leech, .Bloom, .Overgrowth, .Bark_Skin, .Guard, .Hone, .Screech, .Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin},
 	},
-	// 3 - Cave Bat
-	{
+	// Cave Bat
+	.Cave_Bat = {
 		name = "Cave Bat", elements = []Element{.NEUTRAL}, base_hp = 36, base_energy = 3, base_energy_max = 8, base_power = 0.75, base_defense = 0.0, base_speed = 13.0, base_satiety = 70, base_upkeep = 2,
 		color = rl.Color{158, 146, 178, 255}, role = .WILD, rarity = .COMMON,
 		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Tackle, .Guard, .Guard, .Guard, .Flurry, .Screech, .Hone},
@@ -100,8 +130,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Tackle, .Flurry, .Crush, .Body_Slam, .Guard, .Fortify, .Hone, .Screech, .Iron_Skin, .Mend, .Insight, .Jab, .Brace},
 	},
-	// 4 - Magmite
-	{
+	// Magmite
+	.Magmite = {
 		name = "Magmite", elements = []Element{.EMBER}, base_hp = 42, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.0, base_speed = 6.0, base_satiety = 90, base_upkeep = 3,
 		color = rl.Color{214, 92, 62, 255}, role = .WILD, rarity = .COMMON,
 		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Cinder, .Flame_Burst, .Screech},
@@ -112,8 +142,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Ember_Strike, .Cinder, .Flame_Burst, .Inferno, .Ash_Screen, .Blaze, .Tackle, .Body_Slam, .Guard, .Fortify, .Flurry, .Iron_Skin, .Mend, .Crush, .Jab, .Brace},
 	},
-	// 5 - Bubblet
-	{
+	// Bubblet
+	.Bubblet = {
 		name = "Bubblet", elements = []Element{.AQUA}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.0, base_speed = 8.0, base_satiety = 95, base_upkeep = 2,
 		color = rl.Color{72, 134, 214, 255}, role = .WILD, rarity = .COMMON,
 		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Bubble_Shield, .Tidal_Slam, .Undertow},
@@ -124,8 +154,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Aqua_Jet, .Undertow, .Tidal_Slam, .Bubble_Shield, .Heal_Spring, .Torrent, .Tackle, .Guard, .Fortify, .Flurry, .Iron_Skin, .Insight, .Mend, .Jab, .Brace},
 	},
-	// 6 - Thornkit
-	{
+	// Thornkit
+	.Thornkit = {
 		name = "Thornkit", elements = []Element{.FLORA}, base_hp = 40, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.0, base_speed = 9.0, base_satiety = 85, base_upkeep = 2,
 		color = rl.Color{88, 172, 98, 255}, role = .WILD, rarity = .COMMON,
 		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Leech, .Thorn_Crash, .Screech},
@@ -136,8 +166,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Vine_Whip, .Leech, .Thorn_Crash, .Bark_Skin, .Bloom, .Overgrowth, .Tackle, .Guard, .Fortify, .Screech, .Iron_Skin, .Mend, .Crush, .Jab, .Brace},
 	},
-	// 7 - Elite Sentinel
-	{
+	// Elite Sentinel
+	.Elite_Sentinel = {
 		name = "Elite Sentinel", elements = []Element{.NEUTRAL}, base_hp = 66, base_energy = 4, base_energy_max = 10, base_power = 1.3, base_defense = 2.0, base_speed = 6.0, base_satiety = 140, base_upkeep = 5,
 		color = rl.Color{206, 122, 62, 255}, role = .ELITE, rarity = .RARE,
 		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Tackle, .Body_Slam, .Body_Slam, .Guard, .Guard, .Fortify, .Crush},
@@ -148,8 +178,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Tackle, .Body_Slam, .Crush, .Guard, .Fortify, .Iron_Skin, .Screech, .Flurry, .Hone, .Mend, .Insight, .Blaze, .Jab, .Brace},
 	},
-	// 8 - The Deep One
-	{
+	// The Deep One
+	.Deep_One = {
 		name = "The Deep One", elements = []Element{.NEUTRAL}, base_hp = 120, base_energy = 4, base_energy_max = 10, base_power = 1.6, base_defense = 3.0, base_speed = 5.0, base_satiety = 220, base_upkeep = 8,
 		color = rl.Color{150, 42, 62, 255}, role = .BOSS, rarity = .LEGENDARY,
 		starter = []Move_Id{.Body_Slam, .Body_Slam, .Body_Slam, .Body_Slam, .Fortify, .Fortify, .Fortify, .Crush, .Iron_Skin, .Hone},
@@ -160,8 +190,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Body_Slam, .Fortify, .Crush, .Iron_Skin, .Hone, .Blaze, .Screech, .Torrent, .Inferno, .Overgrowth, .Insight, .Mend, .Guard, .Jab, .Brace},
 	},
-	// 9 - Gloomling (content)
-	{
+	// Gloomling (content)
+	.Gloomling = {
 		name = "Gloomling", elements = []Element{.NEUTRAL, .FLORA}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 2.0, base_speed = 5.0, base_satiety = 110, base_upkeep = 3,
 		color = rl.Color{120, 118, 140, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Tackle, .Guard, .Guard, .Weaken, .Body_Slam, .Fortify, .Exploit},
@@ -172,8 +202,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Tackle, .Body_Slam, .Crush, .Guard, .Fortify, .Iron_Skin, .Screech, .Payback, .Exploit, .Followup, .Mend, .Insight, .Fang, .Brace, .Jab},
 	},
-	// 10 - Pyrelord (content)
-	{
+	// Pyrelord (content)
+	.Pyrelord = {
 		name = "Pyrelord", elements = []Element{.EMBER}, base_hp = 54, base_energy = 3, base_energy_max = 8, base_power = 1.1, base_defense = 1.0, base_speed = 7.0, base_satiety = 110, base_upkeep = 4,
 		color = rl.Color{232, 84, 48, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flame_Burst, .Combust, .Rampage},
@@ -184,8 +214,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Ember_Strike, .Cinder, .Combust, .Flame_Burst, .Rampage, .Inferno, .Blaze, .Ash_Screen, .Guard, .Fortify, .Followup, .Exploit, .Iron_Skin, .Mend},
 	},
-	// 11 - Krakling (content)
-	{
+	// Krakling (content)
+	.Krakling = {
 		name = "Krakling", elements = []Element{.AQUA, .EMBER}, base_hp = 56, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.0, base_speed = 8.0, base_satiety = 110, base_upkeep = 3,
 		color = rl.Color{60, 120, 210, 255}, role = .WILD, rarity = .RARE,
 		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Tidal_Slam, .Frost_Bite, .Bubble_Shield},
@@ -196,8 +226,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Aqua_Jet, .Undertow, .Frost_Bite, .Bubble_Shield, .Tidal_Slam, .Heal_Spring, .Torrent, .Guard, .Fortify, .Followup, .Insight, .Iron_Skin, .Mend},
 	},
-	// 12 - Swampbeast (content)
-	{
+	// Swampbeast (content)
+	.Swampbeast = {
 		name = "Swampbeast", elements = []Element{.FLORA, .AQUA}, base_hp = 60, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 2.0, base_speed = 5.0, base_satiety = 120, base_upkeep = 4,
 		color = rl.Color{74, 158, 84, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Thorn_Crash, .Lash, .Bloom},
@@ -208,8 +238,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Vine_Whip, .Lash, .Leech, .Thorn_Crash, .Bloom, .Overgrowth, .Bark_Skin, .Guard, .Fortify, .Followup, .Screech, .Iron_Skin, .Mend, .Crush},
 	},
-	// 13 - Wispling (content): fast support, fragile
-	{
+	// Wispling (content): fast support, fragile
+	.Wispling = {
 		name = "Wispling", elements = []Element{.NEUTRAL}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 0.5, base_speed = 11.5, base_satiety = 90, base_upkeep = 2,
 		color = rl.Color{150, 170, 200, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Jab, .Jab, .Jab, .Jab, .Guard, .Guard, .Disarm, .Flurry, .Feint, .Warcry},
@@ -220,8 +250,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Jab, .Feint, .Warcry, .Flurry, .Followup, .Gnaw, .Twin_Fangs, .Exploit, .Payback, .Second_Wind, .Insight, .Mend, .Brace, .Guard, .Fang},
 	},
-	// 14 - Cindermaw (content): glass cannon
-	{
+	// Cindermaw (content): glass cannon
+	.Cindermaw = {
 		name = "Cindermaw", elements = []Element{.EMBER}, base_hp = 48, base_energy = 3, base_energy_max = 8, base_power = 1.25, base_defense = 0.5, base_speed = 6.5, base_satiety = 100, base_upkeep = 4,
 		color = rl.Color{240, 70, 40, 255}, role = .WILD, rarity = .RARE,
 		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flare, .Combust, .Rampage},
@@ -232,8 +262,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Ember_Strike, .Flare, .Cinder, .Combust, .Rampage, .Inferno, .Blaze, .Ash_Screen, .Twin_Fangs, .Exploit, .Followup, .Guard, .Mend},
 	},
-	// 15 - Rimescale (content): tanky water
-	{
+	// Rimescale (content): tanky water
+	.Rimescale = {
 		name = "Rimescale", elements = []Element{.AQUA}, base_hp = 64, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 2.5, base_speed = 5.5, base_satiety = 130, base_upkeep = 4,
 		color = rl.Color{70, 150, 220, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Frost_Bite, .Bubble_Shield, .Tidecall},
@@ -244,8 +274,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Aqua_Jet, .Frost_Bite, .Bubble_Shield, .Tidecall, .Undertow, .Tidal_Slam, .Heal_Spring, .Torrent, .Guard, .Fortify, .Iron_Skin, .Regrowth, .Mend, .Second_Wind},
 	},
-	// 16 - Mosshide (content): balanced flora
-	{
+	// Mosshide (content): balanced flora
+	.Mosshide = {
 		name = "Mosshide", elements = []Element{.FLORA}, base_hp = 62, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.5, base_speed = 7.5, base_satiety = 125, base_upkeep = 4,
 		color = rl.Color{96, 170, 88, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Bramble, .Lash, .Bloom},
@@ -256,8 +286,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Vine_Whip, .Bramble, .Lash, .Leech, .Bloom, .Thorn_Crash, .Overgrowth, .Bark_Skin, .Guard, .Fortify, .Regrowth, .Iron_Skin, .Mend, .Screech},
 	},
-	// 17 - Emberbloom (dual Ember/Flora)
-	{
+	// Emberbloom (dual Ember/Flora)
+	.Emberbloom = {
 		name = "Emberbloom", elements = []Element{.EMBER, .FLORA}, base_hp = 56, base_energy = 3, base_energy_max = 8, base_power = 1.15, base_defense = 1.0, base_speed = 6.0, base_satiety = 115, base_upkeep = 4,
 		color = rl.Color{206, 120, 92, 255}, role = .WILD, rarity = .RARE,
 		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flame_Burst, .Vine_Whip, .Bramble},
@@ -268,8 +298,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Ember_Strike, .Cinder, .Combust, .Flame_Burst, .Rampage, .Inferno, .Vine_Whip, .Bramble, .Leech, .Overgrowth, .Guard, .Fortify, .Exploit, .Mend},
 	},
-	// 18 - Bogfang (dual Aqua/Neutral)
-	{
+	// Bogfang (dual Aqua/Neutral)
+	.Bogfang = {
 		name = "Bogfang", elements = []Element{.AQUA, .NEUTRAL}, base_hp = 60, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 2.0, base_speed = 6.0, base_satiety = 120, base_upkeep = 4,
 		color = rl.Color{78, 124, 124, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Weaken, .Undertow, .Fang, .Fortify},
@@ -280,8 +310,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Aqua_Jet, .Undertow, .Frost_Bite, .Tidal_Slam, .Torrent, .Fang, .Crush, .Body_Slam, .Guard, .Fortify, .Iron_Skin, .Payback, .Mend, .Brace},
 	},
-	// 19 - Cinderwing (dual Ember/Neutral)
-	{
+	// Cinderwing (dual Ember/Neutral)
+	.Cinderwing = {
 		name = "Cinderwing", elements = []Element{.EMBER, .NEUTRAL}, base_hp = 46, base_energy = 3, base_energy_max = 8, base_power = 1.15, base_defense = 0.5, base_speed = 10.5, base_satiety = 95, base_upkeep = 3,
 		color = rl.Color{232, 116, 66, 255}, role = .WILD, rarity = .RARE,
 		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flare, .Followup, .Feint},
@@ -292,8 +322,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Ember_Strike, .Flare, .Cinder, .Combust, .Rampage, .Blaze, .Followup, .Feint, .Flurry, .Twin_Fangs, .Exploit, .Guard, .Mend, .Insight},
 	},
-	// 20 - Frostmoss (dual Aqua/Flora)
-	{
+	// Frostmoss (dual Aqua/Flora)
+	.Frostmoss = {
 		name = "Frostmoss", elements = []Element{.AQUA, .FLORA}, base_hp = 66, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 2.5, base_speed = 5.0, base_satiety = 130, base_upkeep = 4,
 		color = rl.Color{96, 168, 168, 255}, role = .WILD, rarity = .RARE,
 		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Frost_Bite, .Bramble, .Bloom},
@@ -304,8 +334,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Aqua_Jet, .Frost_Bite, .Undertow, .Bubble_Shield, .Tidecall, .Bloom, .Bramble, .Leech, .Regrowth, .Heal_Spring, .Guard, .Fortify, .Iron_Skin, .Mend},
 	},
-	// 21 - Frostfang (Ice)
-	{
+	// Frostfang (Ice)
+	.Frostfang = {
 		name = "Frostfang", elements = []Element{.ICE}, base_hp = 52, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.5, base_speed = 7.0, base_satiety = 110, base_upkeep = 3,
 		color = rl.Color{150, 216, 236, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Frost_Shard, .Frost_Shard, .Frost_Shard, .Frost_Shard, .Guard, .Guard, .Guard, .Glacier_Slam, .Iron_Skin, .Mend},
@@ -316,8 +346,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Frost_Shard, .Glacier_Slam, .Frost_Bite, .Guard, .Fortify, .Iron_Skin, .Followup, .Second_Wind, .Mend, .Insight, .Regrowth, .Brace, .Exploit},
 	},
-	// 22 - Stonepaw (Ground)
-	{
+	// Stonepaw (Ground)
+	.Stonepaw = {
 		name = "Stonepaw", elements = []Element{.GROUND}, base_hp = 62, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 2.5, base_speed = 4.5, base_satiety = 125, base_upkeep = 4,
 		color = rl.Color{160, 128, 84, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Rock_Toss, .Rock_Toss, .Rock_Toss, .Rock_Toss, .Guard, .Guard, .Sunder, .Quake, .Fortify, .Iron_Skin},
@@ -327,8 +357,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Rock_Toss, .Quake, .Crush, .Body_Slam, .Guard, .Fortify, .Iron_Skin, .Payback, .Bramble, .Mend, .Second_Wind, .Brace, .Fang},
 	},
-	// 23 - Sparkit (Electric)
-	{
+	// Sparkit (Electric)
+	.Sparkit = {
 		name = "Sparkit", elements = []Element{.ELECTRIC}, base_hp = 46, base_energy = 3, base_energy_max = 8, base_power = 1.1, base_defense = 0.5, base_speed = 11.0, base_satiety = 95, base_upkeep = 3,
 		color = rl.Color{242, 214, 70, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Spark, .Spark, .Spark, .Spark, .Guard, .Guard, .Guard, .Thunderbolt, .Feint, .Followup},
@@ -338,8 +368,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Spark, .Thunderbolt, .Followup, .Flurry, .Twin_Fangs, .Exploit, .Feint, .Insight, .Hone, .Guard, .Mend, .Brace, .Fang},
 	},
-	// 24 - Galebeast (Air)
-	{
+	// Galebeast (Air)
+	.Galebeast = {
 		name = "Galebeast", elements = []Element{.AIR}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 1.0, base_speed = 12.0, base_satiety = 100, base_upkeep = 3,
 		color = rl.Color{206, 214, 230, 255}, role = .WILD, rarity = .UNCOMMON,
 		starter = []Move_Id{.Gust, .Gust, .Gust, .Gust, .Guard, .Guard, .Guard, .Cyclone, .Feint, .Warcry},
@@ -349,8 +379,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Gust, .Cyclone, .Followup, .Flurry, .Twin_Fangs, .Feint, .Warcry, .Second_Wind, .Insight, .Exploit, .Guard, .Mend, .Brace},
 	},
-	// 25 - Venomtail (Poison)
-	{
+	// Venomtail (Poison)
+	.Venomtail = {
 		name = "Venomtail", elements = []Element{.POISON}, base_hp = 54, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.0, base_speed = 8.0, base_satiety = 105, base_upkeep = 3,
 		color = rl.Color{170, 84, 186, 255}, role = .WILD, rarity = .RARE,
 		starter = []Move_Id{.Toxic_Bite, .Toxic_Bite, .Toxic_Bite, .Toxic_Bite, .Guard, .Guard, .Corrode, .Venom, .Screech, .Hone},
@@ -360,8 +390,8 @@ SPECIES := [?]Species{
 		},
 		move_pool = []Move_Id{.Toxic_Bite, .Venom, .Crush, .Leech, .Screech, .Hone, .Followup, .Exploit, .Payback, .Guard, .Fortify, .Mend, .Second_Wind},
 	},
-	// 26 - Blizzard (dual Ice/Air)
-	{
+	// Blizzard (dual Ice/Air)
+	.Blizzard = {
 		name = "Blizzard", elements = []Element{.ICE, .AIR}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.1, base_defense = 1.5, base_speed = 9.0, base_satiety = 115, base_upkeep = 4,
 		color = rl.Color{176, 210, 240, 255}, role = .WILD, rarity = .EPIC,
 		starter = []Move_Id{.Frost_Shard, .Frost_Shard, .Frost_Shard, .Frost_Shard, .Guard, .Guard, .Guard, .Glacier_Slam, .Gust, .Cyclone},
@@ -374,10 +404,10 @@ SPECIES := [?]Species{
 	},
 }
 
-STARTER_SPECIES := [?]int{0, 1, 2}
+STARTER_SPECIES := [?]Species_Id{.Emberling, .Tidepup, .Sproutle}
 
 Creature :: struct {
-	species:      int,
+	species:      Species_Id,
 	name:         string,
 	level:        int,
 	xp:           int, // experience toward the next level (shared with the map)
@@ -398,6 +428,8 @@ Creature :: struct {
 
 	ability: Ability, // species ability, rolled at spawn (Phase C)
 	item:    Item,    // one item slot (Phase C)
+
+	genes: [Gene]int, // per-stat genetic bonus 0-5 (Phase 8; see below)
 
 	deck:       [dynamic]Move_Id, // persistent, owned by this creature
 	draw_pile:  [dynamic]Move_Id, // per-battle
@@ -450,10 +482,7 @@ role_name :: proc(r: Species_Role) -> cstring {
 	return "?"
 }
 
-species_rarity :: proc(species: int) -> Rarity {
-	if species < 0 || species >= len(SPECIES) {
-		return .COMMON
-	}
+species_rarity :: proc(species: Species_Id) -> Rarity {
 	return SPECIES[species].rarity
 }
 
@@ -528,13 +557,13 @@ rarity_loot_mult :: proc(r: Rarity) -> f32 {
 }
 
 // Cost to recruit a monster of this species/level at a Trading Post.
-recruit_price :: proc(species, level: int) -> int {
+recruit_price :: proc(species: Species_Id, level: int) -> int {
 	base := rarity_price(species_rarity(species))
 	return int(f32(base) * (1.0 + 0.25 * f32(level - 1)))
 }
 
 // Gold a defeated wild of this species/level is worth.
-species_loot_gold :: proc(species, level: int) -> int {
+species_loot_gold :: proc(species: Species_Id, level: int) -> int {
 	base := 5 + 3 * level
 	return int(f32(base) * rarity_loot_mult(species_rarity(species)))
 }
@@ -571,7 +600,98 @@ level_scale :: proc(level: int) -> f32 {
 	return 1.0 + 0.15 * f32(level - 1)
 }
 
-creature_stats_for_level :: proc(species_idx, level: int) -> (max_hp: int, power, defense, speed, energy_regen, energy_max: f32) {
+// ----------------------------------------------------------------------------
+// Genetics (Phase 8)
+//
+// Every creature carries a 0-5 gene per stat. A gene is a percentage bonus on
+// top of the species base, so 5 is a real prize and 0 is the plain baseline.
+// Wilds, shop recruits and starters roll theirs; breeding averages two parents
+// and nudges the result with a random roll (plus a rare mutation).
+// ----------------------------------------------------------------------------
+
+Gene :: enum { HP, POWER, DEFENSE, SPEED, ENERGY }
+
+GENE_MAX           :: 5
+GENE_BONUS         :: f32(0.05) // +5% to a stat's base per gene point
+GENE_MUTATE_CHANCE :: f32(0.05) // breeding: rare extra +1
+// Weights for a random roll: 0 common ... 5 very rare (out of 100).
+@(rodata)
+GENE_WEIGHTS := [GENE_MAX + 1]int{40, 28, 18, 9, 4, 1}
+
+gene_name :: proc(g: Gene) -> cstring {
+	#partial switch g {
+	case .HP:      return "HP"
+	case .POWER:   return "Power"
+	case .DEFENSE: return "Defense"
+	case .SPEED:   return "Speed"
+	case .ENERGY:  return "Energy"
+	}
+	return "?"
+}
+
+// A random gene value on the rarity curve.
+gene_roll_random :: proc(rng: ^Rng) -> int {
+	total := 0
+	for w in GENE_WEIGHTS {
+		total += w
+	}
+	roll := rng_below(rng, total)
+	acc := 0
+	for i in 0..<len(GENE_WEIGHTS) {
+		acc += GENE_WEIGHTS[i]
+		if roll < acc {
+			return i
+		}
+	}
+	return 0
+}
+
+genes_roll_random :: proc(rng: ^Rng) -> [Gene]int {
+	g: [Gene]int
+	for gene in Gene {
+		g[gene] = gene_roll_random(rng)
+	}
+	return g
+}
+
+// The expected midpoint of two parents' gene (rounded up), ignoring the roll.
+gene_breed_mid :: proc(a, b: int) -> int {
+	return clamp((a + b + 1) / 2, 0, GENE_MAX)
+}
+
+// Breed one gene: average the parents, nudge by -1..+1, and rarely mutate up.
+gene_breed :: proc(a, b: int, rng: ^Rng) -> int {
+	v := clamp(gene_breed_mid(a, b) + rng_range(rng, -1, 2), 0, GENE_MAX)
+	if rng_chance(rng, GENE_MUTATE_CHANCE) {
+		v = clamp(v + 1, 0, GENE_MAX)
+	}
+	return v
+}
+
+genes_breed :: proc(a, b: [Gene]int, rng: ^Rng) -> [Gene]int {
+	g: [Gene]int
+	for gene in Gene {
+		g[gene] = gene_breed(a[gene], b[gene], rng)
+	}
+	return g
+}
+
+// A compact "HP 3  Pow 2  Def 1  Spd 4  En 0" label.
+genes_label :: proc(g: [Gene]int) -> cstring {
+	return fmt.ctprintf("HP %d  Pow %d  Def %d  Spd %d  En %d",
+		g[.HP], g[.POWER], g[.DEFENSE], g[.SPEED], g[.ENERGY])
+}
+
+// Total gene points, for a quick "quality" read on a monster.
+genes_total :: proc(g: [Gene]int) -> int {
+	sum := 0
+	for gene in Gene {
+		sum += g[gene]
+	}
+	return sum
+}
+
+creature_stats_for_level :: proc(species_idx: Species_Id, level: int) -> (max_hp: int, power, defense, speed, energy_regen, energy_max: f32) {
 	sp := SPECIES[species_idx]
 	scale := level_scale(level)
 	max_hp = int(f32(sp.base_hp) * scale)
@@ -586,9 +706,10 @@ creature_stats_for_level :: proc(species_idx, level: int) -> (max_hp: int, power
 	return
 }
 
-creature_make :: proc(species_idx, level: int, name: string, rng: ^Rng = nil) -> Creature {
+// Builds a creature with explicit genes. `rng` only rolls the ability (pass nil
+// for none). Stats are computed from species + level + genes.
+creature_make_genes :: proc(species_idx: Species_Id, level: int, name: string, genes: [Gene]int, rng: ^Rng = nil) -> Creature {
 	sp := SPECIES[species_idx]
-	max_hp, power, defense, speed, energy_regen, energy_max := creature_stats_for_level(species_idx, level)
 
 	deck := make([dynamic]Move_Id, 0)
 	for m in sp.starter {
@@ -600,31 +721,45 @@ creature_make :: proc(species_idx, level: int, name: string, rng: ^Rng = nil) ->
 		ability = creature_roll_ability(species_idx, rng)
 	}
 
-	return Creature{
-		species      = species_idx,
-		name         = name,
-		level        = level,
-		hp           = max_hp,
-		max_hp       = max_hp,
-		power        = power,
-		defense      = defense,
-		speed        = speed,
-		energy       = 0,
-		energy_regen = energy_regen,
-		energy_max   = energy_max,
-		ability      = ability,
-		item         = .NONE,
-		deck         = deck,
-		draw_pile    = make([dynamic]Move_Id, 0),
-		hand         = make([dynamic]Move_Id, 0),
-		discard      = make([dynamic]Move_Id, 0),
+	c := Creature{
+		species   = species_idx,
+		name      = name,
+		level     = level,
+		energy    = 0,
+		ability   = ability,
+		item      = .NONE,
+		genes     = genes,
+		deck      = deck,
+		draw_pile = make([dynamic]Move_Id, 0),
+		hand      = make([dynamic]Move_Id, 0),
+		discard   = make([dynamic]Move_Id, 0),
 	}
+	creature_recompute_stats(&c)
+	c.hp = c.max_hp
+	return c
 }
 
-// Recompute stored stats from (species, level) plus the equipped item's stat
-// bonuses. Call after leveling up or changing the item.
+creature_make :: proc(species_idx: Species_Id, level: int, name: string, rng: ^Rng = nil) -> Creature {
+	genes: [Gene]int
+	if rng != nil {
+		genes = genes_roll_random(rng)
+	}
+	return creature_make_genes(species_idx, level, name, genes, rng)
+}
+
+// Recompute stored stats from (species, level), genetic bonuses, and the
+// equipped item's stat bonuses. Call after leveling up or changing the item.
 creature_recompute_stats :: proc(c: ^Creature) {
 	max_hp, power, defense, speed, energy_regen, energy_max := creature_stats_for_level(c.species, c.level)
+	// Genetics scale the species base before items are added.
+	max_hp = int(f32(max_hp) * (1.0 + GENE_BONUS * f32(c.genes[.HP])))
+	power *= 1.0 + GENE_BONUS * f32(c.genes[.POWER])
+	defense *= 1.0 + GENE_BONUS * f32(c.genes[.DEFENSE])
+	speed *= 1.0 + GENE_BONUS * f32(c.genes[.SPEED])
+	ge := 1.0 + GENE_BONUS * f32(c.genes[.ENERGY])
+	energy_regen *= ge
+	energy_max *= ge
+
 	it := ITEM_DATA[c.item]
 	max_hp += int(f32(max_hp) * it.hp_pct)
 	power += it.power

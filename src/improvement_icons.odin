@@ -45,6 +45,9 @@ draw_improvement_icon :: proc(im: Improvement, cx, cy, zoom: f32) {
 	case .KITCHEN:    draw_icon_kitchen(cx, cy, z, t)
 	case .BARRACKS:   draw_icon_barracks(cx, cy, z, t)
 	case .BEACON:     draw_icon_beacon(cx, cy, z, t)
+	case .DEN:        draw_icon_den(cx, cy, z, t)
+	case .VAULT:      draw_icon_vault(cx, cy, z, t)
+	case .NURSERY:    draw_icon_nursery(cx, cy, z, t)
 	case .NONE:
 	}
 }
@@ -291,4 +294,41 @@ draw_icon_beacon :: proc(cx, cy, z, t: f32) {
 	rl.DrawCircleV(rl.Vector2{cx, cy - 5 * z}, (3 + 2 * pulse) * z, rl.Color{255, 235, 150, 255})
 	a := t * 2.0
 	rl.DrawLineEx(rl.Vector2{cx, cy - 5 * z}, rl.Vector2{cx + math.cos(a) * 16 * z, cy - 5 * z + math.sin(a) * 16 * z}, 2.5 * z, rl.Color{255, 240, 170, u8(90 + 60 * pulse)})
+}
+
+// Den: a rocky burrow with a soft glow from the entrance (monsters in stasis).
+draw_icon_den :: proc(cx, cy, z, t: f32) {
+	rl.DrawCircleV(rl.Vector2{cx, cy + 2 * z}, 13 * z, rl.Color{86, 78, 70, 255})
+	rl.DrawCircleV(rl.Vector2{cx, cy - 2 * z}, 10 * z, rl.Color{104, 96, 86, 255})
+	// Burrow mouth.
+	rl.DrawCircleV(rl.Vector2{cx, cy + 1 * z}, 5.5 * z, rl.Color{30, 26, 24, 255})
+	pulse := 0.5 + 0.5 * math.sin(t * 1.6)
+	rl.DrawCircleV(rl.Vector2{cx, cy + 1 * z}, (3.0 + 1.5 * pulse) * z, rl.Color{140, 200, 255, u8(70 + 60 * pulse)})
+}
+
+// Vault: an iron-banded strongbox with a slow shine.
+draw_icon_vault :: proc(cx, cy, z, t: f32) {
+	rl.DrawRectangleRounded(rl.Rectangle{cx - 13 * z, cy - 9 * z, 26 * z, 18 * z}, 0.18, 5, rl.Color{96, 104, 116, 255})
+	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{cx - 13 * z, cy - 9 * z, 26 * z, 18 * z}, 0.18, 5, 1.5 * z, rl.Color{60, 66, 76, 255})
+	band := rl.Color{140, 150, 165, 255}
+	rl.DrawLineEx(rl.Vector2{cx - 9 * z, cy - 9 * z}, rl.Vector2{cx - 9 * z, cy + 9 * z}, 2 * z, band)
+	rl.DrawLineEx(rl.Vector2{cx + 9 * z, cy - 9 * z}, rl.Vector2{cx + 9 * z, cy + 9 * z}, 2 * z, band)
+	rl.DrawCircleV(rl.Vector2{cx, cy}, 3.5 * z, rl.Color{200, 210, 225, 255})
+	p := 0.5 + 0.5 * math.sin(t * 2.0)
+	rl.DrawCircleV(rl.Vector2{cx, cy}, (1.5 + 1.0 * p) * z, rl.Color{255, 255, 255, u8(120 + 80 * p)})
+}
+
+// Nursery: a rounded shell-egg on a nest, rocking gently.
+draw_icon_nursery :: proc(cx, cy, z, t: f32) {
+	rock := math.sin(t * 1.8) * 0.12
+	rl.DrawEllipse(i32(cx), i32(cy + 8 * z), 14 * z, 4 * z, rl.Color{96, 82, 58, 255})
+	// Nest twigs.
+	for k in 0..<4 {
+		x := cx + (f32(k) - 1.5) * 6 * z
+		rl.DrawLineEx(rl.Vector2{x, cy + 9 * z}, rl.Vector2{x + 3 * z, cy + 5 * z}, 1.5 * z, rl.Color{140, 116, 78, 255})
+	}
+	ex := cx + math.sin(rock) * 3 * z
+	rl.DrawEllipse(i32(ex), i32(cy - 1 * z), 8 * z, 11 * z, rl.Color{236, 232, 216, 255})
+	rl.DrawCircleV(rl.Vector2{ex - 2.5 * z, cy - 5 * z}, 2.0 * z, rl.Color{255, 255, 255, 160})
+	rl.DrawEllipseLines(i32(ex), i32(cy - 1 * z), 8 * z, 11 * z, rl.Color{196, 190, 170, 255})
 }

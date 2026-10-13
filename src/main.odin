@@ -14,6 +14,7 @@ Battle_Results :: struct {
 	kills:   int,
 	card:    string,
 	item:    Item,
+	crystals: int,
 	leveled: bool,
 }
 
@@ -38,6 +39,7 @@ Game :: struct {
 	has_build:  bool,
 	build_preview: Improvement, // hovered build option (for radius preview)
 	trade_open: bool,
+	arena_open: bool,
 
 	// monster encyclopedia
 	show_encyclopedia:  bool,
@@ -53,6 +55,19 @@ Game :: struct {
 	show_bag:  bool,
 	bag_index: int,
 	bag_first: int,
+
+	// crystal progression panel
+	show_upgrades: bool,
+
+	// nursery (breeding) panel — Phase 8/10
+	show_nursery:  bool,
+	nursery_sel:   int, // selected Nursery index
+	nursery_first: int, // scroll for the candidate list
+
+	// monster storage panel (Dens) — Phase 10
+	show_storage:  bool,
+	storage_sel:   int,
+	storage_first: int,
 
 	// Phase 3: wild attacks -> battles
 	battle:             Battle,
@@ -136,6 +151,13 @@ reset_to_starter :: proc(g: ^Game) {
 	g.show_encyclopedia = false
 	g.show_improvements = false
 	g.show_bag = false
+	g.show_upgrades = false
+	g.show_nursery = false
+	g.nursery_sel = 0
+	g.nursery_first = 0
+	g.show_storage = false
+	g.storage_sel = 0
+	g.storage_first = 0
 	g.battle_choice_open = false
 	g.battle_forced = false
 	g.attack_select_open = false
@@ -146,7 +168,7 @@ reset_to_starter :: proc(g: ^Game) {
 	g.mode = .STARTER
 }
 
-choose_starter :: proc(g: ^Game, species_idx: int) {
+choose_starter :: proc(g: ^Game, species_idx: Species_Id) {
 	end_run(g)
 	g.colony = colony_generate(rng_next_u64(&g.seed_rng), 11, 8)
 	g.has_colony = true
@@ -187,6 +209,18 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_bag(g)
 		return
 	}
+	if g.show_upgrades {
+		update_upgrades(g)
+		return
+	}
+	if g.show_nursery {
+		update_nursery(g)
+		return
+	}
+	if g.show_storage {
+		update_storage(g)
+		return
+	}
 	if (g.mode == .MAP || g.mode == .STARTER) && rl.IsKeyPressed(.M) {
 		g.show_encyclopedia = true
 		g.encyclopedia_index = 0
@@ -203,6 +237,22 @@ game_update :: proc(g: ^Game, dt: f32) {
 		g.show_bag = true
 		g.bag_index = 0
 		g.bag_first = 0
+		return
+	}
+	if g.mode == .MAP && rl.IsKeyPressed(.U) {
+		g.show_upgrades = true
+		return
+	}
+	if g.mode == .MAP && rl.IsKeyPressed(.C) {
+		g.show_nursery = true
+		g.nursery_sel = 0
+		g.nursery_first = 0
+		return
+	}
+	if g.mode == .MAP && rl.IsKeyPressed(.H) {
+		g.show_storage = true
+		g.storage_sel = 0
+		g.storage_first = 0
 		return
 	}
 	if g.attack_select_open {
@@ -267,6 +317,7 @@ update_colony :: proc(g: ^Game, dt: f32) {
 	if rl.IsKeyPressed(.B) {
 		g.build_mode = !g.build_mode
 		g.trade_open = false
+		g.arena_open = false
 		g.has_build = false
 		g.build_preview = .NONE
 		if g.build_mode {
@@ -284,8 +335,16 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		update_trade(g)
 		return
 	}
+	if g.arena_open {
+		update_arena(g)
+		return
+	}
 	if rl.IsKeyPressed(.T) && selected_on_trading_post(g) {
 		g.trade_open = true
+		return
+	}
+	if rl.IsKeyPressed(.T) && selected_on_arena(g) {
+		g.arena_open = true
 		return
 	}
 
@@ -384,6 +443,14 @@ selected_on_trading_post :: proc(g: ^Game) -> bool {
 	return t != nil && t.terrain == .TRADING_POST
 }
 
+selected_on_arena :: proc(g: ^Game) -> bool {
+	if g.selected < 0 || g.selected >= len(g.colony.roster) {
+		return false
+	}
+	t := tile_at(&g.colony, g.colony.roster[g.selected].pos)
+	return t != nil && t.terrain == .ARENA
+}
+
 update_build :: proc(g: ^Game) {
 	if rl.IsKeyPressed(.ESCAPE) {
 		g.build_mode = false
@@ -397,9 +464,10 @@ update_build :: proc(g: ^Game) {
 
 	if g.has_build {
 		if t := tile_at(&g.colony, g.build_hex); t != nil {
-			improved := t.improvement != .NONE
-			// Repair an existing, damaged improvement.
-			if improved && improvement_repair_cost(t.improvement, t.improvement_hp) > 0 {
+			improved := t.improvement != .NONE || t.overlay != .NONE
+			// Repair a damaged building or overlay.
+			rim, rhp, _ := tile_repair_target(&g.colony, t)
+			if rim != .NONE && improvement_repair_cost(&g.colony, rim, rhp) > 0 {
 				if rl.CheckCollisionPointRec(mp, build_repair_rect()) {
 					res := colony_repair(&g.colony, g.build_hex)
 					switch res {
@@ -490,6 +558,7 @@ update_trade :: proc(g: ^Game) {
 		}
 	}
 	g.trade_open = false
+	g.arena_open = false
 }
 
 // Shared lose condition: no living monsters, whether from starvation or battle.
@@ -713,7 +782,9 @@ draw_attack_select :: proc(g: ^Game) {
 		rar := species_rarity(m.creature.species)
 		rl.DrawRectangleRounded(rec, 0.18, 5, rl.Color{46, 28, 28, 255})
 		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 5, 2, rarity_color(rar))
-		rl.DrawText(fmt.ctprintf("%s  Lvl %d", m.creature.name, m.creature.level), i32(rec.x) + 12, i32(rec.y) + 5, 16, rl.Color{240, 222, 212, 255})
+		name_col := m.role == .ALPHA ? rl.Color{255, 150, 130, 255} : rl.Color{240, 222, 212, 255}
+		suffix := m.role == .ALPHA ? cstring("  ALPHA") : (m.role == .RAIDER ? cstring("  raider") : cstring(""))
+		rl.DrawText(fmt.ctprintf("%s  Lvl %d%s", m.creature.name, m.creature.level, suffix), i32(rec.x) + 12, i32(rec.y) + 5, 16, name_col)
 		el := elements_label(creature_elements(&m.creature))
 		ew := rl.MeasureText(el, 14)
 		rl.DrawText(el, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 7, 14, element_color(creature_element(&m.creature)))
@@ -886,9 +957,12 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 
 	g.battle = battle_start(defs[:], enemies[:], ids[:], &g.seed_rng)
 	// Watchtower guard bonus: applied after the opening draw/reset.
+	// Drills: the colony's defenders start every fight with some Block.
+	drills := upgrade_drills_block(&g.colony)
 	for p, i in g.battle.party {
-		p.block += blocks[i]
+		p.block += blocks[i] + drills
 	}
+	g.battle.capture_bonus = upgrade_capture_bonus(&g.colony)
 	// Beacon: wilds attacking within its guard radius start Vulnerable.
 	if near_improvement(&g.colony, hex, BEACON_GUARD, .BEACON) {
 		for e in g.battle.enemies {
@@ -897,7 +971,7 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 	}
 	// Kitchen: spend rations to give the defenders +Strength for this fight.
 	if ki := nearest_improvement_within(&g.colony, hex, KITCHEN_RADIUS, .KITCHEN); ki >= 0 {
-		if gi := nearest_improvement_within(&g.colony, g.colony.tiles[ki].hex, DELIVER_RADIUS, .GRANARY); gi >= 0 && g.colony.tiles[gi].stored >= KITCHEN_FOOD_COST {
+		if gi := nearest_food_store_with(&g.colony, g.colony.tiles[ki].hex, DELIVER_RADIUS, KITCHEN_FOOD_COST); gi >= 0 {
 			g.colony.tiles[gi].stored -= KITCHEN_FOOD_COST
 			for p in g.battle.party {
 				p.strength += KITCHEN_STRENGTH
@@ -1005,11 +1079,12 @@ resolve_won :: proc(g: ^Game) {
 		}
 		lv := m.creature.level
 		res.kills += 1
-		res.gold += species_loot_gold(m.creature.species, lv) + rng_below(&g.colony.rng, lv + 1)
+		loot := species_loot_gold(m.creature.species, lv) + rng_below(&g.colony.rng, lv + 1)
+		res.gold += int(f32(loot) * upgrade_bounty_mult(&g.colony))
 		killed_levels += lv
-		food_amt += lv * 2
+		food_amt += lv * 2 + upgrade_forage_food(&g.colony)
 	}
-	res.xp = killed_levels * 10
+	res.xp = int(f32(killed_levels * 10) * upgrade_xp_mult(&g.colony))
 	res.gold = colony_deposit_gold(&g.colony, hex, res.gold)
 
 	// Captured enemies become yours.
@@ -1031,14 +1106,8 @@ resolve_won :: proc(g: ^Game) {
 		i += 1
 	}
 
-	// Food drops go to a granary within range.
-	if gi := nearest_improvement_within(&g.colony, hex, DELIVER_RADIUS, .GRANARY); gi >= 0 {
-		amt := min(food_amt, STORAGE_CAP - g.colony.tiles[gi].stored)
-		if amt > 0 {
-			g.colony.tiles[gi].stored += amt
-			res.food = amt
-		}
-	}
+	// Food drops go to food stores within range, spilling over when one fills.
+	res.food = colony_store_food(&g.colony, hex, food_amt)
 
 	// XP to surviving defenders on the tile.
 	for &m in g.colony.roster {
@@ -1063,9 +1132,25 @@ resolve_won :: proc(g: ^Game) {
 		boss_room = true
 	}
 	if boss_room || rng_f32(&g.colony.rng) < 0.22 {
-		it := random_item(&g.colony.rng)
-		append(&g.colony.items, it)
-		res.item = it
+		// Only fits while the bag has room; build a Vault to hold more.
+		if len(g.colony.items) < colony_item_cap(&g.colony) {
+			it := random_item(&g.colony.rng)
+			append(&g.colony.items, it)
+			res.item = it
+		}
+	}
+
+	// Arena & Boss fights are the real crystal source; Spoils adds to both.
+	if t := tile_at(&g.colony, hex); t != nil {
+		bonus := upgrade_crystal_bonus(&g.colony)
+		#partial switch t.terrain {
+		case .ARENA:
+			g.colony.crystals += ARENA_CRYSTAL_REWARD + bonus
+			res.crystals = ARENA_CRYSTAL_REWARD + bonus
+		case .BOSS_ROOM:
+			g.colony.crystals += BOSS_CRYSTAL_REWARD + bonus
+			res.crystals = BOSS_CRYSTAL_REWARD + bonus
+		}
 	}
 
 	g.results = res
@@ -1124,6 +1209,9 @@ draw_results :: proc(g: ^Game) {
 		rl.DrawText(fmt.ctprintf("Item found: %s", item_name(r.item)), i32(p.x) + 30, y, 20, rl.Color{180, 240, 200, 255}); y += 24
 		rl.DrawText("Equip it from the deck viewer (V).", i32(p.x) + 30, y, 14, rl.Color{150, 190, 165, 255}); y += 24
 	}
+	if r.crystals > 0 {
+		rl.DrawText(fmt.ctprintf("Arena prize: +%d crystals", r.crystals), i32(p.x) + 30, y, 20, rl.Color{210, 170, 250, 255}); y += 28
+	}
 
 	btn := results_continue_rect()
 	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), btn)
@@ -1143,6 +1231,10 @@ resolve_lost :: proc(g: ^Game) {
 			continue
 		}
 		i += 1
+	}
+	// A lost Arena match resets: the team leaves so you can try again.
+	if t := tile_at(&g.colony, g.battle_hex); t != nil && t.terrain == .ARENA {
+		arena_reset(g)
 	}
 	g.mode = .MAP
 	if player_monster_count(&g.colony) == 0 {
@@ -1221,7 +1313,7 @@ draw_battle_choice :: proc(g: ^Game) {
 }
 
 player_monster_count :: proc(c: ^Colony) -> int {
-	n := 0
+	n := len(c.storage) // monsters in Dens/Nurseries still count as yours
 	for m in c.roster {
 		if !m.wild {
 			n += 1
@@ -1245,6 +1337,9 @@ game_draw :: proc(g: ^Game) {
 		}
 		if g.trade_open {
 			draw_trade_panel(g)
+		}
+		if g.arena_open {
+			draw_arena(g)
 		}
 	case .BATTLE:
 		draw_battle(&g.battle)
@@ -1272,6 +1367,15 @@ game_draw :: proc(g: ^Game) {
 	}
 	if g.show_bag {
 		draw_bag(g)
+	}
+	if g.show_upgrades {
+		draw_upgrades(g)
+	}
+	if g.show_nursery {
+		draw_nursery(g)
+	}
+	if g.show_storage {
+		draw_storage(g)
 	}
 }
 
@@ -1311,7 +1415,15 @@ draw_colony :: proc(g: ^Game) {
 		}
 
 		if t.overlay != .NONE {
-			draw_improvement_icon(t.overlay, cx + sx, cy + sy, g.renderer.zoom)
+			if t.improvement == .NONE || t.overlay == .ROAD {
+				// Alone on the tile, or a ground overlay under the building.
+				draw_improvement_icon(t.overlay, cx + sx, cy + sy, g.renderer.zoom)
+			} else {
+				// A fortification sharing the tile: draw it smaller, offset, so
+				// it doesn't hide behind the building icon.
+				off := 0.42 * g.renderer.hex_size * g.renderer.zoom
+				draw_improvement_icon(t.overlay, cx + sx + off, cy + sy + off, g.renderer.zoom * 0.62)
+			}
 		}
 		if t.improvement != .NONE {
 			draw_improvement_icon(t.improvement, cx + sx, cy + sy, g.renderer.zoom)
@@ -1319,6 +1431,7 @@ draw_colony :: proc(g: ^Game) {
 	}
 
 	draw_inspect_radii(g)
+	draw_build_selection(g)
 	draw_move_highlights(g)
 	draw_map_monsters(g)
 	draw_scuffles(g)
@@ -1328,6 +1441,22 @@ draw_colony :: proc(g: ^Game) {
 	draw_roster_panel(g)
 	draw_end_turn_button(g)
 	draw_terrain_legend()
+}
+
+// A bold, pulsing marker on the tile you've picked in build mode, so it's
+// obvious which hex the build panel is acting on.
+draw_build_selection :: proc(g: ^Game) {
+	if !g.build_mode || !g.has_build {
+		return
+	}
+	z := g.renderer.zoom
+	pulse := 0.5 + 0.5 * math.sin(f32(rl.GetTime()) * 4.0)
+	draw_hex_filled(&g.renderer, g.build_hex, rl.Color{140, 235, 165, u8(30 + 24 * pulse)})
+	draw_hex_outline(&g.renderer, g.build_hex, rl.Color{150, 250, 190, 255}, 5.0 * z)
+	cx, cy := hex_to_screen(&g.renderer, g.build_hex)
+	label := cstring("BUILD HERE")
+	lw := rl.MeasureText(label, 15)
+	rl.DrawText(label, i32(cx) - lw / 2, i32(cy - 40 * z), 15, rl.Color{190, 255, 210, 245})
 }
 
 draw_map_monsters :: proc(g: ^Game) {
@@ -1363,10 +1492,16 @@ draw_map_monsters :: proc(g: ^Game) {
 		rl.DrawCircleV(rl.Vector2{px, by}, radius, creature_color(&m.creature))
 		rl.DrawCircleV(rl.Vector2{px - radius * 0.3, by - radius * 0.3}, radius * 0.32, rl.Color{255, 255, 255, 45})
 		if m.wild {
-			// Wilds: pulsing red ring so they read as hostile.
+			// Wilds: pulsing red ring so they read as hostile. Raiders and
+			// alphas (Phase D) get a bolder, warmer marker.
 			pulse := 0.5 + 0.5 * math.sin(now * 4.0 + f32(i))
 			rl.DrawCircleLinesV(rl.Vector2{px, by}, radius, rl.Color{240, 70, 70, 255})
 			rl.DrawCircleLinesV(rl.Vector2{px, by}, radius + (2.0 + 1.5 * pulse) * z, rl.Color{120, 20, 20, 255})
+			if m.role == .ALPHA {
+				rl.DrawCircleLinesV(rl.Vector2{px, by}, radius + (4.0 + 2.0 * pulse) * z, rl.Color{255, 160, 60, 255})
+			} else if m.role == .RAIDER {
+				rl.DrawCircleLinesV(rl.Vector2{px, by}, radius + (3.5 + 1.5 * pulse) * z, rl.Color{255, 110, 70, 200})
+			}
 		} else {
 			rl.DrawCircleLinesV(rl.Vector2{px, by}, radius, element_color(creature_element(&m.creature)))
 			if i == g.selected {
@@ -1609,6 +1744,25 @@ draw_colony_hud :: proc(g: ^Game) {
 
 	cryst := fmt.ctprintf("Crystals %d", g.colony.crystals)
 	rl.DrawText(cryst, x, 78, 20, rl.Color{150, 210, 255, 255})
+	x += rl.MeasureText(cryst, 20) + 30
+
+	// Heat (Phase D): raid pressure. Turns shown once a raid is possible.
+	heat_col := g.colony.heat >= RAID_MIN_HEAT * 2 ? rl.Color{235, 120, 100, 255} : rl.Color{220, 170, 120, 255}
+	heat := fmt.ctprintf("Heat %d", g.colony.heat)
+	rl.DrawText(heat, x, 78, 20, heat_col)
+	x += rl.MeasureText(heat, 20) + 30
+	if g.colony.turn >= RAID_GRACE && g.colony.heat >= RAID_MIN_HEAT {
+		raid := fmt.ctprintf("Raid in %d", g.colony.raid_timer)
+		rl.DrawText(raid, x, 78, 20, rl.Color{235, 150, 120, 255})
+		x += rl.MeasureText(raid, 20) + 30
+	} else if g.colony.turn < RAID_GRACE {
+		raid := fmt.ctprintf("Raids from turn %d", RAID_GRACE)
+		rl.DrawText(raid, x, 78, 20, rl.Color{170, 170, 190, 255})
+		x += rl.MeasureText(raid, 20) + 30
+	} else {
+		rl.DrawText("Raid calm (low heat)", x, 78, 20, rl.Color{170, 190, 170, 255})
+		x += rl.MeasureText("Raid calm (low heat)", 20) + 30
+	}
 
 	upkeep := 0
 	for &m in g.colony.roster {
@@ -1624,7 +1778,7 @@ draw_colony_hud :: proc(g: ^Game) {
 	gold_prod := fmt.ctprintf("Gold +%d/turn", colony_gold_production(&g.colony))
 	rl.DrawText(gold_prod, x, 106, 16, rl.Color{240, 205, 90, 255})
 	x += rl.MeasureText(gold_prod, 16) + 24
-	up := fmt.ctprintf("Upkeep %d food/turn   Monsters %d   Capture cards %d", upkeep, player_monster_count(&g.colony), g.colony.capture_cards)
+	up := fmt.ctprintf("Upkeep %d food/turn   Monsters %d (%d stored)   Capture cards %d", upkeep, player_monster_count(&g.colony), len(g.colony.storage), g.colony.capture_cards)
 	rl.DrawText(up, x, 106, 16, rl.Color{150, 150, 175, 255})
 
 	// Hovered tile info + occupants (inspect without attacking).
@@ -1633,12 +1787,12 @@ draw_colony_hud :: proc(g: ^Game) {
 		info: cstring
 		if t.improvement != .NONE {
 			if t.overlay != .NONE {
-				info = fmt.ctprintf("Tile: %s  -  %s HP %d/%d  (+%s)", terrain_name(t.terrain), improvement_name(t.improvement), t.improvement_hp, improvement_max_hp(t.improvement), improvement_name(t.overlay))
+				info = fmt.ctprintf("Tile: %s  -  %s HP %d/%d  (+ %s HP %d/%d)", terrain_name(t.terrain), improvement_name(t.improvement), t.improvement_hp, improvement_hp_cap(&g.colony, t.improvement), improvement_name(t.overlay), t.overlay_hp, improvement_max_hp(t.overlay))
 			} else {
-				info = fmt.ctprintf("Tile: %s  -  %s HP %d/%d", terrain_name(t.terrain), improvement_name(t.improvement), t.improvement_hp, improvement_max_hp(t.improvement))
+				info = fmt.ctprintf("Tile: %s  -  %s HP %d/%d", terrain_name(t.terrain), improvement_name(t.improvement), t.improvement_hp, improvement_hp_cap(&g.colony, t.improvement))
 			}
 		} else if t.overlay != .NONE {
-			info = fmt.ctprintf("Tile: %s  -  %s", terrain_name(t.terrain), improvement_name(t.overlay))
+			info = fmt.ctprintf("Tile: %s  -  %s HP %d/%d", terrain_name(t.terrain), improvement_name(t.overlay), t.overlay_hp, improvement_max_hp(t.overlay))
 		} else {
 			info = fmt.ctprintf("Tile: %s", terrain_name(t.terrain))
 		}
@@ -1693,7 +1847,7 @@ draw_colony_hud :: proc(g: ^Game) {
 		}
 	}
 
-	rl.DrawText("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck | M dex | I improvements | G bag", 20, i32(sh) - 70, 16, rl.Color{120, 120, 145, 255})
+	rl.DrawText("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck | M dex | I improvements | G bag | U upgrades | C nursery | H storage", 20, i32(sh) - 70, 14, rl.Color{120, 120, 145, 255})
 	rl.DrawText("RMB/WASD pan  |  wheel zoom  |  R recenter  |  M monsterdex  |  N new run", 20, i32(sh) - 46, 16, rl.Color{120, 120, 145, 255})
 
 	// World notifications (scuffles in the distance, things slipping away).
@@ -1807,7 +1961,7 @@ build_panel_rect :: proc() -> rl.Rectangle {
 }
 
 BUILD_OPT_START     :: f32(96)
-BUILD_REPLACE_START :: f32(200)
+BUILD_REPLACE_START :: f32(216)
 
 build_option_rect_at :: proc(start_y: f32, i: int) -> rl.Rectangle {
 	p := build_panel_rect()
@@ -1820,7 +1974,7 @@ build_option_rect_at :: proc(start_y: f32, i: int) -> rl.Rectangle {
 
 build_repair_rect :: proc() -> rl.Rectangle {
 	p := build_panel_rect()
-	return rl.Rectangle{p.x + 12, p.y + 124, p.width - 24, 46}
+	return rl.Rectangle{p.x + 12, p.y + 136, p.width - 24, 46}
 }
 
 draw_build_panel :: proc(g: ^Game) {
@@ -1844,12 +1998,20 @@ draw_build_panel :: proc(g: ^Game) {
 	gold := fmt.ctprintf("Gold: %d", colony_total_gold(&g.colony))
 	rl.DrawText(gold, i32(p.x) + 16, i32(p.y) + 68, 16, rl.Color{240, 205, 90, 255})
 
-	if t.improvement != .NONE {
-		cur := fmt.ctprintf("Built: %s (hp %d/%d)", improvement_name(t.improvement), t.improvement_hp, improvement_max_hp(t.improvement))
-		rl.DrawText(cur, i32(p.x) + 16, i32(p.y) + 92, 16, rl.Color{140, 220, 150, 255})
+	if t.improvement != .NONE || t.overlay != .NONE {
+		y := i32(p.y) + 92
+		if t.improvement != .NONE {
+			rl.DrawText(fmt.ctprintf("Built: %s  (hp %d/%d)", improvement_name(t.improvement), t.improvement_hp, improvement_hp_cap(&g.colony, t.improvement)), i32(p.x) + 16, y, 16, rl.Color{140, 220, 150, 255})
+			y += 22
+		}
+		if t.overlay != .NONE {
+			rl.DrawText(fmt.ctprintf("Overlay: %s  (hp %d/%d)", improvement_name(t.overlay), t.overlay_hp, improvement_max_hp(t.overlay)), i32(p.x) + 16, y, 16, rl.Color{150, 210, 235, 255})
+			y += 22
+		}
 
-		cost := improvement_repair_cost(t.improvement, t.improvement_hp)
-		if cost > 0 {
+		rim, rhp, rcap := tile_repair_target(&g.colony, t)
+		if rim != .NONE {
+			cost := improvement_repair_cost(&g.colony, rim, rhp)
 			rec := build_repair_rect()
 			afford := colony_total_gold(&g.colony) >= cost
 			hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), rec)
@@ -1861,20 +2023,20 @@ draw_build_panel :: proc(g: ^Game) {
 			}
 			rl.DrawRectangleRounded(rec, 0.14, 6, bg)
 			rl.DrawRectangleRoundedLinesEx(rec, 0.14, 6, 2, afford ? rl.Color{120, 200, 150, 255} : rl.Color{120, 80, 80, 255})
-			rl.DrawText("Repair", i32(rec.x) + 10, i32(rec.y) + 6, 16, rl.Color{225, 240, 225, 255})
-			rl.DrawText(fmt.ctprintf("restores to %d hp", improvement_max_hp(t.improvement)), i32(rec.x) + 10, i32(rec.y) + 27, 12, rl.Color{160, 185, 165, 255})
+			rl.DrawText(fmt.ctprintf("Repair %s", improvement_name(rim)), i32(rec.x) + 10, i32(rec.y) + 6, 16, rl.Color{225, 240, 225, 255})
+			rl.DrawText(fmt.ctprintf("restores to %d hp", rcap), i32(rec.x) + 10, i32(rec.y) + 27, 12, rl.Color{160, 185, 165, 255})
 			cst := fmt.ctprintf("%dg", cost)
 			cw := rl.MeasureText(cst, 16)
 			rl.DrawText(cst, i32(rec.x + rec.width) - 10 - cw, i32(rec.y) + 6, 16, afford ? rl.Color{240, 205, 90, 255} : rl.Color{200, 120, 120, 255})
 		} else {
-			rl.DrawText("Fully repaired", i32(p.x) + 16, i32(p.y) + 128, 15, rl.Color{140, 180, 150, 255})
+			rl.DrawText("Fully repaired", i32(p.x) + 16, i32(p.y) + 140, 15, rl.Color{140, 180, 150, 255})
 		}
 
-		// You can overwrite a built improvement with a different one.
+		// You can overwrite a built improvement, or add a stackable overlay.
 		opts: [32]Improvement
 		n := buildable_improvements(&g.colony, g.build_hex, opts[:])
 		if n > 0 {
-			rl.DrawText("Add / replace:", i32(p.x) + 16, i32(p.y) + 180, 15, rl.Color{150, 150, 170, 255})
+			rl.DrawText("Add / replace:", i32(p.x) + 16, i32(p.y) + 196, 15, rl.Color{150, 150, 170, 255})
 			draw_build_options(g, opts[:], n, BUILD_REPLACE_START)
 		}
 		return
@@ -1915,7 +2077,7 @@ draw_build_options :: proc(g: ^Game, opts: []Improvement, n: int, start_y: f32) 
 		cst := fmt.ctprintf("%dg", cost)
 		cw := rl.MeasureText(cst, 15)
 		rl.DrawText(cst, i32(rec.x + rec.width) - 8 - cw, i32(rec.y) + 4, 15, afford ? rl.Color{240, 205, 90, 255} : rl.Color{200, 120, 120, 255})
-		rl.DrawText(fmt.ctprintf("%d hp", improvement_max_hp(im)), i32(rec.x) + 8, i32(rec.y) + 23, 11, rl.Color{150, 150, 170, 255})
+		rl.DrawText(fmt.ctprintf("%d hp", improvement_hp_cap(&g.colony, im)), i32(rec.x) + 8, i32(rec.y) + 23, 11, rl.Color{150, 150, 170, 255})
 		if improvement_stacks(im) {
 			tag := cstring("+stack")
 			tw := rl.MeasureText(tag, 11)
@@ -2069,6 +2231,8 @@ draw_terrain_legend :: proc() {
 		{.GROVE,        "Grove"},
 		{.TRADING_POST, "Trading Post"},
 		{.BOSS_ROOM,    "Boss Room"},
+		{.ARENA,        "Arena"},
+		{.CRYSTAL_COVE, "Crystal Cove"},
 		{.MUSHROOM,     "Mushroom Grove"},
 		{.RUINS,        "Ruins"},
 		{.TUNDRA,       "Tundra"},
@@ -2325,8 +2489,10 @@ draw_deck_viewer :: proc(g: ^Game) {
 	}
 	item_line := c.item != .NONE ? fmt.ctprintf("Item: %s - %s", item_name(c.item), item_desc(c.item)) : cstring("Item: none")
 	rl.DrawText(item_line, 40, 112, 16, rl.Color{180, 240, 200, 255})
+	gene_line := fmt.ctprintf("Genes: %s   (total %d)", genes_label(c.genes), genes_total(c.genes))
+	rl.DrawText(gene_line, 40, 134, 16, rl.Color{170, 210, 230, 255})
 	pager := fmt.ctprintf("monster %d / %d   -   Left/Right or Q/E to switch", g.view_index + 1, len(g.colony.roster))
-	rl.DrawText(pager, 40, 134, 16, rl.Color{150, 150, 170, 255})
+	rl.DrawText(pager, 40, 154, 16, rl.Color{150, 150, 170, 255})
 
 	// Item slot + bag.
 	m := &g.colony.roster[g.view_index]
@@ -2360,6 +2526,383 @@ draw_deck_viewer :: proc(g: ^Game) {
 	hint := cstring("V / Esc close   |   wheel or Up/Down to scroll")
 	hw := rl.MeasureText(hint, 16)
 	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 32, 16, rl.Color{140, 140, 160, 255})
+}
+
+// ----------------------------------------------------------------------------
+// Nursery (breeding) & monster storage panels (Phase 8/10)
+// ----------------------------------------------------------------------------
+
+NURSERY_LIST_ROWS   :: 8
+NURSERY_CAND_ROWS   :: 12
+STORAGE_LIST_ROWS   :: 10
+STORAGE_NEAR_ROWS   :: 8
+STORAGE_STORED_ROWS :: 8
+
+// A small slot showing a stored monster (or an empty hint) with an action label.
+draw_stored_slot :: proc(rec: rl.Rectangle, c: ^Colony, si: int, empty_label, action: cstring, col: rl.Color) {
+	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), rec)
+	if si < 0 {
+		rl.DrawRectangleRounded(rec, 0.18, 4, rl.Color{24, 24, 30, 255})
+		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 1.5, rl.Color{70, 70, 82, 255})
+		rl.DrawText(empty_label, i32(rec.x) + 10, i32(rec.y) + 7, 14, rl.Color{120, 120, 140, 255})
+		return
+	}
+	m := &c.storage[si]
+	bg := hover ? rl.Color{44, 58, 50, 255} : rl.Color{28, 36, 32, 255}
+	rl.DrawRectangleRounded(rec, 0.18, 4, bg)
+	rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 1.5, col)
+	rl.DrawText(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 7, 15, rl.Color{225, 235, 225, 255})
+	aw := rl.MeasureText(action, 13)
+	rl.DrawText(action, i32(rec.x + rec.width) - 10 - aw, i32(rec.y) + 8, 13, rl.Color{230, 200, 200, 255})
+}
+
+// ---- Nursery panel (C) ----
+
+nursery_row_rect :: proc(row: int) -> rl.Rectangle {
+	return rl.Rectangle{40, 150 + f32(row) * 30, 340, 28}
+}
+
+nursery_slot_rect :: proc(kind: Stored_In, i: int) -> rl.Rectangle {
+	x := f32(410)
+	y := f32(146)
+	if kind == .NURSERY_BABY {
+		y = 146 + f32(NURSERY_PARENTS) * 34 + 34
+	}
+	return rl.Rectangle{x, y + f32(i) * 34, 360, 30}
+}
+
+nursery_cand_rect :: proc(row: int) -> rl.Rectangle {
+	return rl.Rectangle{800, 180 + f32(row) * 28, 440, 26}
+}
+
+update_nursery :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.C) || rl.IsKeyPressed(.ESCAPE) {
+		g.show_nursery = false
+		return
+	}
+	n := nursery_count(&g.colony)
+	if g.nursery_sel >= n {
+		g.nursery_sel = max(n - 1, 0)
+	}
+	max_first := max(0, n - NURSERY_LIST_ROWS)
+	if rl.IsKeyPressed(.DOWN) || rl.IsKeyPressed(.S) {
+		g.nursery_first = min(g.nursery_first + 1, max_first)
+	}
+	if rl.IsKeyPressed(.UP) || rl.IsKeyPressed(.W) {
+		g.nursery_first = max(g.nursery_first - 1, 0)
+	}
+	if w := rl.GetMouseWheelMove(); w != 0 {
+		g.nursery_first = clamp(g.nursery_first - int(w * 3), 0, max_first)
+	}
+	if n == 0 || !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := rl.GetMousePosition()
+	hex := nursery_hex_at(&g.colony, g.nursery_sel)
+
+	for row in 0..<min(NURSERY_LIST_ROWS, n) {
+		k := g.nursery_first + row
+		if k >= n {
+			break
+		}
+		if rl.CheckCollisionPointRec(mp, nursery_row_rect(row)) {
+			g.nursery_sel = k
+			return
+		}
+	}
+
+	// Remove a parent (returns it to the map).
+	for i in 0..<NURSERY_PARENTS {
+		if rl.CheckCollisionPointRec(mp, nursery_slot_rect(.NURSERY_PARENT, i)) {
+			if si := stored_slot_index(&g.colony, hex, .NURSERY_PARENT, i); si >= 0 {
+				res := colony_deploy_stored(&g.colony, si)
+				set_status(g, res == 0 ? "Parent returned to the map." : "No room beside the Nursery.")
+			}
+			return
+		}
+	}
+	// Take a baby.
+	for i in 0..<NURSERY_BABIES {
+		if rl.CheckCollisionPointRec(mp, nursery_slot_rect(.NURSERY_BABY, i)) {
+			if si := stored_slot_index(&g.colony, hex, .NURSERY_BABY, i); si >= 0 {
+				res := colony_deploy_stored(&g.colony, si)
+				set_status(g, res == 0 ? "Baby taken out." : "No room beside the Nursery.")
+			}
+			return
+		}
+	}
+
+	// Assign a nearby map monster as a parent.
+	for row in 0..<NURSERY_CAND_ROWS {
+		if !rl.CheckCollisionPointRec(mp, nursery_cand_rect(row)) {
+			continue
+		}
+		idx := nearby_map_monster_at(&g.colony, hex, row)
+		if idx < 0 {
+			break
+		}
+		if nursery_accepts(&g.colony, idx, hex) {
+			res := colony_assign_parent(&g.colony, idx, hex)
+			set_status(g, res == 0 ? "Monster moved into the Nursery." : "Can't add that monster.")
+		} else {
+			set_status(g, "Needs a nearby monster: Lvl 5+, same species as the other parent.")
+		}
+		return
+	}
+}
+
+draw_nursery :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
+
+	rl.DrawText(cstring("Nurseries"), 40, 26, 34, rl.Color{235, 235, 245, 255})
+	sub := cstring("Move two nearby monsters of the same species (Lvl 5+) in as the breeding pair. A fed Nursery hatches a level 1 baby every 8 turns, up to 4 stored.")
+	rl.DrawText(sub, 40, 68, 16, rl.Color{180, 190, 210, 255})
+
+	n := nursery_count(&g.colony)
+	rl.DrawText(fmt.ctprintf("Your Nurseries (%d):", n), 40, 118, 16, rl.Color{150, 150, 170, 255})
+
+	mp := rl.GetMousePosition()
+	for row in 0..<min(NURSERY_LIST_ROWS, n) {
+		k := g.nursery_first + row
+		if k >= n {
+			break
+		}
+		hex := nursery_hex_at(&g.colony, k)
+		rec := nursery_row_rect(row)
+		sel := k == g.nursery_sel
+		hover := rl.CheckCollisionPointRec(mp, rec)
+		bg := sel ? rl.Color{52, 78, 56, 255} : (hover ? rl.Color{38, 42, 54, 255} : rl.Color{26, 28, 36, 255})
+		rl.DrawRectangleRounded(rec, 0.18, 4, bg)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 2, sel ? rl.Color{140, 220, 160, 255} : rl.Color{90, 100, 120, 255})
+		p := nursery_parent_count(&g.colony, hex)
+		b := nursery_baby_count(&g.colony, hex)
+		prog := 0
+		if t := tile_at(&g.colony, hex); t != nil {
+			prog = t.stored
+		}
+		rl.DrawText(fmt.ctprintf("Nursery (%d,%d)  pair %d/%d  babies %d/%d  %d/%d", hex.q, hex.r, p, NURSERY_PARENTS, b, NURSERY_BABIES, prog, NURSERY_PERIOD), i32(rec.x) + 10, i32(rec.y) + 6, 15, rl.Color{225, 230, 240, 255})
+	}
+
+	if n == 0 {
+		rl.DrawText(cstring("No Nurseries yet - build one with B (Cave/Grove/Mushroom/Jungle)."), 40, 154, 16, rl.Color{210, 180, 180, 255})
+		hint := cstring("C / Esc close")
+		hw := rl.MeasureText(hint, 16)
+		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
+		return
+	}
+
+	hex := nursery_hex_at(&g.colony, g.nursery_sel)
+
+	rl.DrawText(cstring("Breeding pair (click to remove):"), 410, 118, 16, rl.Color{190, 220, 200, 255})
+	for i in 0..<NURSERY_PARENTS {
+		si := stored_slot_index(&g.colony, hex, .NURSERY_PARENT, i)
+		draw_stored_slot(nursery_slot_rect(.NURSERY_PARENT, i), &g.colony, si, cstring("Empty - add a nearby monster"), cstring("Remove"), rl.Color{140, 220, 160, 255})
+	}
+	rl.DrawText(cstring("Babies (click to take):"), 410, 258, 16, rl.Color{210, 200, 160, 255})
+	for i in 0..<NURSERY_BABIES {
+		si := stored_slot_index(&g.colony, hex, .NURSERY_BABY, i)
+		draw_stored_slot(nursery_slot_rect(.NURSERY_BABY, i), &g.colony, si, cstring("Empty"), cstring("Take"), rl.Color{230, 210, 150, 255})
+	}
+
+	rl.DrawText(cstring("Add a parent - nearby monsters (within 1, Lvl 5+, same species):"), 800, 140, 16, rl.Color{180, 190, 210, 255})
+	cand := 0
+	for row in 0..<NURSERY_CAND_ROWS {
+		idx := nearby_map_monster_at(&g.colony, hex, row)
+		if idx < 0 {
+			break
+		}
+		m := &g.colony.roster[idx]
+		rec := nursery_cand_rect(cand)
+		ok := nursery_accepts(&g.colony, idx, hex)
+		hover := rl.CheckCollisionPointRec(mp, rec)
+		bg := ok ? (hover ? rl.Color{44, 64, 50, 255} : rl.Color{28, 40, 34, 255}) : (hover ? rl.Color{34, 30, 34, 255} : rl.Color{24, 24, 28, 255})
+		rl.DrawRectangleRounded(rec, 0.2, 4, bg)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.2, 4, 1.5, ok ? rl.Color{110, 180, 130, 255} : rl.Color{70, 66, 70, 255})
+		rl.DrawText(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 5, 15, ok ? rl.Color{225, 235, 225, 255} : rl.Color{150, 145, 150, 255})
+		gl := genes_label(m.creature.genes)
+		gw := rl.MeasureText(gl, 13)
+		rl.DrawText(gl, i32(rec.x + rec.width) - 10 - gw, i32(rec.y) + 6, 13, rl.Color{170, 200, 220, 255})
+		cand += 1
+	}
+	if cand == 0 {
+		rl.DrawText(cstring("No monsters next to this Nursery."), 800, 184, 15, rl.Color{150, 150, 170, 255})
+	}
+
+	hint := cstring("Click a Nursery, then a nearby monster to add it   |   C / Esc close")
+	hw := rl.MeasureText(hint, 16)
+	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
+}
+
+// ---- Monster storage panel (H) ----
+
+storage_den_rect :: proc(row: int) -> rl.Rectangle {
+	return rl.Rectangle{40, 150 + f32(row) * 30, 340, 28}
+}
+
+storage_near_rect :: proc(row: int) -> rl.Rectangle {
+	return rl.Rectangle{410, 180 + f32(row) * 30, 380, 28}
+}
+
+storage_hold_rect :: proc(row: int) -> rl.Rectangle {
+	return rl.Rectangle{820, 180 + f32(row) * 30, 420, 28}
+}
+
+update_storage :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.H) || rl.IsKeyPressed(.ESCAPE) {
+		g.show_storage = false
+		return
+	}
+	n := den_count(&g.colony)
+	if g.storage_sel >= n {
+		g.storage_sel = max(n - 1, 0)
+	}
+	max_first := max(0, n - STORAGE_LIST_ROWS)
+	if rl.IsKeyPressed(.DOWN) || rl.IsKeyPressed(.S) {
+		g.storage_first = min(g.storage_first + 1, max_first)
+	}
+	if rl.IsKeyPressed(.UP) || rl.IsKeyPressed(.W) {
+		g.storage_first = max(g.storage_first - 1, 0)
+	}
+	if w := rl.GetMouseWheelMove(); w != 0 {
+		g.storage_first = clamp(g.storage_first - int(w * 3), 0, max_first)
+	}
+	if n == 0 || !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := rl.GetMousePosition()
+	hex := den_hex_at(&g.colony, g.storage_sel)
+
+	for row in 0..<min(STORAGE_LIST_ROWS, n) {
+		k := g.storage_first + row
+		if k >= n {
+			break
+		}
+		if rl.CheckCollisionPointRec(mp, storage_den_rect(row)) {
+			g.storage_sel = k
+			return
+		}
+	}
+
+	for row in 0..<STORAGE_NEAR_ROWS {
+		if !rl.CheckCollisionPointRec(mp, storage_near_rect(row)) {
+			continue
+		}
+		idx := nearby_map_monster_at(&g.colony, hex, row)
+		if idx < 0 {
+			break
+		}
+		switch colony_store_monster(&g.colony, idx, hex) {
+		case 0:
+			set_status(g, "Monster put into stasis.")
+		case 2:
+			set_status(g, "That Den is full.")
+		case 3:
+			set_status(g, "Move the monster next to the Den first.")
+		case:
+			set_status(g, "Can't store that.")
+		}
+		return
+	}
+
+	for row in 0..<STORAGE_STORED_ROWS {
+		if !rl.CheckCollisionPointRec(mp, storage_hold_rect(row)) {
+			continue
+		}
+		si := stored_slot_index(&g.colony, hex, .DEN, row)
+		if si < 0 {
+			break
+		}
+		res := colony_deploy_stored(&g.colony, si)
+		set_status(g, res == 0 ? "Monster deployed." : "No room beside the Den.")
+		return
+	}
+}
+
+draw_storage :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
+
+	rl.DrawText(cstring("Monster Storage"), 40, 26, 34, rl.Color{235, 235, 245, 255})
+	sub := cstring("Walk a monster next to a Den, then click it here to put it in stasis: no food upkeep, no heat, off the map. Up to 32 per Den.")
+	rl.DrawText(sub, 40, 68, 16, rl.Color{180, 190, 210, 255})
+
+	n := den_count(&g.colony)
+	rl.DrawText(fmt.ctprintf("Your Dens (%d):", n), 40, 118, 16, rl.Color{150, 150, 170, 255})
+
+	mp := rl.GetMousePosition()
+	for row in 0..<min(STORAGE_LIST_ROWS, n) {
+		k := g.storage_first + row
+		if k >= n {
+			break
+		}
+		hex := den_hex_at(&g.colony, k)
+		rec := storage_den_rect(row)
+		sel := k == g.storage_sel
+		hover := rl.CheckCollisionPointRec(mp, rec)
+		bg := sel ? rl.Color{52, 78, 56, 255} : (hover ? rl.Color{38, 42, 54, 255} : rl.Color{26, 28, 36, 255})
+		rl.DrawRectangleRounded(rec, 0.18, 4, bg)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 2, sel ? rl.Color{140, 220, 160, 255} : rl.Color{90, 100, 120, 255})
+		rl.DrawText(fmt.ctprintf("Den (%d,%d)   %d/%d", hex.q, hex.r, den_occupancy(&g.colony, hex), DEN_CAPACITY), i32(rec.x) + 10, i32(rec.y) + 6, 15, rl.Color{225, 230, 240, 255})
+	}
+
+	if n == 0 {
+		rl.DrawText(cstring("No Dens yet - build one with B (Cave/Grove/Ruins/Mushroom/Desert)."), 40, 154, 16, rl.Color{210, 180, 180, 255})
+		hint := cstring("H / Esc close")
+		hw := rl.MeasureText(hint, 16)
+		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
+		return
+	}
+
+	hex := den_hex_at(&g.colony, g.storage_sel)
+
+	rl.DrawText(cstring("Nearby (within 1) - click to store:"), 410, 150, 16, rl.Color{190, 220, 200, 255})
+	near := 0
+	for i in 0..<len(g.colony.roster) {
+		m := &g.colony.roster[i]
+		if m.wild || hex_distance(m.pos, hex) > STORE_RANGE {
+			continue
+		}
+		if near >= STORAGE_NEAR_ROWS {
+			break
+		}
+		rec := storage_near_rect(near)
+		hover := rl.CheckCollisionPointRec(mp, rec)
+		rl.DrawRectangleRounded(rec, 0.18, 4, hover ? rl.Color{44, 64, 50, 255} : rl.Color{28, 40, 34, 255})
+		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 1.5, rl.Color{110, 180, 130, 255})
+		rl.DrawText(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 5, 15, rl.Color{225, 235, 225, 255})
+		near += 1
+	}
+	if near == 0 {
+		rl.DrawText(cstring("No monsters next to this Den."), 410, 184, 15, rl.Color{150, 150, 170, 255})
+	}
+
+	rl.DrawText(fmt.ctprintf("In stasis (%d/%d) - click to deploy:", den_occupancy(&g.colony, hex), DEN_CAPACITY), 820, 150, 16, rl.Color{210, 200, 160, 255})
+	hold := 0
+	for i in 0..<len(g.colony.storage) {
+		m := &g.colony.storage[i]
+		if m.stored != .DEN || !hex_equal(m.stored_hex, hex) {
+			continue
+		}
+		if hold >= STORAGE_STORED_ROWS {
+			break
+		}
+		rec := storage_hold_rect(hold)
+		hover := rl.CheckCollisionPointRec(mp, rec)
+		rl.DrawRectangleRounded(rec, 0.18, 4, hover ? rl.Color{48, 52, 64, 255} : rl.Color{28, 30, 38, 255})
+		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 1.5, rl.Color{120, 140, 180, 255})
+		rl.DrawText(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 5, 15, rl.Color{220, 225, 235, 255})
+		hold += 1
+	}
+	if hold == 0 {
+		rl.DrawText(cstring("Nothing stored here."), 820, 184, 15, rl.Color{150, 150, 170, 255})
+	}
+
+	hint := cstring("Click a Den, then a nearby monster to store it, or a stored one to deploy   |   H / Esc close")
+	hw := rl.MeasureText(hint, 16)
+	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -2449,7 +2992,7 @@ draw_encyclopedia :: proc(g: ^Game) {
 		} else if hover {
 			rl.DrawRectangleRounded(rec, 0.3, 6, rl.Color{28, 30, 40, 255})
 		}
-		sp := SPECIES[i]
+		sp := SPECIES[Species_Id(i)]
 		rl.DrawCircleV(rl.Vector2{rec.x + 14, rec.y + 12}, 8, sp.color)
 		rl.DrawText(fmt.ctprintf("%s", sp.name), i32(rec.x) + 30, i32(rec.y) + 4, 16, sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 200, 215, 255})
 		label := elements_label(sp.elements)
@@ -2472,7 +3015,7 @@ draw_encyclopedia :: proc(g: ^Game) {
 	if g.encyclopedia_index < 0 || g.encyclopedia_index >= n {
 		return
 	}
-	sp := SPECIES[g.encyclopedia_index]
+	sp := SPECIES[Species_Id(g.encyclopedia_index)]
 	dx := f32(390)
 	dy := f32(120)
 
@@ -2530,7 +3073,7 @@ draw_encyclopedia :: proc(g: ^Game) {
 	ly += 12
 	rl.DrawText("ABILITIES  (one rolled at spawn)", lx, ly, 16, rl.Color{150, 150, 170, 255})
 	ly += 24
-	for a in species_abilities(g.encyclopedia_index) {
+	for a in species_abilities(Species_Id(g.encyclopedia_index)) {
 		rl.DrawText(fmt.ctprintf("%s - %s", ability_name(a), ability_desc(a)), lx, ly, 15, rl.Color{200, 180, 240, 255})
 		ly += 20
 	}
@@ -2715,7 +3258,7 @@ draw_improvements :: proc(g: ^Game) {
 
 	// Name + headline stats.
 	rl.DrawText(fmt.ctprintf("%s", improvement_name(im)), i32(dx + 148), i32(dy) + 6, 30, rl.Color{235, 235, 245, 255})
-	head := fmt.ctprintf("%s   |   Cost %dg   |   HP %d", improvement_category(im), improvement_cost(im), improvement_max_hp(im))
+	head := fmt.ctprintf("%s   |   Cost %dg   |   HP %d", improvement_category(im), improvement_cost(im), improvement_hp_cap(&g.colony, im))
 	rl.DrawText(head, i32(dx + 148), i32(dy) + 44, 18, rl.Color{210, 200, 160, 255})
 	if improvement_stacks(im) {
 		rl.DrawText("STACKABLE (overlay slot)", i32(dx + 148), i32(dy) + 68, 15, rl.Color{150, 220, 170, 255})
@@ -2870,7 +3413,7 @@ draw_bag :: proc(g: ^Game) {
 	sh := f32(rl.GetScreenHeight())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 245})
 
-	rl.DrawText("ITEM BAG", 40, 38, 32, rl.Color{225, 225, 240, 255})
+	rl.DrawText(fmt.ctprintf("ITEM BAG   (%d / %d)", len(g.colony.items), colony_item_cap(&g.colony)), 40, 38, 32, rl.Color{225, 225, 240, 255})
 	rl.DrawText("Up/Down, wheel or click to browse   |   G / Esc to close", 40, 80, 16, rl.Color{140, 140, 160, 255})
 
 	n := len(g.colony.items)
@@ -2956,4 +3499,231 @@ draw_bag :: proc(g: ^Game) {
 	lab := cstring("Equip to selected monster")
 	lw := rl.MeasureText(lab, 18)
 	rl.DrawText(lab, i32(btn.x + btn.width / 2) - lw / 2, i32(btn.y + btn.height / 2) - 9, 18, can_equip ? rl.Color{235, 250, 240, 255} : rl.Color{130, 130, 142, 255})
+}
+
+// ----------------------------------------------------------------------------
+// Crystal progression panel (a tree, shown in two columns)
+// ----------------------------------------------------------------------------
+
+UPGRADE_ROWS :: 9
+
+upgrade_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	w := f32(1230)
+	h := f32(692)
+	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
+}
+
+upgrade_cell_rect :: proc(i: int) -> rl.Rectangle {
+	p := upgrade_panel_rect()
+	cw := (p.width - 40 - 2 * 16) / 3
+	col := i / UPGRADE_ROWS
+	row := i % UPGRADE_ROWS
+	return rl.Rectangle{p.x + 20 + f32(col) * (cw + 16), p.y + 100 + f32(row) * 62, cw, 56}
+}
+
+upgrade_buy_rect :: proc(i: int) -> rl.Rectangle {
+	r := upgrade_cell_rect(i)
+	return rl.Rectangle{r.x + r.width - 96, r.y + 13, 86, 30}
+}
+
+update_upgrades :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.U) {
+		g.show_upgrades = false
+		return
+	}
+	if !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := rl.GetMousePosition()
+	for i in 0..<len(UPGRADE_ORDER) {
+		if rl.CheckCollisionPointRec(mp, upgrade_buy_rect(i)) {
+			u := UPGRADE_ORDER[i]
+			switch colony_buy_upgrade(&g.colony, u) {
+			case 0: set_status(g, fmt.ctprintf("%s upgraded!", upgrade_name(u)))
+			case 1: set_status(g, "Already at the maximum level.")
+			case 2: set_status(g, "Not enough crystals.")
+			case 3:
+				info := UPGRADES[u]
+				set_status(g, fmt.ctprintf("Locked - needs %s Lv %d first.", upgrade_name(info.prereq), info.req_level))
+			}
+			return
+		}
+	}
+}
+
+draw_upgrades :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 245})
+
+	p := upgrade_panel_rect()
+	rl.DrawRectangleRounded(p, 0.03, 8, rl.Color{18, 20, 30, 248})
+	rl.DrawRectangleRoundedLinesEx(p, 0.03, 8, 3, rl.Color{150, 120, 235, 255})
+
+	rl.DrawText("CRYSTAL PROGRESSION", i32(p.x) + 24, i32(p.y) + 18, 30, rl.Color{210, 190, 250, 255})
+	rl.DrawText(fmt.ctprintf("Crystals: %d    -    permanent upgrades; fight the Arena and Boss Rooms for more", g.colony.crystals), i32(p.x) + 24, i32(p.y) + 58, 16, rl.Color{190, 175, 220, 255})
+
+	mp := rl.GetMousePosition()
+	for i in 0..<len(UPGRADE_ORDER) {
+		u := UPGRADE_ORDER[i]
+		info := UPGRADES[u]
+		rec := upgrade_cell_rect(i)
+		level := g.colony.upgrades[u]
+		maxed := level >= info.max_level
+		unlocked := upgrade_unlocked(&g.colony, u)
+		child := info.prereq != .NONE
+		indent := child ? f32(18) : f32(0)
+
+		bg := rl.Color{24, 24, 34, 255}
+		if level > 0 { bg = rl.Color{30, 26, 44, 255} }
+		if !unlocked { bg = rl.Color{20, 19, 24, 255} }
+		rl.DrawRectangleRounded(rec, 0.08, 6, bg)
+		border := maxed ? rl.Color{150, 120, 235, 255} : (unlocked ? rl.Color{70, 66, 92, 255} : rl.Color{46, 44, 54, 255})
+		rl.DrawRectangleRoundedLinesEx(rec, 0.08, 6, 2, border)
+
+		// A little "tree" tick joining a child to its column.
+		if child {
+			rl.DrawLineEx(rl.Vector2{rec.x + 8, rec.y + 20}, rl.Vector2{rec.x + 15, rec.y + 20}, 2, rl.Color{90, 84, 120, 255})
+		}
+
+		name_col := unlocked ? rl.Color{235, 232, 250, 255} : rl.Color{130, 128, 145, 255}
+		rl.DrawText(upgrade_name(u), i32(rec.x + indent) + 14, i32(rec.y) + 5, 15, name_col)
+
+		// Level pips after the name.
+		nw := rl.MeasureText(upgrade_name(u), 15)
+		for lv in 0..<info.max_level {
+			cx := rec.x + indent + 14 + f32(nw) + 12 + f32(lv) * 13
+			col := lv < level ? rl.Color{170, 140, 245, 255} : rl.Color{58, 56, 74, 255}
+			rl.DrawCircleV(rl.Vector2{cx, rec.y + 12}, 4.5, col)
+		}
+
+		if unlocked {
+			rl.DrawText(upgrade_desc(u), i32(rec.x + indent) + 14, i32(rec.y) + 24, 11, rl.Color{185, 185, 205, 255})
+			rl.DrawText("unlocked", i32(rec.x + indent) + 14, i32(rec.y) + 40, 11, rl.Color{110, 130, 118, 255})
+		} else {
+			rl.DrawText(fmt.ctprintf("Needs %s Lv %d", upgrade_name(info.prereq), info.req_level), i32(rec.x + indent) + 14, i32(rec.y) + 30, 11, rl.Color{225, 175, 110, 255})
+		}
+
+		// Buy button.
+		btn := upgrade_buy_rect(i)
+		cost := upgrade_cost(u, level)
+		afford := g.colony.crystals >= cost
+		enabled := !maxed && unlocked && afford
+		hover := enabled && rl.CheckCollisionPointRec(mp, btn)
+		bbg := !enabled ? rl.Color{30, 28, 38, 255} : (hover ? rl.Color{64, 50, 104, 255} : rl.Color{48, 40, 78, 255})
+		rl.DrawRectangleRounded(btn, 0.3, 8, bbg)
+		bborder := maxed ? rl.Color{120, 100, 170, 255} : (enabled ? rl.Color{170, 140, 245, 255} : rl.Color{84, 76, 104, 255})
+		rl.DrawRectangleRoundedLinesEx(btn, 0.3, 8, 2, bborder)
+		label: cstring
+		switch {
+		case !unlocked: label = "Locked"
+		case maxed:     label = "MAX"
+		case:           label = fmt.ctprintf("Buy %d", cost)
+		}
+		lw := rl.MeasureText(label, 14)
+		lc := maxed ? rl.Color{160, 150, 190, 255} : (enabled ? rl.Color{235, 230, 255, 255} : rl.Color{140, 132, 158, 255})
+		rl.DrawText(label, i32(btn.x + btn.width / 2) - lw / 2, i32(btn.y + btn.height / 2) - 7, 14, lc)
+	}
+
+	rl.DrawText("U / Esc to close   -   children unlock when their parent reaches the shown level", i32(p.x) + 24, i32(p.y + p.height) - 24, 13, rl.Color{140, 140, 160, 255})
+}
+
+// ----------------------------------------------------------------------------
+// Arena panel (pay gold -> fight a strong team for crystals)
+// ----------------------------------------------------------------------------
+
+arena_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	return rl.Rectangle{sw / 2 - 260, sh / 2 - 170, 520, 340}
+}
+
+arena_fight_rect :: proc() -> rl.Rectangle {
+	p := arena_panel_rect()
+	return rl.Rectangle{p.x + 30, p.y + 220, p.width - 60, 52}
+}
+
+arena_leave_rect :: proc() -> rl.Rectangle {
+	p := arena_panel_rect()
+	return rl.Rectangle{p.x + 30, p.y + 282, p.width - 60, 40}
+}
+
+// The Arena resets if you lose: the team leaves so you can try again.
+arena_reset :: proc(g: ^Game) {
+	i := 0
+	for i < len(g.colony.roster) {
+		m := &g.colony.roster[i]
+		if m.wild && hex_equal(m.pos, g.battle_hex) {
+			remove_monster_at(&g.colony, i, false)
+			continue
+		}
+		i += 1
+	}
+}
+
+update_arena :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.T) {
+		g.arena_open = false
+		return
+	}
+	if !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := rl.GetMousePosition()
+	if rl.CheckCollisionPointRec(mp, arena_leave_rect()) {
+		g.arena_open = false
+		return
+	}
+	if rl.CheckCollisionPointRec(mp, arena_fight_rect()) {
+		if colony_total_gold(&g.colony) < ARENA_ENTRY_COST {
+			set_status(g, "Not enough gold to enter the Arena.")
+			return
+		}
+		hex := g.colony.roster[g.selected].pos
+		_ = colony_spend_gold(&g.colony, ARENA_ENTRY_COST)
+		colony_spawn_arena_team(&g.colony, hex)
+		g.arena_open = false
+		g.battle_hex = hex
+		g.battle_forced = true
+		build_attack(g, hex, 1)
+		g.battle_choice_open = true
+		set_status(g, "The Arena answers your challenge!")
+	}
+}
+
+draw_arena :: proc(g: ^Game) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 165})
+
+	p := arena_panel_rect()
+	rl.DrawRectangleRounded(p, 0.05, 8, rl.Color{30, 24, 18, 248})
+	rl.DrawRectangleRoundedLinesEx(p, 0.05, 8, 3, rl.Color{210, 170, 90, 255})
+
+	rl.DrawText("THE ARENA", i32(p.x) + 28, i32(p.y) + 20, 30, rl.Color{240, 210, 130, 255})
+	rl.DrawText(fmt.ctprintf("%d challengers await - skilled, and above your level.", ARENA_TEAM_SIZE), i32(p.x) + 28, i32(p.y) + 62, 17, rl.Color{215, 200, 175, 255})
+	rl.DrawText(fmt.ctprintf("Entry costs %d gold. Win and the crowd pays you %d crystals.", ARENA_ENTRY_COST, ARENA_CRYSTAL_REWARD), i32(p.x) + 28, i32(p.y) + 88, 16, rl.Color{210, 190, 150, 255})
+	rl.DrawText("Bring a full party - their numbers match yours only if you do.", i32(p.x) + 28, i32(p.y) + 114, 16, rl.Color{190, 175, 150, 255})
+	rl.DrawText(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals), i32(p.x) + 28, i32(p.y) + 150, 18, rl.Color{235, 210, 120, 255})
+
+	mp := rl.GetMousePosition()
+	afford := colony_total_gold(&g.colony) >= ARENA_ENTRY_COST
+
+	btn := arena_fight_rect()
+	hover := afford && rl.CheckCollisionPointRec(mp, btn)
+	bg := afford ? (hover ? rl.Color{120, 60, 40, 255} : rl.Color{88, 46, 32, 255}) : rl.Color{40, 36, 34, 255}
+	rl.DrawRectangleRounded(btn, 0.22, 8, bg)
+	rl.DrawRectangleRoundedLinesEx(btn, 0.22, 8, 2, afford ? rl.Color{230, 150, 90, 255} : rl.Color{100, 90, 80, 255})
+	fl := fmt.ctprintf("Fight   (%d gold)", ARENA_ENTRY_COST)
+	fw := rl.MeasureText(fl, 20)
+	rl.DrawText(fl, i32(btn.x + btn.width / 2) - fw / 2, i32(btn.y + btn.height / 2) - 11, 20, afford ? rl.Color{250, 235, 220, 255} : rl.Color{150, 140, 130, 255})
+
+	lr := arena_leave_rect()
+	lhover := rl.CheckCollisionPointRec(mp, lr)
+	rl.DrawRectangleRounded(lr, 0.3, 8, lhover ? rl.Color{46, 44, 52, 255} : rl.Color{34, 32, 38, 255})
+	ll := cstring("Walk away")
+	lw := rl.MeasureText(ll, 16)
+	rl.DrawText(ll, i32(lr.x + lr.width / 2) - lw / 2, i32(lr.y + lr.height / 2) - 8, 16, rl.Color{190, 185, 200, 255})
 }

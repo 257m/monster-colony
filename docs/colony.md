@@ -51,6 +51,50 @@ and `colony_buy_recruit` places a bought monster at `find_placement_tile`
 (entrance or beside it). The heal / energy / revive / capture-card services
 remain. Kill loot uses `species_loot_gold`.
 
+### Overlays, upgrades & the Arena
+`improvement_stacks` marks `ROAD`, `SCARECROW` and `SPIKE_TRAP` as **overlays** —
+they live in `Tile.overlay` so they share a tile with a building (only one
+overlay per tile). `tile_has` and the trap pass (`colony_apply_traps`) consider
+overlays, so a Spike-Trap overlay still hurts wilds; `colony_build` routes them
+to the overlay slot and stamps `Tile.overlay_hp`. `damage_improvement` hits the
+building first and the overlay after, and `colony_repair` / `tile_repair_target`
+repair whichever is damaged.
+
+**Crystals** buy permanent upgrades in a **tree** of 26 nodes
+(`src/upgrades.odin`): `colony_buy_upgrade` spends them (children need their
+parent at `req_level`), and the `upgrade_*` helpers feed per-turn yields,
+build/repair cost (`upgrade_masonry_mult`), improvement HP (`improvement_hp_cap`
+for Fortify / Reinforced Mounts), storage (`storage_cap`), movement cost,
+turret damage/range/cost/cap, spike damage, barracks XP, loot/food/XP, capture
+odds and per-battle Block. The panel is on **`U`**. Crystals come mainly from
+**fights** (Arena / Boss Rooms, boosted by Spoils); the Crystal Refinery is a
+slow trickle (1 per 6 turns).
+
+**Crystal Cove** terrain (`~1.2%`, ≥3 from the entrance) is the **only** tile a
+`CRYSTAL_REFINERY` can be built on (`improvement_valid_on`), and a refinery only
+refines while **staffed** (a monster standing on it) — see the refinery pass in
+`colony_end_turn`. It has glowing-shard tile art and its own spawn table.
+
+**Arena** terrain (~0.6%, ≥4 from the entrance) has no spawns. Standing on it and
+pressing `T` opens the Arena panel; `colony_spawn_arena_team` drops a fresh team
+on the tile and the fight is forced. Winning pays `ARENA_CRYSTAL_REWARD` crystals
+(in `resolve_won`); losing calls `arena_reset` to clear the tile.
+
+### Raids, heat & alphas (Phase D)
+`colony_heat` = `improvement_total/3 + total_monster_levels/6` minus defence
+points (Watchtower/Beacon/Wall/Gate/Turret), clamped to `HEAT_MAX`; it's
+recomputed each turn and shown in the HUD. Once past `RAID_GRACE`,
+`colony_raids` counts `raid_timer` down (from turn 0, so the grace doesn't
+double-delay it) and then spawns a band of **raiders** (role `RAIDER`) in a ring
+around `player_center`, sized, cadenced **and levelled** by heat (`raid_size`,
+`raid_interval`, `raid_level_bonus`), with an **alpha** (`ALPHA`) leading hot
+raids. The HUD shows `Raids from turn 35` / `Raid in N` / `Raid calm (low heat)`
+and a notification fires when the grace ends. In `colony_roam_wilds`, non-`WILD`
+roles
+use `step_hunt`: raiders head to `nearest_player_hex`, alphas to
+`nearest_improvement_hex`, battering fortifications in the way. They're skipped
+by despawn/scarecrow/the wild cap.
+
 ### A safe entrance
 - `choose_start_hex(seed)` scans ~13×13 hexes around the origin and picks the
   one with the most neutral (walkable-by-anyone) tiles in a 3-ring, so no
@@ -166,8 +210,11 @@ Runs in a fixed order. **Read this top-to-bottom before changing any economy.**
    Farm = `FARM_FOOD_YIELD` (6), any Well = `WELL_FOOD_YIELD` (2). The array
    length is pinned (`n_tiles`) because step 2b can materialize new tiles.
    2b. **Watchtowers** re-reveal `/` load` their surroundings.
-3. **Farms deliver** surplus to a Granary within `DELIVER_RADIUS` (else wasted).
-4. **Feed monsters** (range-gated): eat from a Granary, else a Farm/Well pool.
+3. **Farms deliver** their pool to the nearest food store (Granary/Silo) within
+   `DELIVER_RADIUS` via `colony_store_food`, **spilling over to the next store in
+   range whenever one fills**; only food past *every* store in range is wasted.
+4. **Feed monsters** (range-gated): eat from the nearest food store that holds
+   enough (`nearest_food_store_with`), else a Farm/Well pool.
    Fed → `+REFILL_FRAC` satiety (full bar heals); unfed → `−STARVE_FRAC`, and at
    zero satiety the monster takes damage.
 
@@ -211,7 +258,40 @@ Then `c.turn += 1`.
 red flash) and a `.DAMAGE` float, and on destruction notifies, drops `stored`,
 resets to `NONE`, and recomputes caps.
 
-## 8. Notifications
+## 8. Breeding & genetics (Phase 8)
+
+- Every `Creature` carries `genes: [Gene]int`, a **0–5 bonus per stat** (HP,
+  Power, Defense, Speed, Energy). `creature_recompute_stats` applies each point as
+  **+5%** on the species base, before item bonuses, so genes survive level-ups
+  and gear changes.
+- Wilds, shop recruits and starters **roll** their genes on the rarity curve
+  (`genes_roll_random` → `gene_roll_random`, weights `GENE_WEIGHTS`).
+- Breeding happens in a **Nursery** (see section 10): `genes_breed` averages the
+  pair (`gene_breed_mid`, rounded up) then rolls **−1..+1**, with a rare
+  `GENE_MUTATE_CHANCE` (5%) extra +1.
+
+## 9. Storage & the Nursery (Phase 10)
+
+Stored monsters live in `Colony.storage` (a `Monster` list), not `roster`, so
+they are naturally skipped by the turn loop, heat, spawning, drawing and
+selection. `Monster.stored` (`Stored_In`: `MAP`/`DEN`/`NURSERY_PARENT`/
+`NURSERY_BABY`) and `Monster.stored_hex` say where.
+
+- **Den** (`DEN_CAPACITY` 32): `colony_store_monster` moves a map monster within
+  `STORE_RANGE` (1) of a Den into stasis; `colony_deploy_stored` puts it back at
+  the Den (or beside it). No upkeep, no heat.
+- **Vault**: `colony_item_cap` = `BASE_ITEM_CAP` (8) + `VAULT_ITEM_CAP` (12) per
+  Vault; fight-loot only fits while there is room.
+- **Nursery** (`NURSERY_PARENTS` 2, `NURSERY_BABIES` 4): `colony_assign_parent`
+  moves a same-species `BREED_MIN_LEVEL` (5) monster **within `STORE_RANGE` (1)**
+  of the Nursery into the pair; `colony_nurseries` runs each turn — a full pair
+  eats `NURSERY_FOOD_PER_TURN` (2) from a nearby store and, every
+  `NURSERY_PERIOD` (8) fed turns, calls `colony_nursery_birth` to hatch a level 1
+  baby into storage.
+- `colony_evacuate_storage` is called when a Den/Nursery is destroyed or replaced:
+  occupants are pushed back onto the map, or lost if there is no room.
+
+## 10. Notifications
 
 `colony_notify(c, fmt, ...)` keeps the last 5 strings in `c.messages`; the HUD
 draws them centered near the bottom (see [ui-and-input.md](ui-and-input.md)).
@@ -222,4 +302,6 @@ draws them centered near the bottom (see [ui-and-input.md](ui-and-input.md)).
 `BASE_GOLD_CAP`, `FEED_RADIUS`, `DELIVER_RADIUS`, `MAX_WILDS`, `SIM_DISTANCE`,
 `DESPAWN_DISTANCE`, `DESPAWN_CHANCE`, `CROWD_LIMIT`, `CROWD_FIGHT_CHANCE`,
 `FARM_FOOD_YIELD`, `WELL_FOOD_YIELD`, `MINE_GOLD_YIELD`, the four `WATCHTOWER_*`,
+`DEN_CAPACITY`, `STORE_RANGE`, `BASE_ITEM_CAP`, `VAULT_ITEM_CAP`,
+`NURSERY_PARENTS`, `NURSERY_BABIES`, `NURSERY_FOOD_PER_TURN`, `NURSERY_PERIOD`,
 `IMPROVEMENT_HP`, `TERRAIN_SCALE`, `SPAWN_GRACE_TURNS`.

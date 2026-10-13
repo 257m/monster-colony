@@ -65,6 +65,7 @@ Battle :: struct {
 	enemy_acting:  int,                // enemy taking the current action
 	captured_ids:  [dynamic]int,       // enemies captured this battle
 	capture_cards: int,                // capture cards available (spent on capture)
+	capture_bonus: f32,                // colony Scout upgrade, added to capture odds
 	auto_play:     bool,               // AI plays the player's side
 	phase:         Battle_Phase,
 	round:         int,
@@ -804,8 +805,8 @@ capture_chance :: proc(b: ^Battle) -> f32 {
 	base := clamp(frac, 0, 1) * 0.9
 	// Higher level and rarer species are harder to catch.
 	lvl_mult := 1.0 / (1.0 + 0.08 * f32(max(t.level - 1, 0)))
-	// A Snare Kit on any of your monsters helps.
-	bonus := f32(0)
+	// A Snare Kit on any of your monsters, plus the colony's Scout upgrade.
+	bonus := b.capture_bonus
 	for p in b.party {
 		bonus = max(bonus, ITEM_DATA[p.item].capture_pct)
 	}
