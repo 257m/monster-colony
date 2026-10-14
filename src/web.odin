@@ -39,6 +39,8 @@ when ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32 {
 		rl.SetTargetFPS(60)
 
 		audio_init()
+		shader_init()
+		font_init()
 
 		web_game.seed_rng = rng_make(u64(time.now()._nsec))
 		web_game.selected = -1

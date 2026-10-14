@@ -28,6 +28,10 @@
 | `src/tile_detail.odin` | ~158 | Procedural per-terrain tile detail (rocks, grass, mushrooms…) |
 | `src/rng.odin` | ~49 | SplitMix64 PRNG |
 | `src/audio.odin` | ~384 | Synthesised sound effects + looping music (no asset files) |
+| `src/shaders.odin` | ~170 | Card/relic panel fragment shader (GLSL 330 desktop / 100 web) + `shader_panel` |
+| `src/font.odin` | ~60 | `draw_text` / `measure_text` over a loaded TTF (falls back to the default font) |
+| `src/relics.odin` | ~120 | Stackable boss relics: table, effect readers, grant/apply |
+| `src/milestones.odin` | ~90 | Quest board: milestone table, progress, completion |
 | `src/save.odin` | ~495 | Save format: serialization + slots + panel data |
 | `src/save_io_desktop.odin` | ~25 | Save file I/O (`#+build !js`) |
 | `src/save_io_js.odin` | ~20 | Save stubs for the browser build (`#+build js`) |

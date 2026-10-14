@@ -23,7 +23,7 @@ import "core:math"
 // ============================================================================
 
 Terrain :: enum { CAVE, WATER, DUNGEON, GROVE, TRADING_POST, BOSS_ROOM, MUSHROOM, RUINS, TUNDRA, JUNGLE, LAVA, DESERT, QUICKSAND, ARENA, CRYSTAL_COVE }
-Improvement :: enum { NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON, DEN, VAULT, NURSERY, MENDER }
+Improvement :: enum { NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON, DEN, VAULT, NURSERY, MENDER, ROOK }
 
 MAX_MONSTERS_PER_TILE :: 6
 REFILL_FRAC           :: f32(0.5) // of max satiation gained per fed turn
@@ -46,6 +46,7 @@ WATCHTOWER_REVEAL      :: 6    // tiles revealed around a Watchtower
 WATCHTOWER_DETER       :: 4    // radius in which a Watchtower stops spawns
 WATCHTOWER_GUARD       :: 4    // radius in which defenders get starting Block
 WATCHTOWER_GUARD_BLOCK :: 6    // Block granted to those defenders at battle start
+ROOK_DEFENSE           :: f32(4.0) // +Defense for a monster garrisoning a Rook
 SPIKE_TRAP_DAMAGE_PCT  :: f32(0.15) // HP a wild loses per turn on a Spike Trap (of its max HP)
 SCARECROW_DETER        :: 2    // radius a Scarecrow keeps spawns out of
 SCARECROW_PANIC        :: 3    // radius a Scarecrow makes wilds likelier to flee
@@ -341,6 +342,13 @@ IMPROVEMENT_INFO := [Improvement]Improvement_Info {
 		heat = 3, terrains = {.CAVE, .GROVE, .RUINS, .DESERT, .MUSHROOM}, cost_divisor = 3,
 		detail = "A repair drone. It draws energy from a Fountain within 4 tiles into its own charge, then spends that charge to mend every damaged improvement within 4 tiles by 1 HP per turn — buildings and overlays alike. Useless without a Fountain, so build one alongside it. Slow, but it quietly keeps a wall line or a front-line cluster patched between raids without spending gold.",
 	},
+	.ROOK = Improvement_Info{
+		name = "Rook", cost = 22, hp = 35, category = "Defense",
+		effect = "wilds can't cross; garrison for +Defense",
+		heat = 2, terrains = {.CAVE, .RUINS, .GROVE, .MUSHROOM, .TUNDRA, .DESERT},
+		blocks = true, cost_divisor = 6,
+		detail = "A wall your monsters can stand on. Wilds cannot cross it (a blocked wild batters it instead), but your own monsters may occupy the tile — and a monster garrisoning a Rook starts every battle with a bonus to Defense, so it holds a chokepoint far better than a Wall. Frailer than a Wall to compensate.",
+	},
 }
 
 // Every buildable improvement, in build-panel order (used by the improvements dex).
@@ -348,7 +356,7 @@ ALL_IMPROVEMENTS := [?]Improvement{
 	.FARM, .MINE, .WELL, .BRIDGE, .GRANARY, .TREASURY, .WATCHTOWER, .WALL,
 	.GATE, .SPIKE_TRAP, .SCARECROW, .ROAD, .SILO, .CRYSTAL_REFINERY, .FOUNTAIN,
 	.TURRET, .DRAWBRIDGE, .QUARRY, .LUMBER_MILL, .MARKETPLACE, .KITCHEN,
-	.BARRACKS, .BEACON, .DEN, .VAULT, .NURSERY, .MENDER,
+	.BARRACKS, .BEACON, .DEN, .VAULT, .NURSERY, .MENDER, .ROOK,
 }
 
 tile_has :: proc(t: ^Tile, im: Improvement) -> bool {
@@ -1066,8 +1074,8 @@ tile_passable :: proc(c: ^Colony, m: ^Monster, hex: Hex) -> bool {
 	if t.improvement == .WALL && !creature_has_element(&m.creature, .AIR) {
 		return false
 	}
-	// Gates block wilds entirely, but your own monsters pass freely.
-	if t.improvement == .GATE && m.wild {
+	// Gates and Rooks block wilds entirely, but your own monsters pass freely.
+	if (t.improvement == .GATE || t.improvement == .ROOK) && m.wild {
 		return false
 	}
 	return true
@@ -1095,8 +1103,8 @@ move_block_reason :: proc(c: ^Colony, m: ^Monster, hex: Hex) -> cstring {
 	case .QUICKSAND:
 		return "Blocked: Quicksand is Ground-only."
 	}
-	if t.improvement == .GATE && m.wild {
-		return "Blocked: a Gate keeps wilds out."
+	if (t.improvement == .GATE || t.improvement == .ROOK) && m.wild {
+		return t.improvement == .GATE ? "Blocked: a Gate keeps wilds out." : "Blocked: a Rook keeps wilds out."
 	}
 	if t.improvement == .WALL {
 		return "Blocked: a Wall stops ground monsters (Air can fly over)."

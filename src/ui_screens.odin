@@ -65,13 +65,13 @@ draw_title :: proc(g: ^Game) {
 	}
 
 	title := cstring("MONSTER COLONY")
-	tw := rl.MeasureText(title, 76)
-	rl.DrawText(title, i32(cx) - tw / 2 + 3, i32(cy) - 52 + 3, 76, rl.Color{0, 0, 0, 150})
-	rl.DrawText(title, i32(cx) - tw / 2, i32(cy) - 52, 76, rl.Color{236, 232, 250, 255})
+	tw := measure_text(title, 76)
+	draw_text(title, i32(cx) - tw / 2 + 3, i32(cy) - 52 + 3, 76, rl.Color{0, 0, 0, 150})
+	draw_text(title, i32(cx) - tw / 2, i32(cy) - 52, 76, rl.Color{236, 232, 250, 255})
 
 	tag := cstring("Build a colony in the deep. Raise monsters. Delve.")
-	tgw := rl.MeasureText(tag, 20)
-	rl.DrawText(tag, i32(cx) - tgw / 2, i32(cy) + 42, 20, rl.Color{150, 160, 185, 255})
+	tgw := measure_text(tag, 20)
+	draw_text(tag, i32(cx) - tgw / 2, i32(cy) + 42, 20, rl.Color{150, 160, 185, 255})
 
 	draw_button(title_button_rect(0), cstring("New Game"), true, BUTTON_TITLE, 26)
 	draw_button(title_button_rect(1), cstring("Load Game"), true, BUTTON_TITLE, 26)
@@ -80,8 +80,8 @@ draw_title :: proc(g: ^Game) {
 	}
 
 	hint := cstring("Enter: new game   |   L: load game")
-	hw := rl.MeasureText(hint, 15)
-	rl.DrawText(hint, i32(cx) - hw / 2, i32(sh) - 40, 15, rl.Color{110, 115, 135, 255})
+	hw := measure_text(hint, 15)
+	draw_text(hint, i32(cx) - hw / 2, i32(sh) - 40, 15, rl.Color{110, 115, 135, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -105,11 +105,11 @@ draw_starter :: proc() {
 	rl.ClearBackground(rl.Color{12, 12, 20, 255})
 
 	title := cstring("CHOOSE YOUR STARTER")
-	tw := rl.MeasureText(title, 38)
-	rl.DrawText(title, i32(sw) / 2 - tw / 2, 34, 38, rl.Color{225, 225, 240, 255})
+	tw := measure_text(title, 38)
+	draw_text(title, i32(sw) / 2 - tw / 2, 34, 38, rl.Color{225, 225, 240, 255})
 	sub := cstring("Build a colony, raise your monsters, and delve to floor 10")
-	sw2 := rl.MeasureText(sub, 16)
-	rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, 82, 16, rl.Color{140, 140, 160, 255})
+	sw2 := measure_text(sub, 16)
+	draw_text(sub, i32(sw) / 2 - sw2 / 2, 82, 16, rl.Color{140, 140, 160, 255})
 
 	mp := rl.GetMousePosition()
 	for idx in 0..<len(STARTER_SPECIES) {
@@ -129,42 +129,42 @@ draw_starter :: proc() {
 		rl.DrawRectangleRounded(badge, 0.3, 6, rl.Color{0, 0, 0, 120})
 		rl.DrawRectangleRoundedLinesEx(badge, 0.3, 6, 2, sp.color)
 		kn := fmt.ctprintf("%d", idx + 1)
-		kw := rl.MeasureText(kn, 20)
-		rl.DrawText(kn, i32(badge.x + badge.width / 2) - kw / 2, i32(badge.y + badge.height / 2) - 10, 20, rl.Color{235, 240, 250, 255})
+		kw := measure_text(kn, 20)
+		draw_text(kn, i32(badge.x + badge.width / 2) - kw / 2, i32(badge.y + badge.height / 2) - 10, 20, rl.Color{235, 240, 250, 255})
 
 		circle := rl.Vector2{rec.x + rec.width / 2, rec.y + 74}
 		rl.DrawCircleV(circle, 46, sp.color)
 		rl.DrawCircleLinesV(circle, 46, rl.Color{235, 235, 245, 255})
 		initial := fmt.ctprintf("%c", sp.name[0])
-		iw := rl.MeasureText(initial, 44)
-		rl.DrawText(initial, i32(circle.x) - iw / 2, i32(circle.y) - 22, 44, rl.Color{255, 255, 255, 255})
+		iw := measure_text(initial, 44)
+		draw_text(initial, i32(circle.x) - iw / 2, i32(circle.y) - 22, 44, rl.Color{255, 255, 255, 255})
 
 		name := fmt.ctprintf("%s", sp.name)
-		nw := rl.MeasureText(name, 26)
-		rl.DrawText(name, i32(rec.x + rec.width / 2) - nw / 2, i32(rec.y) + 126, 26, rl.Color{235, 235, 245, 255})
+		nw := measure_text(name, 26)
+		draw_text(name, i32(rec.x + rec.width / 2) - nw / 2, i32(rec.y) + 126, 26, rl.Color{235, 235, 245, 255})
 
 		elem := element_name(sp.elements[0])
-		ew := rl.MeasureText(elem, 17)
-		rl.DrawText(elem, i32(rec.x + rec.width / 2) - ew / 2, i32(rec.y) + 158, 17, sp.color)
+		ew := measure_text(elem, 17)
+		draw_text(elem, i32(rec.x + rec.width / 2) - ew / 2, i32(rec.y) + 158, 17, sp.color)
 
 		line1 := fmt.ctprintf("HP %d   PWR x%s   DEF %s", sp.base_hp, fmt_num(sp.base_power), fmt_num(sp.base_defense))
-		l1w := rl.MeasureText(line1, 15)
-		rl.DrawText(line1, i32(rec.x + rec.width / 2) - l1w / 2, i32(rec.y) + 184, 15, rl.Color{192, 192, 212, 255})
+		l1w := measure_text(line1, 15)
+		draw_text(line1, i32(rec.x + rec.width / 2) - l1w / 2, i32(rec.y) + 184, 15, rl.Color{192, 192, 212, 255})
 
 		line2 := fmt.ctprintf("SPD %s   Learnset %d moves", fmt_num(sp.base_speed), len(sp.learnset))
-		l2w := rl.MeasureText(line2, 15)
-		rl.DrawText(line2, i32(rec.x + rec.width / 2) - l2w / 2, i32(rec.y) + 204, 15, rl.Color{192, 192, 212, 255})
+		l2w := measure_text(line2, 15)
+		draw_text(line2, i32(rec.x + rec.width / 2) - l2w / 2, i32(rec.y) + 204, 15, rl.Color{192, 192, 212, 255})
 
 		line3 := fmt.ctprintf("Energy %d regen / %d max", sp.base_energy, sp.base_energy_max)
-		l3w := rl.MeasureText(line3, 15)
-		rl.DrawText(line3, i32(rec.x + rec.width / 2) - l3w / 2, i32(rec.y) + 224, 15, rl.Color{192, 192, 212, 255})
+		l3w := measure_text(line3, 15)
+		draw_text(line3, i32(rec.x + rec.width / 2) - l3w / 2, i32(rec.y) + 224, 15, rl.Color{192, 192, 212, 255})
 
 		abs := species_abilities(STARTER_SPECIES[idx])
 		ab_line := fmt.ctprintf("%s / %s / %s", ability_name(abs[0]), ability_name(abs[1]), ability_name(abs[2]))
-		abw := rl.MeasureText(ab_line, 13)
-		rl.DrawText(ab_line, i32(rec.x + rec.width / 2) - abw / 2, i32(rec.y) + 244, 13, rl.Color{200, 180, 240, 255})
+		abw := measure_text(ab_line, 13)
+		draw_text(ab_line, i32(rec.x + rec.width / 2) - abw / 2, i32(rec.y) + 244, 13, rl.Color{200, 180, 240, 255})
 
-		rl.DrawText("STARTS WITH", i32(rec.x) + 20, i32(rec.y) + 268, 14, rl.Color{150, 150, 170, 255})
+		draw_text("STARTS WITH", i32(rec.x) + 20, i32(rec.y) + 268, 14, rl.Color{150, 150, 170, 255})
 
 		counts: [Move_Id]int
 		shown: [Move_Id]bool
@@ -178,18 +178,18 @@ draw_starter :: proc() {
 			}
 			shown[m] = true
 			label := fmt.ctprintf("%s", MOVE_DATA[m].name)
-			rl.DrawText(label, i32(rec.x) + 20, ly, 14, element_color(MOVE_DATA[m].element))
+			draw_text(label, i32(rec.x) + 20, ly, 14, element_color(MOVE_DATA[m].element))
 			if counts[m] > 1 {
 				cnt_s := fmt.ctprintf("x%d", counts[m])
-				cw := rl.MeasureText(cnt_s, 14)
-				rl.DrawText(cnt_s, i32(rec.x + rec.width) - 20 - cw, ly, 14, rl.Color{150, 150, 170, 255})
+				cw := measure_text(cnt_s, 14)
+				draw_text(cnt_s, i32(rec.x + rec.width) - 20 - cw, ly, 14, rl.Color{150, 150, 170, 255})
 			}
 			ly += 20
 		}
 
 		pick := fmt.ctprintf("Click or press %d", idx + 1)
-		pkw := rl.MeasureText(pick, 16)
-		rl.DrawText(pick, i32(rec.x + rec.width / 2) - pkw / 2, i32(rec.y + rec.height) - 34, 16, rl.Color{200, 210, 180, 255})
+		pkw := measure_text(pick, 16)
+		draw_text(pick, i32(rec.x + rec.width / 2) - pkw / 2, i32(rec.y + rec.height) - 34, 16, rl.Color{200, 210, 180, 255})
 	}
 }
 
@@ -204,16 +204,16 @@ draw_colony_game_over :: proc(turns: int) {
 	rl.ClearBackground(rl.Color{28, 8, 12, 255})
 
 	title := cstring("YOUR COLONY HAS FALLEN")
-	tw := rl.MeasureText(title, 56)
-	rl.DrawText(title, i32(sw) / 2 - tw / 2, i32(sh) / 2 - 100, 56, rl.Color{220, 60, 60, 255})
+	tw := measure_text(title, 56)
+	draw_text(title, i32(sw) / 2 - tw / 2, i32(sh) / 2 - 100, 56, rl.Color{220, 60, 60, 255})
 
 	sub := fmt.ctprintf("Your last monster fell on turn %d.", turns)
-	sw2 := rl.MeasureText(sub, 22)
-	rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, i32(sh) / 2 - 10, 22, rl.Color{228, 228, 238, 255})
+	sw2 := measure_text(sub, 22)
+	draw_text(sub, i32(sw) / 2 - sw2 / 2, i32(sh) / 2 - 10, 22, rl.Color{228, 228, 238, 255})
 
 	hint := cstring("N: begin again   |   Esc: main menu")
-	hw := rl.MeasureText(hint, 26)
-	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) / 2 + 56, 26, rl.Color{220, 180, 120, 255})
+	hw := measure_text(hint, 26)
+	draw_text(hint, i32(sw) / 2 - hw / 2, i32(sh) / 2 + 56, 26, rl.Color{220, 180, 120, 255})
 }
 
 // ----------------------------------------------------------------------------

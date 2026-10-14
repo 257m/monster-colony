@@ -34,6 +34,10 @@ attack_move_attackers :: proc(g: ^Game) {
 		if hex_equal(m.pos, hex) || hex_distance(m.pos, hex) != 1 {
 			continue
 		}
+		// A monster garrisoning a Rook fights from it (keeping its +Defense).
+		if t := tile_at(&g.colony, m.pos); t != nil && t.improvement == .ROOK {
+			continue
+		}
 		if monsters_on_tile(&g.colony, hex, false) >= MAX_MONSTERS_PER_TILE {
 			break
 		}
@@ -122,7 +126,7 @@ draw_attack_select :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(p, 0.04, 8, rl.Color{22, 20, 28, 248})
 	rl.DrawRectangleRoundedLinesEx(p, 0.04, 8, 3, rl.Color{220, 90, 90, 255})
 
-	rl.DrawText("CHOOSE ATTACKERS", i32(p.x) + 24, i32(p.y) + 16, 26, rl.Color{240, 150, 110, 255})
+	draw_text("CHOOSE ATTACKERS", i32(p.x) + 24, i32(p.y) + 16, 26, rl.Color{240, 150, 110, 255})
 
 	// Target info.
 	wilds := 0
@@ -136,10 +140,10 @@ draw_attack_select :: proc(g: ^Game) {
 		terr = terrain_name(t.terrain)
 	}
 	info := fmt.ctprintf("%d wild%s on %s  -  click your monsters to include them", wilds, wilds == 1 ? "" : "s", terr)
-	rl.DrawText(info, i32(p.x) + 24, i32(p.y) + 54, 16, rl.Color{180, 180, 200, 255})
+	draw_text(info, i32(p.x) + 24, i32(p.y) + 54, 16, rl.Color{180, 180, 200, 255})
 
-	rl.DrawText("YOUR MONSTERS", i32(p.x) + 24, i32(p.y) + 78, 15, rl.Color{150, 160, 180, 255})
-	rl.DrawText("ENEMIES ON THE TILE", i32(p.x) + 416, i32(p.y) + 78, 15, rl.Color{220, 150, 130, 255})
+	draw_text("YOUR MONSTERS", i32(p.x) + 24, i32(p.y) + 78, 15, rl.Color{150, 160, 180, 255})
+	draw_text("ENEMIES ON THE TILE", i32(p.x) + 416, i32(p.y) + 78, 15, rl.Color{220, 150, 130, 255})
 
 	mp := rl.GetMousePosition()
 	for id, i in g.attack_ids {
@@ -172,12 +176,12 @@ draw_attack_select :: proc(g: ^Game) {
 		}
 
 		line := fmt.ctprintf("%s  Lvl %d", m.creature.name, m.creature.level)
-		rl.DrawText(line, i32(rec.x) + 34, i32(rec.y) + 4, 16, rl.Color{225, 225, 240, 255})
+		draw_text(line, i32(rec.x) + 34, i32(rec.y) + 4, 16, rl.Color{225, 225, 240, 255})
 		hp := fmt.ctprintf("%d/%d hp", m.creature.hp, m.creature.max_hp)
-		rl.DrawText(hp, i32(rec.x + rec.width) - 150, i32(rec.y) + 5, 14, rl.Color{210, 140, 140, 255})
+		draw_text(hp, i32(rec.x + rec.width) - 150, i32(rec.y) + 5, 14, rl.Color{210, 140, 140, 255})
 		dist := hex_distance(m.pos, g.battle_hex)
 		loc := dist == 0 ? cstring("on tile") : fmt.ctprintf("%d away", dist)
-		rl.DrawText(loc, i32(rec.x + rec.width) - 74, i32(rec.y) + 5, 14, rl.Color{150, 150, 170, 255})
+		draw_text(loc, i32(rec.x + rec.width) - 74, i32(rec.y) + 5, 14, rl.Color{150, 150, 170, 255})
 	}
 
 	// The wilds you would actually be fighting.
@@ -197,22 +201,22 @@ draw_attack_select :: proc(g: ^Game) {
 		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 5, 2, border)
 		name_col := m.role == .ALPHA ? rl.Color{255, 215, 95, 255} : rl.Color{240, 222, 212, 255}
 		suffix := wild_role_tag(m.role)
-		rl.DrawText(fmt.ctprintf("%s  Lvl %d%s", m.creature.name, m.creature.level, suffix), i32(rec.x) + 12, i32(rec.y) + 5, 16, name_col)
+		draw_text(fmt.ctprintf("%s  Lvl %d%s", m.creature.name, m.creature.level, suffix), i32(rec.x) + 12, i32(rec.y) + 5, 16, name_col)
 		el := elements_label(creature_elements(&m.creature))
-		ew := rl.MeasureText(el, 14)
-		rl.DrawText(el, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 7, 14, element_color(creature_element(&m.creature)))
-		rl.DrawText(fmt.ctprintf("%d/%d hp", m.creature.hp, m.creature.max_hp), i32(rec.x) + 12, i32(rec.y) + 25, 13, rl.Color{215, 150, 150, 255})
+		ew := measure_text(el, 14)
+		draw_text(el, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 7, 14, element_color(creature_element(&m.creature)))
+		draw_text(fmt.ctprintf("%d/%d hp", m.creature.hp, m.creature.max_hp), i32(rec.x) + 12, i32(rec.y) + 25, 13, rl.Color{215, 150, 150, 255})
 		if m.creature.ability != .NONE {
 			ab := ability_name(m.creature.ability)
-			aw := rl.MeasureText(ab, 13)
-			rl.DrawText(ab, i32(rec.x + rec.width / 2) - aw / 2, i32(rec.y) + 25, 13, rl.Color{200, 180, 240, 255})
+			aw := measure_text(ab, 13)
+			draw_text(ab, i32(rec.x + rec.width / 2) - aw / 2, i32(rec.y) + 25, 13, rl.Color{200, 180, 240, 255})
 		}
 		rs := rarity_name(rar)
-		rw := rl.MeasureText(rs, 13)
-		rl.DrawText(rs, i32(rec.x + rec.width) - 12 - rw, i32(rec.y) + 25, 13, rarity_color(rar))
+		rw := measure_text(rs, 13)
+		draw_text(rs, i32(rec.x + rec.width) - 12 - rw, i32(rec.y) + 25, 13, rarity_color(rar))
 	}
 	if ei == 0 {
-		rl.DrawText("(none)", i32(p.x) + 416, i32(p.y) + 104, 15, rl.Color{150, 150, 165, 255})
+		draw_text("(none)", i32(p.x) + 416, i32(p.y) + 104, 15, rl.Color{150, 150, 165, 255})
 	}
 
 	// Buttons.
@@ -228,8 +232,8 @@ draw_attack_select :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(auto_rec, 0.22, 8, auto_col)
 	rl.DrawRectangleRoundedLinesEx(auto_rec, 0.22, 8, 2, rl.Color{180, 220, 190, 255})
 	at := cstring("Auto-fight")
-	aw := rl.MeasureText(at, 20)
-	rl.DrawText(at, i32(auto_rec.x + auto_rec.width / 2) - aw / 2, i32(auto_rec.y + auto_rec.height / 2) - 11, 20, rl.Color{235, 245, 240, 255})
+	aw := measure_text(at, 20)
+	draw_text(at, i32(auto_rec.x + auto_rec.width / 2) - aw / 2, i32(auto_rec.y + auto_rec.height / 2) - 11, 20, rl.Color{235, 245, 240, 255})
 
 	man_rec := attack_manual_rect()
 	man_hover := rl.CheckCollisionPointRec(mp, man_rec)
@@ -242,13 +246,13 @@ draw_attack_select :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(man_rec, 0.22, 8, man_col)
 	rl.DrawRectangleRoundedLinesEx(man_rec, 0.22, 8, 2, rl.Color{200, 200, 240, 255})
 	mt := cstring("Fight myself")
-	mw := rl.MeasureText(mt, 20)
-	rl.DrawText(mt, i32(man_rec.x + man_rec.width / 2) - mw / 2, i32(man_rec.y + man_rec.height / 2) - 11, 20, rl.Color{235, 235, 250, 255})
+	mw := measure_text(mt, 20)
+	draw_text(mt, i32(man_rec.x + man_rec.width / 2) - mw / 2, i32(man_rec.y + man_rec.height / 2) - 11, 20, rl.Color{235, 235, 250, 255})
 
-	rl.DrawText(fmt.ctprintf("%d attacker%s selected", attack_chosen_count(g), attack_chosen_count(g) == 1 ? "" : "s"), i32(p.x) + 24, i32(auto_rec.y) - 22, 15, rl.Color{160, 170, 180, 255})
+	draw_text(fmt.ctprintf("%d attacker%s selected", attack_chosen_count(g), attack_chosen_count(g) == 1 ? "" : "s"), i32(p.x) + 24, i32(auto_rec.y) - 22, 15, rl.Color{160, 170, 180, 255})
 	hint := cstring("Esc to back out")
-	hw := rl.MeasureText(hint, 15)
-	rl.DrawText(hint, i32(p.x + p.width) - 24 - hw, i32(auto_rec.y) - 22, 15, rl.Color{150, 150, 170, 255})
+	hw := measure_text(hint, 15)
+	draw_text(hint, i32(p.x + p.width) - 24 - hw, i32(auto_rec.y) - 22, 15, rl.Color{150, 150, 170, 255})
 }
 
 
@@ -323,6 +327,9 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 	// Starting Block each defender gets from a nearby Watchtower (parallel to defs).
 	blocks := make([dynamic]int, 0)
 	defer delete(blocks)
+	// Each defender's tile, so Rook garrisons can be found after battle_start.
+	def_hexes := make([dynamic]Hex, 0)
+	defer delete(def_hexes)
 
 	// Defenders: the chosen attackers if we have a list, else everyone on the tile.
 	if len(g.attack_ids) > 0 {
@@ -341,6 +348,7 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 			append(&defs, &m.creature)
 			b := guard_block_at(g, m.pos)
 			append(&blocks, b)
+			append(&def_hexes, m.pos)
 		}
 	} else {
 		for &m in g.colony.roster {
@@ -350,6 +358,7 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 			append(&defs, &m.creature)
 			b := guard_block_at(g, m.pos)
 			append(&blocks, b)
+			append(&def_hexes, m.pos)
 		}
 	}
 
@@ -387,6 +396,14 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 	drills := upgrade_drills_block(&g.colony) + relic_block(&g.colony)
 	for p, i in g.battle.party {
 		p.block += blocks[i] + drills
+	}
+	// Rook: a monster garrisoning one starts the fight with +Defense.
+	for p, i in g.battle.party {
+		if i < len(def_hexes) {
+			if t := tile_at(&g.colony, def_hexes[i]); t != nil && t.improvement == .ROOK {
+				p.defense_buff += ROOK_DEFENSE
+			}
+		}
 	}
 	g.battle.capture_bonus = upgrade_capture_bonus(&g.colony)
 	// Beacon: wilds attacking within its guard radius start Vulnerable.
@@ -663,33 +680,33 @@ draw_results :: proc(g: ^Game) {
 	draw_panel(p, rl.Color{20, 26, 22, 248}, rl.Color{120, 220, 150, 255}, 0.05, 8, 3)
 
 	title := cstring("VICTORY")
-	tw := rl.MeasureText(title, 32)
-	rl.DrawText(title, i32(p.x + p.width / 2) - tw / 2, i32(p.y) + 18, 32, rl.Color{130, 235, 160, 255})
+	tw := measure_text(title, 32)
+	draw_text(title, i32(p.x + p.width / 2) - tw / 2, i32(p.y) + 18, 32, rl.Color{130, 235, 160, 255})
 
 	r := g.results
 	y := i32(p.y) + 74
-	rl.DrawText(fmt.ctprintf("Wilds defeated: %d", r.kills), i32(p.x) + 30, y, 20, rl.Color{220, 220, 235, 255}); y += 30
-	rl.DrawText(fmt.ctprintf("Gold  +%d", r.gold), i32(p.x) + 30, y, 20, rl.Color{240, 205, 90, 255}); y += 28
-	rl.DrawText(fmt.ctprintf("XP    +%d", r.xp), i32(p.x) + 30, y, 20, rl.Color{150, 210, 255, 255}); y += 28
+	draw_text(fmt.ctprintf("Wilds defeated: %d", r.kills), i32(p.x) + 30, y, 20, rl.Color{220, 220, 235, 255}); y += 30
+	draw_text(fmt.ctprintf("Gold  +%d", r.gold), i32(p.x) + 30, y, 20, rl.Color{240, 205, 90, 255}); y += 28
+	draw_text(fmt.ctprintf("XP    +%d", r.xp), i32(p.x) + 30, y, 20, rl.Color{150, 210, 255, 255}); y += 28
 	if r.food > 0 {
-		rl.DrawText(fmt.ctprintf("Food  +%d (to granary)", r.food), i32(p.x) + 30, y, 20, rl.Color{140, 220, 130, 255}); y += 28
+		draw_text(fmt.ctprintf("Food  +%d (to granary)", r.food), i32(p.x) + 30, y, 20, rl.Color{140, 220, 130, 255}); y += 28
 	}
 	if r.reward {
-		rl.DrawText("Reward card - choose one!", i32(p.x) + 30, y, 20, rl.Color{210, 160, 255, 255}); y += 28
+		draw_text("Reward card - choose one!", i32(p.x) + 30, y, 20, rl.Color{210, 160, 255, 255}); y += 28
 	}
 	if r.leveled {
-		rl.DrawText("A monster levelled up!", i32(p.x) + 30, y, 20, rl.Color{255, 235, 140, 255}); y += 28
+		draw_text("A monster levelled up!", i32(p.x) + 30, y, 20, rl.Color{255, 235, 140, 255}); y += 28
 	}
 	if r.item != .NONE {
-		rl.DrawText(fmt.ctprintf("Item found: %s", item_name(r.item)), i32(p.x) + 30, y, 20, rl.Color{180, 240, 200, 255}); y += 24
-		rl.DrawText("Equip it from the deck viewer (V).", i32(p.x) + 30, y, 14, rl.Color{150, 190, 165, 255}); y += 24
+		draw_text(fmt.ctprintf("Item found: %s", item_name(r.item)), i32(p.x) + 30, y, 20, rl.Color{180, 240, 200, 255}); y += 24
+		draw_text("Equip it from the deck viewer (V).", i32(p.x) + 30, y, 14, rl.Color{150, 190, 165, 255}); y += 24
 	}
 	if r.crystals > 0 {
-		rl.DrawText(fmt.ctprintf("Arena prize: +%d crystals", r.crystals), i32(p.x) + 30, y, 20, rl.Color{210, 170, 250, 255}); y += 28
+		draw_text(fmt.ctprintf("Arena prize: +%d crystals", r.crystals), i32(p.x) + 30, y, 20, rl.Color{210, 170, 250, 255}); y += 28
 	}
 	if r.has_relic {
-		rl.DrawText(fmt.ctprintf("Relic: %s", relic_name(r.relic)), i32(p.x) + 30, y, 20, rl.Color{245, 215, 140, 255}); y += 22
-		rl.DrawText("Colony-wide passive - it stacks! (J)", i32(p.x) + 30, y, 14, rl.Color{200, 180, 130, 255}); y += 24
+		draw_text(fmt.ctprintf("Relic: %s", relic_name(r.relic)), i32(p.x) + 30, y, 20, rl.Color{245, 215, 140, 255}); y += 22
+		draw_text("Colony-wide passive - it stacks! (J)", i32(p.x) + 30, y, 14, rl.Color{200, 180, 130, 255}); y += 24
 	}
 
 	btn := results_continue_rect()
@@ -731,7 +748,7 @@ draw_battle_choice :: proc(g: ^Game) {
 	rl.DrawRectangleRoundedLinesEx(p, 0.04, 8, 3, rl.Color{220, 90, 90, 255})
 
 	title := g.battle_forced ? cstring("AMBUSH!") : cstring("ATTACK!")
-	rl.DrawText(title, i32(p.x) + 24, i32(p.y) + 16, 26, rl.Color{240, 120, 110, 255})
+	draw_text(title, i32(p.x) + 24, i32(p.y) + 16, 26, rl.Color{240, 120, 110, 255})
 
 	hex := g.battle_hex
 	wilds := 0
@@ -741,25 +758,25 @@ draw_battle_choice :: proc(g: ^Game) {
 		}
 	}
 	line := fmt.ctprintf("%d wild%s on this tile!", wilds, wilds == 1 ? "" : "s")
-	rl.DrawText(line, i32(p.x) + 24, i32(p.y) + 60, 20, rl.Color{230, 230, 240, 255})
+	draw_text(line, i32(p.x) + 24, i32(p.y) + 60, 20, rl.Color{230, 230, 240, 255})
 
-	rl.DrawText("Attackers:", i32(p.x) + 24, i32(p.y) + 96, 16, rl.Color{220, 150, 150, 255})
+	draw_text("Attackers:", i32(p.x) + 24, i32(p.y) + 96, 16, rl.Color{220, 150, 150, 255})
 	ax := i32(p.x) + 24
 	for &m in g.colony.roster {
 		if m.wild && hex_equal(m.pos, hex) {
 			label := fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
-			rl.DrawText(label, ax, i32(p.y) + 118, 15, rl.Color{235, 180, 180, 255})
-			ax += rl.MeasureText("XXXXXXXXXXXXXXXXXX", 15) + 8
+			draw_text(label, ax, i32(p.y) + 118, 15, rl.Color{235, 180, 180, 255})
+			ax += measure_text("XXXXXXXXXXXXXXXXXX", 15) + 8
 		}
 	}
 
-	rl.DrawText("Defenders:", i32(p.x) + 24, i32(p.y) + 142, 16, rl.Color{170, 190, 170, 255})
+	draw_text("Defenders:", i32(p.x) + 24, i32(p.y) + 142, 16, rl.Color{170, 190, 170, 255})
 	dx := i32(p.x) + 24
 	for &m in g.colony.roster {
 		if !m.wild && hex_equal(m.pos, hex) {
 			label := fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
-			rl.DrawText(label, dx, i32(p.y) + 164, 15, rl.Color{200, 220, 200, 255})
-			dx += rl.MeasureText("XXXXXXXXXXXXXXXXXX", 15) + 8
+			draw_text(label, dx, i32(p.y) + 164, 15, rl.Color{200, 220, 200, 255})
+			dx += measure_text("XXXXXXXXXXXXXXXXXX", 15) + 8
 		}
 	}
 	_ = sh
@@ -773,16 +790,16 @@ draw_battle_choice :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(auto_rec, 0.22, 8, auto_hover ? rl.Color{70, 120, 90, 255} : rl.Color{50, 80, 62, 255})
 	rl.DrawRectangleRoundedLinesEx(auto_rec, 0.22, 8, 2, rl.Color{180, 220, 190, 255})
 	at := cstring("Auto-fight")
-	aw := rl.MeasureText(at, 20)
-	rl.DrawText(at, i32(auto_rec.x + auto_rec.width / 2) - aw / 2, i32(auto_rec.y + auto_rec.height / 2) - 12, 20, rl.Color{235, 245, 240, 255})
+	aw := measure_text(at, 20)
+	draw_text(at, i32(auto_rec.x + auto_rec.width / 2) - aw / 2, i32(auto_rec.y + auto_rec.height / 2) - 12, 20, rl.Color{235, 245, 240, 255})
 
 	rl.DrawRectangleRounded(manual_rec, 0.22, 8, manual_hover ? rl.Color{90, 90, 130, 255} : rl.Color{60, 60, 86, 255})
 	rl.DrawRectangleRoundedLinesEx(manual_rec, 0.22, 8, 2, rl.Color{200, 200, 240, 255})
 	mt := cstring("Fight myself")
-	mw := rl.MeasureText(mt, 20)
-	rl.DrawText(mt, i32(manual_rec.x + manual_rec.width / 2) - mw / 2, i32(manual_rec.y + manual_rec.height / 2) - 12, 20, rl.Color{235, 235, 250, 255})
+	mw := measure_text(mt, 20)
+	draw_text(mt, i32(manual_rec.x + manual_rec.width / 2) - mw / 2, i32(manual_rec.y + manual_rec.height / 2) - 12, 20, rl.Color{235, 235, 250, 255})
 
 	hint := g.battle_forced ? cstring("You are under attack - choose your response") : cstring("Esc to back out")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, g.battle_forced ? rl.Color{230, 150, 150, 255} : rl.Color{150, 150, 170, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, g.battle_forced ? rl.Color{230, 150, 150, 255} : rl.Color{150, 150, 170, 255})
 }

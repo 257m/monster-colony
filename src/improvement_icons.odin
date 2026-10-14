@@ -49,6 +49,7 @@ draw_improvement_icon :: proc(im: Improvement, cx, cy, zoom: f32) {
 	case .VAULT:      draw_icon_vault(cx, cy, z, t)
 	case .NURSERY:    draw_icon_nursery(cx, cy, z, t)
 	case .MENDER:     draw_icon_mender(cx, cy, z, t)
+	case .ROOK:       draw_icon_rook(cx, cy, z, t)
 	case .NONE:
 	}
 }
@@ -153,6 +154,25 @@ draw_icon_gate :: proc(cx, cy, z, t: f32) {
 	rl.DrawRectangleRec(rl.Rectangle{cx - 12 * z, cy - 11 * z, 24 * z, 4 * z}, rl.Color{142, 106, 66, 255})
 	rl.DrawLineEx(rl.Vector2{cx - 7 * z, cy - 6 * z}, rl.Vector2{cx - 3 * z, cy + 7 * z}, 2 * z, rl.Color{92, 66, 40, 255})
 	rl.DrawLineEx(rl.Vector2{cx - 7 * z, cy + 2 * z}, rl.Vector2{cx - 1 * z, cy + 2 * z}, 1.4 * z, rl.Color{92, 66, 40, 255})
+}
+
+// Rook: a crenellated stone keep your monsters can garrison (battlements pulse
+// faintly gold to read as "hold here").
+draw_icon_rook :: proc(cx, cy, z, t: f32) {
+	stone := rl.Color{120, 122, 128, 255}
+	light := rl.Color{168, 170, 178, 255}
+	dark := rl.Color{78, 80, 88, 255}
+	// Body.
+	rl.DrawRectangleRounded(rl.Rectangle{cx - 12 * z, cy - 4 * z, 24 * z, 14 * z}, 0.08, 4, stone)
+	// Battlements.
+	for k in 0..<4 {
+		rl.DrawRectangleRec(rl.Rectangle{cx - 12 * z + f32(k) * 6.5 * z, cy - 11 * z, 4.5 * z, 7 * z}, light)
+	}
+	// Arrow slit.
+	rl.DrawRectangleRec(rl.Rectangle{cx - 1.5 * z, cy - 1 * z, 3 * z, 7 * z}, dark)
+	// Faint gold halo: this tile buffs its garrison.
+	pulse := 0.5 + 0.5 * math.sin(t * 2.5)
+	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{cx - 13 * z, cy - 12 * z, 26 * z, 23 * z}, 0.08, 4, 1.4 * z, rl.Color{235, 195, 110, u8(120 + 90 * pulse)})
 }
 
 // Spike Trap: a pit of spikes.

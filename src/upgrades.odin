@@ -205,7 +205,7 @@ den_capacity :: proc(c: ^Colony) -> int { return DEN_CAPACITY + upgrade_den_capa
 improvement_hp_cap :: proc(c: ^Colony, im: Improvement) -> int {
 	base := improvement_max_hp(im)
 	#partial switch im {
-	case .WALL, .GATE: base += upgrade_fortify_hp(c)
+	case .WALL, .GATE, .ROOK: base += upgrade_fortify_hp(c)
 	case .TURRET:      base += upgrade_turret_hp(c)
 	}
 	return base

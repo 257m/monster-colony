@@ -40,7 +40,7 @@ element_name :: proc(e: Element) -> cstring {
 
 element_color :: proc(e: Element) -> rl.Color {
 	switch e {
-	case .NEUTRAL:  return rl.Color{158, 158, 172, 255}
+	case .NEUTRAL:  return rl.Color{138, 148, 178, 255}
 	case .EMBER:    return rl.Color{226, 96, 62, 255}
 	case .AQUA:     return rl.Color{74, 146, 226, 255}
 	case .FLORA:    return rl.Color{92, 186, 104, 255}

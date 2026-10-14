@@ -78,8 +78,8 @@ draw_button :: proc(
 	}
 	rl.DrawRectangleRounded(rec, style.radius, segments, bg)
 	rl.DrawRectangleRoundedLinesEx(rec, style.radius, segments, 2, border)
-	w := rl.MeasureText(label, font)
-	rl.DrawText(label, i32(rec.x + rec.width / 2) - w / 2, i32(rec.y + rec.height / 2) - font / 2, font, col)
+	w := measure_text(label, font)
+	draw_text(label, i32(rec.x + rec.width / 2) - w / 2, i32(rec.y + rec.height / 2) - font / 2, font, col)
 }
 
 // A selectable list row: fill + border tinted by state.
@@ -155,8 +155,8 @@ draw_list_screen_header :: proc(title, subtitle: cstring) {
 	sw := f32(rl.GetScreenWidth())
 	sh := f32(rl.GetScreenHeight())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 245})
-	rl.DrawText(title, 40, 38, 32, rl.Color{225, 225, 240, 255})
-	rl.DrawText(subtitle, 40, 80, 16, rl.Color{140, 140, 160, 255})
+	draw_text(title, 40, 38, 32, rl.Color{225, 225, 240, 255})
+	draw_text(subtitle, 40, 80, 16, rl.Color{140, 140, 160, 255})
 }
 
 // The left list panel's chrome: the box, the scrollbar (only when the list
@@ -170,7 +170,7 @@ draw_list_chrome :: proc(v: List_View, n: int, panel: rl.Rectangle) {
 		thumb_h := track.height * f32(v.rows) / f32(n)
 		thumb := rl.Rectangle{track.x, track.y + (track.height - thumb_h) * frac, track.width, thumb_h}
 		rl.DrawRectangleRounded(thumb, 0.5, 4, rl.Color{130, 140, 170, 255})
-		rl.DrawText(fmt.ctprintf("%d / %d", v.index + 1, n), i32(panel.x) + 10, i32(panel.y + panel.height) + 6, 15, rl.Color{150, 150, 170, 255})
+		draw_text(fmt.ctprintf("%d / %d", v.index + 1, n), i32(panel.x) + 10, i32(panel.y + panel.height) + 6, 15, rl.Color{150, 150, 170, 255})
 	}
 }
 
@@ -256,7 +256,7 @@ tooltip_draw :: proc() {
 			j := i
 			for j < len(g_tooltip) && g_tooltip[j] != '\n' {
 				ch := g_tooltip[j]
-				chw := rl.MeasureText(fmt.ctprintf("%c", ch), font)
+				chw := measure_text(fmt.ctprintf("%c", ch), font)
 				if width + chw > max_w && j > line_start {
 					break
 				}
@@ -293,7 +293,7 @@ tooltip_draw :: proc() {
 		cnt := min(lens[k], len(buf) - 1)
 		copy(buf[:cnt], g_tooltip[starts[k]:starts[k] + cnt])
 		buf[cnt] = 0
-		w := rl.MeasureText(cstring(raw_data(buf[:])), font)
+		w := measure_text(cstring(raw_data(buf[:])), font)
 		if w > max_line_w {
 			max_line_w = w
 		}
@@ -322,7 +322,7 @@ tooltip_draw :: proc() {
 		cnt := min(lens[k], len(buf) - 1)
 		copy(buf[:cnt], g_tooltip[starts[k]:starts[k] + cnt])
 		buf[cnt] = 0
-		rl.DrawText(cstring(raw_data(buf[:])), i32(x) + i32(pad), i32(y + pad + f32(k) * line_h), font,
+		draw_text(cstring(raw_data(buf[:])), i32(x) + i32(pad), i32(y + pad + f32(k) * line_h), font,
 			rl.Color{235, 235, 245, 255})
 	}
 }

@@ -166,13 +166,17 @@ the base cost** (`IMPROVEMENT_REFUND_PCT`) into the stockpile. The build panel's
 
 ## 3. Improvements
 
-`Improvement` enum: `NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON, DEN, VAULT, NURSERY, MENDER`.
+`Improvement` enum: `NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON, DEN, VAULT, NURSERY, MENDER, ROOK`.
 
 Beyond production, several are **defensive** and there's now an **energy network**:
 `GATE`/`DRAWBRIDGE` block wilds (the drawbridge toggles raised/lowered);
-a wild whose step is blocked by a `WALL`/`GATE` (or a raised `DRAWBRIDGE`) **batters
-the blocker** instead of walking around — see `colony_roam_wilds` and
+a wild whose step is blocked by a `WALL`/`GATE`/`ROOK` (or a raised `DRAWBRIDGE`)
+**batters the blocker** instead of walking around — see `colony_roam_wilds` and
 `improvement_blocks_wilds`, using `wild_improvement_damage`;
+`ROOK` is a wall your monsters can **garrison**: wilds can't cross it, but your
+own monsters may stand on it and start battles with `+ROOK_DEFENSE` Defense
+(applied in `begin_battle`, and `attack_move_attackers` leaves a garrison in
+place so it keeps the bonus);
 `SPIKE_TRAP`/`TURRET` deal damage (`colony_apply_traps` / `colony_turrets`) —
 spike traps take a **percentage** of the wild's max HP
 (`SPIKE_TRAP_DAMAGE_PCT` 15% + `upgrade_spike_pct`), so they keep pace;

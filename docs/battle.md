@@ -205,6 +205,16 @@ with an `ENDED` tag, the dead are greyed), `draw_hand`,
 `draw_popups`, and the win/lose overlays. Geometry helpers (`*_rect`) live next to
 their use. `PARTY_MAX` is 6.
 
+**Card / avatar flair (Phase 33-34).** Card and relic faces are drawn by a
+**fragment shader** (`src/shaders.odin` → `shader_panel`): a rounded panel with a
+rarity frame, an element gradient, a holographic sweep, sparkles and a
+cursor-following highlight, all in one draw. Desktop compiles GLSL 330 and the web
+build GLSL 100 (ES2); if the shader fails to load the callers fall back to plain
+primitives. `draw_creature_avatar` gives each monster a gradient body and **one**
+bold element ring (plus a rarity sparkle badge) instead of stacked thin circles.
+All text uses `draw_text` / `measure_text` (`src/font.odin`), which render with a
+subset of **Noto Sans** (`assets/font.ttf`) and fall back to raylib's default font.
+
 **Effect feedback.** Playing a card spawns a `Popup` (`draw_popups`, floating
 `-12` / `+8 blk` / `+4 str` … text, coloured by `popup_color`) *and* a
 `creature_burst` on the affected creature — an expanding coloured ring drawn by

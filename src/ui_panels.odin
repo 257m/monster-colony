@@ -2,6 +2,7 @@ package main
 
 import rl "vendor:raylib"
 import "core:fmt"
+import "core:math"
 build_panel_rect :: proc() -> rl.Rectangle {
 	return rl.Rectangle{20, 150, 360, 540}
 }
@@ -34,11 +35,11 @@ build_demolish_rect :: proc() -> rl.Rectangle {
 draw_build_panel :: proc(g: ^Game) {
 	p := build_panel_rect()
 	draw_panel(p, rl.Color{18, 18, 26, 240}, rl.Color{120, 120, 150, 255})
-	rl.DrawText("BUILD", i32(p.x) + 16, i32(p.y) + 12, 22, rl.Color{220, 220, 235, 255})
+	draw_text("BUILD", i32(p.x) + 16, i32(p.y) + 12, 22, rl.Color{220, 220, 235, 255})
 
 	if !g.has_build {
-		rl.DrawText("Click a revealed tile", i32(p.x) + 16, i32(p.y) + 52, 16, rl.Color{150, 150, 170, 255})
-		rl.DrawText("B / Esc to exit", i32(p.x) + 16, i32(p.y) + 74, 15, rl.Color{120, 120, 140, 255})
+		draw_text("Click a revealed tile", i32(p.x) + 16, i32(p.y) + 52, 16, rl.Color{150, 150, 170, 255})
+		draw_text("B / Esc to exit", i32(p.x) + 16, i32(p.y) + 74, 15, rl.Color{120, 120, 140, 255})
 		return
 	}
 
@@ -47,18 +48,18 @@ draw_build_panel :: proc(g: ^Game) {
 		return
 	}
 	info := fmt.ctprintf("Tile: %s", terrain_name(t.terrain))
-	rl.DrawText(info, i32(p.x) + 16, i32(p.y) + 46, 16, rl.Color{180, 180, 200, 255})
+	draw_text(info, i32(p.x) + 16, i32(p.y) + 46, 16, rl.Color{180, 180, 200, 255})
 	gold := fmt.ctprintf("Gold: %d", colony_total_gold(&g.colony))
-	rl.DrawText(gold, i32(p.x) + 16, i32(p.y) + 68, 16, rl.Color{240, 205, 90, 255})
+	draw_text(gold, i32(p.x) + 16, i32(p.y) + 68, 16, rl.Color{240, 205, 90, 255})
 
 	if t.improvement != .NONE || t.overlay != .NONE {
 		y := i32(p.y) + 92
 		if t.improvement != .NONE {
-			rl.DrawText(fmt.ctprintf("Built: %s  (hp %d/%d)", improvement_name(t.improvement), t.improvement_hp, improvement_hp_cap(&g.colony, t.improvement)), i32(p.x) + 16, y, 16, rl.Color{140, 220, 150, 255})
+			draw_text(fmt.ctprintf("Built: %s  (hp %d/%d)", improvement_name(t.improvement), t.improvement_hp, improvement_hp_cap(&g.colony, t.improvement)), i32(p.x) + 16, y, 16, rl.Color{140, 220, 150, 255})
 			y += 22
 		}
 		if t.overlay != .NONE {
-			rl.DrawText(fmt.ctprintf("Overlay: %s  (hp %d/%d)", improvement_name(t.overlay), t.overlay_hp, improvement_max_hp(t.overlay)), i32(p.x) + 16, y, 16, rl.Color{150, 210, 235, 255})
+			draw_text(fmt.ctprintf("Overlay: %s  (hp %d/%d)", improvement_name(t.overlay), t.overlay_hp, improvement_max_hp(t.overlay)), i32(p.x) + 16, y, 16, rl.Color{150, 210, 235, 255})
 			y += 22
 		}
 
@@ -83,7 +84,7 @@ draw_build_panel :: proc(g: ^Game) {
 		opts: [32]Improvement
 		n := buildable_improvements(&g.colony, g.build_hex, opts[:])
 		if n > 0 {
-			rl.DrawText("Add / replace:", i32(p.x) + 16, i32(p.y) + 196, 15, rl.Color{150, 150, 170, 255})
+			draw_text("Add / replace:", i32(p.x) + 16, i32(p.y) + 196, 15, rl.Color{150, 150, 170, 255})
 			draw_build_options(g, opts[:], n, BUILD_REPLACE_START)
 		}
 		return
@@ -92,7 +93,7 @@ draw_build_panel :: proc(g: ^Game) {
 	opts: [32]Improvement
 	n := buildable_improvements(&g.colony, g.build_hex, opts[:])
 	if n == 0 {
-		rl.DrawText("No improvements available here", i32(p.x) + 16, i32(p.y) + 100, 15, rl.Color{200, 150, 150, 255})
+		draw_text("No improvements available here", i32(p.x) + 16, i32(p.y) + 100, 15, rl.Color{200, 150, 150, 255})
 		return
 	}
 	draw_build_options(g, opts[:], n, BUILD_OPT_START)
@@ -120,15 +121,15 @@ draw_build_options :: proc(g: ^Game, opts: []Improvement, n: int, start_y: f32) 
 		rl.DrawRectangleRounded(rec, 0.16, 6, bg)
 		rl.DrawRectangleRoundedLinesEx(rec, 0.16, 6, 2, afford ? rl.Color{120, 180, 120, 255} : rl.Color{120, 80, 80, 255})
 
-		rl.DrawText(improvement_name(im), i32(rec.x) + 8, i32(rec.y) + 4, 15, rl.Color{225, 225, 240, 255})
+		draw_text(improvement_name(im), i32(rec.x) + 8, i32(rec.y) + 4, 15, rl.Color{225, 225, 240, 255})
 		cst := fmt.ctprintf("%dg", cost)
-		cw := rl.MeasureText(cst, 15)
-		rl.DrawText(cst, i32(rec.x + rec.width) - 8 - cw, i32(rec.y) + 4, 15, afford ? rl.Color{240, 205, 90, 255} : rl.Color{200, 120, 120, 255})
-		rl.DrawText(fmt.ctprintf("%d hp", improvement_hp_cap(&g.colony, im)), i32(rec.x) + 8, i32(rec.y) + 23, 11, rl.Color{150, 150, 170, 255})
+		cw := measure_text(cst, 15)
+		draw_text(cst, i32(rec.x + rec.width) - 8 - cw, i32(rec.y) + 4, 15, afford ? rl.Color{240, 205, 90, 255} : rl.Color{200, 120, 120, 255})
+		draw_text(fmt.ctprintf("%d hp", improvement_hp_cap(&g.colony, im)), i32(rec.x) + 8, i32(rec.y) + 23, 11, rl.Color{150, 150, 170, 255})
 		if improvement_stacks(im) {
 			tag := cstring("+stack")
-			tw := rl.MeasureText(tag, 11)
-			rl.DrawText(tag, i32(rec.x + rec.width) - 8 - tw, i32(rec.y) + 23, 11, rl.Color{130, 210, 235, 255})
+			tw := measure_text(tag, 11)
+			draw_text(tag, i32(rec.x + rec.width) - 8 - tw, i32(rec.y) + 23, 11, rl.Color{130, 210, 235, 255})
 		}
 		if hover {
 			tooltip_set("%s  -  %s\n%s", improvement_name(im), improvement_effect(im), improvement_detail(im))
@@ -139,7 +140,7 @@ draw_build_options :: proc(g: ^Game, opts: []Improvement, n: int, start_y: f32) 
 	// Hovered improvement's effect, along the bottom of the panel.
 	p := build_panel_rect()
 	if hovered != .NONE {
-		rl.DrawText(improvement_effect(hovered), i32(p.x) + 12, i32(p.y + p.height) - 26, 12, rl.Color{175, 175, 195, 255})
+		draw_text(improvement_effect(hovered), i32(p.x) + 12, i32(p.y + p.height) - 26, 12, rl.Color{175, 175, 195, 255})
 	}
 }
 
@@ -184,10 +185,10 @@ draw_trade_button :: proc(rec: rl.Rectangle, label: cstring, enabled: bool, cost
 	}
 	rl.DrawRectangleRounded(rec, 0.16, 6, bg)
 	rl.DrawRectangleRoundedLinesEx(rec, 0.16, 6, 2, enabled ? rl.Color{180, 160, 90, 255} : rl.Color{90, 80, 80, 255})
-	rl.DrawText(label, i32(rec.x) + 12, i32(rec.y) + 14, 18, enabled ? rl.Color{235, 235, 245, 255} : rl.Color{140, 140, 150, 255})
+	draw_text(label, i32(rec.x) + 12, i32(rec.y) + 14, 18, enabled ? rl.Color{235, 235, 245, 255} : rl.Color{140, 140, 150, 255})
 	if cost_text != "" {
-		cw := rl.MeasureText(cost_text, 16)
-		rl.DrawText(cost_text, i32(rec.x + rec.width) - 12 - cw, i32(rec.y) + 15, 16, enabled ? rl.Color{240, 205, 90, 255} : rl.Color{150, 120, 120, 255})
+		cw := measure_text(cost_text, 16)
+		draw_text(cost_text, i32(rec.x + rec.width) - 12 - cw, i32(rec.y) + 15, 16, enabled ? rl.Color{240, 205, 90, 255} : rl.Color{150, 120, 120, 255})
 	}
 }
 
@@ -203,11 +204,11 @@ draw_recruit_button :: proc(rec: rl.Rectangle, offer: Shop_Offer, enabled: bool)
 	rl.DrawRectangleRounded(rec, 0.16, 6, bg)
 	rl.DrawRectangleRoundedLinesEx(rec, 0.16, 6, 2, enabled ? rar : rl.Color{90, 80, 80, 255})
 	name := fmt.ctprintf("%s   Lvl %d", SPECIES[offer.species].name, offer.level)
-	rl.DrawText(name, i32(rec.x) + 12, i32(rec.y) + 8, 18, enabled ? rl.Color{235, 235, 245, 255} : rl.Color{140, 140, 150, 255})
-	rl.DrawText(rarity_name(species_rarity(offer.species)), i32(rec.x) + 12, i32(rec.y) + 28, 13, enabled ? rar : rl.Color{130, 130, 140, 255})
+	draw_text(name, i32(rec.x) + 12, i32(rec.y) + 8, 18, enabled ? rl.Color{235, 235, 245, 255} : rl.Color{140, 140, 150, 255})
+	draw_text(rarity_name(species_rarity(offer.species)), i32(rec.x) + 12, i32(rec.y) + 28, 13, enabled ? rar : rl.Color{130, 130, 140, 255})
 	cost := fmt.ctprintf("%dg", offer.price)
-	cw := rl.MeasureText(cost, 16)
-	rl.DrawText(cost, i32(rec.x + rec.width) - 12 - cw, i32(rec.y) + 16, 16, enabled ? rl.Color{240, 205, 90, 255} : rl.Color{150, 120, 120, 255})
+	cw := measure_text(cost, 16)
+	draw_text(cost, i32(rec.x + rec.width) - 12 - cw, i32(rec.y) + 16, 16, enabled ? rl.Color{240, 205, 90, 255} : rl.Color{150, 120, 120, 255})
 }
 
 draw_trade_panel :: proc(g: ^Game) {
@@ -217,14 +218,14 @@ draw_trade_panel :: proc(g: ^Game) {
 
 	p := trade_panel_rect()
 	draw_panel(p, rl.Color{20, 20, 30, 245}, rl.Color{180, 160, 90, 255}, 0.05, 8, 2)
-	rl.DrawText("TRADING POST", i32(p.x) + 20, i32(p.y) + 16, 24, rl.Color{240, 210, 120, 255})
+	draw_text("TRADING POST", i32(p.x) + 20, i32(p.y) + 16, 24, rl.Color{240, 210, 120, 255})
 	gold := fmt.ctprintf("Gold: %d", colony_total_gold(&g.colony))
-	rl.DrawText(gold, i32(p.x) + 20, i32(p.y) + 48, 16, rl.Color{220, 200, 120, 255})
+	draw_text(gold, i32(p.x) + 20, i32(p.y) + 48, 16, rl.Color{220, 200, 120, 255})
 
 	// Monsters for sale — rerolled each turn by the Trading Post.
-	rl.DrawText("MONSTERS FOR SALE   (restocks each turn)", i32(p.x) + 20, i32(p.y) + 74, 15, rl.Color{180, 150, 150, 255})
+	draw_text("MONSTERS FOR SALE   (restocks each turn)", i32(p.x) + 20, i32(p.y) + 74, 15, rl.Color{180, 150, 150, 255})
 	if len(g.colony.shop) == 0 {
-		rl.DrawText("Sold out - restocks next turn.", i32(p.x) + 20, i32(p.y) + 112, 16, rl.Color{130, 130, 145, 255})
+		draw_text("Sold out - restocks next turn.", i32(p.x) + 20, i32(p.y) + 112, 16, rl.Color{130, 130, 145, 255})
 	} else {
 		for i in 0..<len(g.colony.shop) {
 			offer := g.colony.shop[i]
@@ -259,9 +260,9 @@ draw_trade_panel :: proc(g: ^Game) {
 		tooltip_set("Capture cards let you recruit a wild mid-battle instead of defeating it. Scout upgrades improve the odds.")
 	}
 
-	rl.DrawText("FALLEN (revive)", i32(p.x) + 20, i32(p.y) + 430, 15, rl.Color{180, 150, 150, 255})
+	draw_text("FALLEN (revive)", i32(p.x) + 20, i32(p.y) + 430, 15, rl.Color{180, 150, 150, 255})
 	if len(g.colony.graveyard) == 0 {
-		rl.DrawText("None", i32(p.x) + 20, i32(p.y) + 456, 15, rl.Color{130, 130, 145, 255})
+		draw_text("None", i32(p.x) + 20, i32(p.y) + 456, 15, rl.Color{130, 130, 145, 255})
 	} else {
 		for i in 0..<min(len(g.colony.graveyard), 2) {
 			m := &g.colony.graveyard[i]
@@ -272,8 +273,8 @@ draw_trade_panel :: proc(g: ^Game) {
 	}
 
 	hint := cstring("T / Esc to close")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x) + i32(p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(p.x) + i32(p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
 }
 
 Terrain_Legend_Entry :: struct {
@@ -377,24 +378,24 @@ draw_deck_viewer :: proc(g: ^Game) {
 	element := creature_element(c)
 
 	name := fmt.ctprintf("%s's Deck", c.name)
-	rl.DrawText(name, 40, 26, 34, rl.Color{235, 235, 245, 255})
+	draw_text(name, 40, 26, 34, rl.Color{235, 235, 245, 255})
 	sub := fmt.ctprintf("Lvl %d   %s   HP %d/%d   XP %d/%d   PWR x%s   DEF %s   SPD %s   Energy %s max (%s regen)   %d cards",
 		c.level, element_label(c), c.hp, c.max_hp, c.xp, xp_to_next(c.level),
 		fmt_num(c.power), fmt_num(creature_defense(c)), fmt_num(c.speed),
 		fmt_num(c.energy_max), fmt_num(c.energy_regen), len(c.deck))
-	rl.DrawText(sub, 40, 68, 18, element_color(element))
+	draw_text(sub, 40, 68, 18, element_color(element))
 	if c.ability != .NONE {
 		ab_line := fmt.ctprintf("Ability: %s - %s", ability_name(c.ability), ability_desc(c.ability))
-		rl.DrawText(ab_line, 40, 92, 16, rl.Color{200, 180, 240, 255})
+		draw_text(ab_line, 40, 92, 16, rl.Color{200, 180, 240, 255})
 	} else {
-		rl.DrawText("Ability: none", 40, 92, 16, rl.Color{140, 140, 160, 255})
+		draw_text("Ability: none", 40, 92, 16, rl.Color{140, 140, 160, 255})
 	}
 	item_line := c.item != .NONE ? fmt.ctprintf("Item: %s - %s", item_name(c.item), item_desc(c.item)) : cstring("Item: none")
-	rl.DrawText(item_line, 40, 112, 16, rl.Color{180, 240, 200, 255})
+	draw_text(item_line, 40, 112, 16, rl.Color{180, 240, 200, 255})
 	gene_line := fmt.ctprintf("Genes: %s   (total %d)", genes_label(c.genes), genes_total(c.genes))
-	rl.DrawText(gene_line, 40, 134, 16, rl.Color{170, 210, 230, 255})
+	draw_text(gene_line, 40, 134, 16, rl.Color{170, 210, 230, 255})
 	pager := fmt.ctprintf("monster %d / %d   -   Left/Right or Q/E to switch", g.view_index + 1, len(g.colony.roster))
-	rl.DrawText(pager, 40, 154, 16, rl.Color{150, 150, 170, 255})
+	draw_text(pager, 40, 154, 16, rl.Color{150, 150, 170, 255})
 
 	// Item slot + bag.
 	m := &g.colony.roster[g.view_index]
@@ -421,8 +422,8 @@ draw_deck_viewer :: proc(g: ^Game) {
 	rl.EndScissorMode()
 
 	hint := cstring("V / Esc close   |   wheel or Up/Down scroll   |   right-click a card to forget it (gold)")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 32, 16, rl.Color{140, 140, 160, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(sw) / 2 - hw / 2, i32(sh) - 32, 16, rl.Color{140, 140, 160, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -441,16 +442,16 @@ draw_stored_slot :: proc(rec: rl.Rectangle, c: ^Colony, si: int, empty_label, ac
 	if si < 0 {
 		rl.DrawRectangleRounded(rec, 0.18, 4, rl.Color{24, 24, 30, 255})
 		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 1.5, rl.Color{70, 70, 82, 255})
-		rl.DrawText(empty_label, i32(rec.x) + 10, i32(rec.y) + 7, 14, rl.Color{120, 120, 140, 255})
+		draw_text(empty_label, i32(rec.x) + 10, i32(rec.y) + 7, 14, rl.Color{120, 120, 140, 255})
 		return
 	}
 	m := &c.storage[si]
 	bg := hover ? rl.Color{44, 58, 50, 255} : rl.Color{28, 36, 32, 255}
 	rl.DrawRectangleRounded(rec, 0.18, 4, bg)
 	rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 1.5, col)
-	rl.DrawText(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 7, 15, rl.Color{225, 235, 225, 255})
-	aw := rl.MeasureText(action, 13)
-	rl.DrawText(action, i32(rec.x + rec.width) - 10 - aw, i32(rec.y) + 8, 13, rl.Color{230, 200, 200, 255})
+	draw_text(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 7, 15, rl.Color{225, 235, 225, 255})
+	aw := measure_text(action, 13)
+	draw_text(action, i32(rec.x + rec.width) - 10 - aw, i32(rec.y) + 8, 13, rl.Color{230, 200, 200, 255})
 }
 
 // ---- Nursery panel (C) ----
@@ -553,12 +554,12 @@ draw_nursery :: proc(g: ^Game) {
 	sh := f32(rl.GetScreenHeight())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
 
-	rl.DrawText(cstring("Nurseries"), 40, 26, 34, rl.Color{235, 235, 245, 255})
+	draw_text(cstring("Nurseries"), 40, 26, 34, rl.Color{235, 235, 245, 255})
 	sub := cstring("Move two nearby monsters of the same species (Lvl 5+) in as the breeding pair. A fed Nursery hatches a level 1 baby every 8 turns, up to 4 stored.")
-	rl.DrawText(sub, 40, 68, 16, rl.Color{180, 190, 210, 255})
+	draw_text(sub, 40, 68, 16, rl.Color{180, 190, 210, 255})
 
 	n := nursery_count(&g.colony)
-	rl.DrawText(fmt.ctprintf("Your Nurseries (%d):", n), 40, 118, 16, rl.Color{150, 150, 170, 255})
+	draw_text(fmt.ctprintf("Your Nurseries (%d):", n), 40, 118, 16, rl.Color{150, 150, 170, 255})
 
 	mp := rl.GetMousePosition()
 	for row in 0..<min(NURSERY_LIST_ROWS, n) {
@@ -577,31 +578,31 @@ draw_nursery :: proc(g: ^Game) {
 		if t := tile_at(&g.colony, hex); t != nil {
 			prog = t.stored
 		}
-		rl.DrawText(fmt.ctprintf("Nursery (%d,%d)  pair %d/%d  babies %d/%d  %d/%d", hex.q, hex.r, p, NURSERY_PARENTS, b, NURSERY_BABIES, prog, NURSERY_PERIOD), i32(rec.x) + 10, i32(rec.y) + 6, 15, rl.Color{225, 230, 240, 255})
+		draw_text(fmt.ctprintf("Nursery (%d,%d)  pair %d/%d  babies %d/%d  %d/%d", hex.q, hex.r, p, NURSERY_PARENTS, b, NURSERY_BABIES, prog, NURSERY_PERIOD), i32(rec.x) + 10, i32(rec.y) + 6, 15, rl.Color{225, 230, 240, 255})
 	}
 
 	if n == 0 {
-		rl.DrawText(cstring("No Nurseries yet - build one with B (Cave/Grove/Mushroom/Jungle)."), 40, 154, 16, rl.Color{210, 180, 180, 255})
+		draw_text(cstring("No Nurseries yet - build one with B (Cave/Grove/Mushroom/Jungle)."), 40, 154, 16, rl.Color{210, 180, 180, 255})
 		hint := cstring("C / Esc close")
-		hw := rl.MeasureText(hint, 16)
-		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
+		hw := measure_text(hint, 16)
+		draw_text(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
 		return
 	}
 
 	hex := nursery_hex_at(&g.colony, g.nursery_sel)
 
-	rl.DrawText(cstring("Breeding pair (click to remove):"), 410, 118, 16, rl.Color{190, 220, 200, 255})
+	draw_text(cstring("Breeding pair (click to remove):"), 410, 118, 16, rl.Color{190, 220, 200, 255})
 	for i in 0..<NURSERY_PARENTS {
 		si := stored_slot_index(&g.colony, hex, .NURSERY_PARENT, i)
 		draw_stored_slot(nursery_slot_rect(.NURSERY_PARENT, i), &g.colony, si, cstring("Empty - add a nearby monster"), cstring("Remove"), rl.Color{140, 220, 160, 255})
 	}
-	rl.DrawText(cstring("Babies (click to take):"), 410, 258, 16, rl.Color{210, 200, 160, 255})
+	draw_text(cstring("Babies (click to take):"), 410, 258, 16, rl.Color{210, 200, 160, 255})
 	for i in 0..<NURSERY_BABIES {
 		si := stored_slot_index(&g.colony, hex, .NURSERY_BABY, i)
 		draw_stored_slot(nursery_slot_rect(.NURSERY_BABY, i), &g.colony, si, cstring("Empty"), cstring("Take"), rl.Color{230, 210, 150, 255})
 	}
 
-	rl.DrawText(cstring("Add a parent - nearby monsters (within 1, Lvl 5+, same species):"), 800, 140, 16, rl.Color{180, 190, 210, 255})
+	draw_text(cstring("Add a parent - nearby monsters (within 1, Lvl 5+, same species):"), 800, 140, 16, rl.Color{180, 190, 210, 255})
 	cand := 0
 	for row in 0..<NURSERY_CAND_ROWS {
 		idx := nearby_map_monster_at(&g.colony, hex, row)
@@ -615,19 +616,19 @@ draw_nursery :: proc(g: ^Game) {
 		bg := ok ? (hover ? rl.Color{44, 64, 50, 255} : rl.Color{28, 40, 34, 255}) : (hover ? rl.Color{34, 30, 34, 255} : rl.Color{24, 24, 28, 255})
 		rl.DrawRectangleRounded(rec, 0.2, 4, bg)
 		rl.DrawRectangleRoundedLinesEx(rec, 0.2, 4, 1.5, ok ? rl.Color{110, 180, 130, 255} : rl.Color{70, 66, 70, 255})
-		rl.DrawText(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 5, 15, ok ? rl.Color{225, 235, 225, 255} : rl.Color{150, 145, 150, 255})
+		draw_text(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 5, 15, ok ? rl.Color{225, 235, 225, 255} : rl.Color{150, 145, 150, 255})
 		gl := genes_label(m.creature.genes)
-		gw := rl.MeasureText(gl, 13)
-		rl.DrawText(gl, i32(rec.x + rec.width) - 10 - gw, i32(rec.y) + 6, 13, rl.Color{170, 200, 220, 255})
+		gw := measure_text(gl, 13)
+		draw_text(gl, i32(rec.x + rec.width) - 10 - gw, i32(rec.y) + 6, 13, rl.Color{170, 200, 220, 255})
 		cand += 1
 	}
 	if cand == 0 {
-		rl.DrawText(cstring("No monsters next to this Nursery."), 800, 184, 15, rl.Color{150, 150, 170, 255})
+		draw_text(cstring("No monsters next to this Nursery."), 800, 184, 15, rl.Color{150, 150, 170, 255})
 	}
 
 	hint := cstring("Click a Nursery, then a nearby monster to add it   |   C / Esc close")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
 }
 
 // ---- Monster storage panel (H) ----
@@ -720,12 +721,12 @@ draw_storage :: proc(g: ^Game) {
 	sh := f32(rl.GetScreenHeight())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
 
-	rl.DrawText(cstring("Monster Storage"), 40, 26, 34, rl.Color{235, 235, 245, 255})
+	draw_text(cstring("Monster Storage"), 40, 26, 34, rl.Color{235, 235, 245, 255})
 	sub := cstring("Walk a monster next to a Den, then click it here to put it in stasis: no food upkeep, no heat, off the map. Up to 32 per Den.")
-	rl.DrawText(sub, 40, 68, 16, rl.Color{180, 190, 210, 255})
+	draw_text(sub, 40, 68, 16, rl.Color{180, 190, 210, 255})
 
 	n := den_count(&g.colony)
-	rl.DrawText(fmt.ctprintf("Your Dens (%d):", n), 40, 118, 16, rl.Color{150, 150, 170, 255})
+	draw_text(fmt.ctprintf("Your Dens (%d):", n), 40, 118, 16, rl.Color{150, 150, 170, 255})
 
 	mp := rl.GetMousePosition()
 	for row in 0..<min(STORAGE_LIST_ROWS, n) {
@@ -738,20 +739,20 @@ draw_storage :: proc(g: ^Game) {
 		sel := k == g.storage_sel
 		hover := rl.CheckCollisionPointRec(mp, rec)
 		draw_row(rec, sel, hover, rl.Color{140, 220, 160, 255})
-		rl.DrawText(fmt.ctprintf("Den (%d,%d)   %d/%d", hex.q, hex.r, den_occupancy(&g.colony, hex), den_capacity(&g.colony)), i32(rec.x) + 10, i32(rec.y) + 6, 15, rl.Color{225, 230, 240, 255})
+		draw_text(fmt.ctprintf("Den (%d,%d)   %d/%d", hex.q, hex.r, den_occupancy(&g.colony, hex), den_capacity(&g.colony)), i32(rec.x) + 10, i32(rec.y) + 6, 15, rl.Color{225, 230, 240, 255})
 	}
 
 	if n == 0 {
-		rl.DrawText(cstring("No Dens yet - build one with B (Cave/Grove/Ruins/Mushroom/Desert)."), 40, 154, 16, rl.Color{210, 180, 180, 255})
+		draw_text(cstring("No Dens yet - build one with B (Cave/Grove/Ruins/Mushroom/Desert)."), 40, 154, 16, rl.Color{210, 180, 180, 255})
 		hint := cstring("H / Esc close")
-		hw := rl.MeasureText(hint, 16)
-		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
+		hw := measure_text(hint, 16)
+		draw_text(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
 		return
 	}
 
 	hex := den_hex_at(&g.colony, g.storage_sel)
 
-	rl.DrawText(cstring("Nearby (within 1) - click to store:"), 410, 150, 16, rl.Color{190, 220, 200, 255})
+	draw_text(cstring("Nearby (within 1) - click to store:"), 410, 150, 16, rl.Color{190, 220, 200, 255})
 	near := 0
 	for i in 0..<len(g.colony.roster) {
 		m := &g.colony.roster[i]
@@ -765,14 +766,14 @@ draw_storage :: proc(g: ^Game) {
 		hover := rl.CheckCollisionPointRec(mp, rec)
 		rl.DrawRectangleRounded(rec, 0.18, 4, hover ? rl.Color{44, 64, 50, 255} : rl.Color{28, 40, 34, 255})
 		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 1.5, rl.Color{110, 180, 130, 255})
-		rl.DrawText(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 5, 15, rl.Color{225, 235, 225, 255})
+		draw_text(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 5, 15, rl.Color{225, 235, 225, 255})
 		near += 1
 	}
 	if near == 0 {
-		rl.DrawText(cstring("No monsters next to this Den."), 410, 184, 15, rl.Color{150, 150, 170, 255})
+		draw_text(cstring("No monsters next to this Den."), 410, 184, 15, rl.Color{150, 150, 170, 255})
 	}
 
-	rl.DrawText(fmt.ctprintf("In stasis (%d/%d) - click to deploy:", den_occupancy(&g.colony, hex), den_capacity(&g.colony)), 820, 150, 16, rl.Color{210, 200, 160, 255})
+	draw_text(fmt.ctprintf("In stasis (%d/%d) - click to deploy:", den_occupancy(&g.colony, hex), den_capacity(&g.colony)), 820, 150, 16, rl.Color{210, 200, 160, 255})
 	hold := 0
 	for i in 0..<len(g.colony.storage) {
 		m := &g.colony.storage[i]
@@ -786,16 +787,16 @@ draw_storage :: proc(g: ^Game) {
 		hover := rl.CheckCollisionPointRec(mp, rec)
 		rl.DrawRectangleRounded(rec, 0.18, 4, hover ? rl.Color{48, 52, 64, 255} : rl.Color{28, 30, 38, 255})
 		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 1.5, rl.Color{120, 140, 180, 255})
-		rl.DrawText(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 5, 15, rl.Color{220, 225, 235, 255})
+		draw_text(fmt.ctprintf("Lvl %d  %s", m.creature.level, m.creature.name), i32(rec.x) + 10, i32(rec.y) + 5, 15, rl.Color{220, 225, 235, 255})
 		hold += 1
 	}
 	if hold == 0 {
-		rl.DrawText(cstring("Nothing stored here."), 820, 184, 15, rl.Color{150, 150, 170, 255})
+		draw_text(cstring("Nothing stored here."), 820, 184, 15, rl.Color{150, 150, 170, 255})
 	}
 
 	hint := cstring("Click a Den, then a nearby monster to store it, or a stored one to deploy   |   H / Esc close")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(sw) / 2 - hw / 2, i32(sh) - 28, 16, rl.Color{140, 140, 160, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -904,8 +905,8 @@ draw_new_run_button :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(rec, 0.2, 8, bg)
 	rl.DrawRectangleRoundedLinesEx(rec, 0.2, 8, 2, border)
 	label := armed ? cstring("Confirm?  click or press N") : cstring("New Run  (N)")
-	w := rl.MeasureText(label, 22)
-	rl.DrawText(label, i32(rec.x + rec.width / 2) - w / 2, i32(rec.y + rec.height / 2) - 12, 22, armed ? rl.Color{255, 210, 200, 255} : rl.Color{210, 220, 240, 255})
+	w := measure_text(label, 22)
+	draw_text(label, i32(rec.x + rec.width / 2) - w / 2, i32(rec.y + rec.height / 2) - 12, 22, armed ? rl.Color{255, 210, 200, 255} : rl.Color{210, 220, 240, 255})
 }
 
 draw_save_panel :: proc(g: ^Game) {
@@ -913,17 +914,17 @@ draw_save_panel :: proc(g: ^Game) {
 	sh := f32(rl.GetScreenHeight())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 210})
 
-	rl.DrawText(cstring("Save / Load"), 120, 40, 34, rl.Color{235, 235, 245, 255})
+	draw_text(cstring("Save / Load"), 120, 40, 34, rl.Color{235, 235, 245, 255})
 	if g.mode == .MAP {
-		rl.DrawText(cstring("F quick-saves slot 1   |   N: new run   |   O / Esc to close"), 120, 86, 16, rl.Color{160, 170, 190, 255})
+		draw_text(cstring("F quick-saves slot 1   |   N: new run   |   O / Esc to close"), 120, 86, 16, rl.Color{160, 170, 190, 255})
 	} else {
-		rl.DrawText(cstring("Choose a slot to load   |   N: new run   |   Esc to go back"), 120, 86, 16, rl.Color{160, 170, 190, 255})
+		draw_text(cstring("Choose a slot to load   |   N: new run   |   Esc to go back"), 120, 86, 16, rl.Color{160, 170, 190, 255})
 	}
 
 	draw_new_run_button(g)
 
 	if !save_supported() {
-		rl.DrawText(cstring("Saving is not available in the browser build."), 120, 180, 18, rl.Color{220, 170, 170, 255})
+		draw_text(cstring("Saving is not available in the browser build."), 120, 180, 18, rl.Color{220, 170, 170, 255})
 		return
 	}
 
@@ -936,16 +937,16 @@ draw_save_panel :: proc(g: ^Game) {
 		rl.DrawRectangleRounded(rec, 0.06, 6, bg)
 		rl.DrawRectangleRoundedLinesEx(rec, 0.06, 6, 2, rl.Color{70, 78, 96, 255})
 
-		rl.DrawText(fmt.ctprintf("Slot %d", slot + 1), i32(rec.x) + 20, i32(rec.y) + 12, 22, rl.Color{220, 226, 240, 255})
+		draw_text(fmt.ctprintf("Slot %d", slot + 1), i32(rec.x) + 20, i32(rec.y) + 12, 22, rl.Color{220, 226, 240, 255})
 
 		if meta.exists {
 			buf: [32]u8
 			age := save_age_label(meta.saved_at, buf[:])
 			info := fmt.ctprintf("Turn %d   Gold %d   Monsters %d   Crystals %d", meta.turn, meta.gold, meta.monsters, meta.crystals)
-			rl.DrawText(info, i32(rec.x) + 20, i32(rec.y) + 46, 16, rl.Color{180, 195, 215, 255})
-			rl.DrawText(fmt.ctprintf("%s", age), i32(rec.x) + 20, i32(rec.y) + 68, 14, rl.Color{140, 150, 170, 255})
+			draw_text(info, i32(rec.x) + 20, i32(rec.y) + 46, 16, rl.Color{180, 195, 215, 255})
+			draw_text(fmt.ctprintf("%s", age), i32(rec.x) + 20, i32(rec.y) + 68, 14, rl.Color{140, 150, 170, 255})
 		} else {
-			rl.DrawText(cstring("Empty"), i32(rec.x) + 20, i32(rec.y) + 46, 16, rl.Color{130, 130, 150, 255})
+			draw_text(cstring("Empty"), i32(rec.x) + 20, i32(rec.y) + 46, 16, rl.Color{130, 130, 150, 255})
 		}
 
 		draw_button(save_slot_save_rect(slot), cstring("Save"), g.has_colony && g.mode == .MAP)
@@ -958,16 +959,16 @@ draw_save_panel :: proc(g: ^Game) {
 		meta := save_read_meta(AUTOSAVE_SLOT)
 		rl.DrawRectangleRounded(rec, 0.06, 6, rl.Color{22, 26, 34, 255})
 		rl.DrawRectangleRoundedLinesEx(rec, 0.06, 6, 2, rl.Color{96, 130, 102, 255})
-		rl.DrawText(cstring("Autosave"), i32(rec.x) + 20, i32(rec.y) + 12, 22, rl.Color{205, 240, 210, 255})
-		rl.DrawText(fmt.ctprintf("auto-written every %d turns", AUTOSAVE_EVERY), i32(rec.x) + 170, i32(rec.y) + 18, 14, rl.Color{140, 165, 150, 255})
+		draw_text(cstring("Autosave"), i32(rec.x) + 20, i32(rec.y) + 12, 22, rl.Color{205, 240, 210, 255})
+		draw_text(fmt.ctprintf("auto-written every %d turns", AUTOSAVE_EVERY), i32(rec.x) + 170, i32(rec.y) + 18, 14, rl.Color{140, 165, 150, 255})
 		if meta.exists {
 			buf: [32]u8
 			age := save_age_label(meta.saved_at, buf[:])
 			info := fmt.ctprintf("Turn %d   Gold %d   Monsters %d   Crystals %d", meta.turn, meta.gold, meta.monsters, meta.crystals)
-			rl.DrawText(info, i32(rec.x) + 20, i32(rec.y) + 46, 16, rl.Color{180, 205, 190, 255})
-			rl.DrawText(fmt.ctprintf("%s", age), i32(rec.x) + 20, i32(rec.y) + 68, 14, rl.Color{140, 150, 170, 255})
+			draw_text(info, i32(rec.x) + 20, i32(rec.y) + 46, 16, rl.Color{180, 205, 190, 255})
+			draw_text(fmt.ctprintf("%s", age), i32(rec.x) + 20, i32(rec.y) + 68, 14, rl.Color{140, 150, 170, 255})
 		} else {
-			rl.DrawText(cstring("Empty"), i32(rec.x) + 20, i32(rec.y) + 46, 16, rl.Color{130, 130, 150, 255})
+			draw_text(cstring("Empty"), i32(rec.x) + 20, i32(rec.y) + 46, 16, rl.Color{130, 130, 150, 255})
 		}
 		draw_button(save_slot_load_rect(AUTOSAVE_SLOT), cstring("Load"), meta.exists)
 	}
@@ -1017,10 +1018,10 @@ draw_encyclopedia :: proc(g: ^Game) {
 		draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
 		sp := SPECIES[Species_Id(i)]
 		rl.DrawCircleV(rl.Vector2{rec.x + 14, rec.y + 12}, 8, sp.color)
-		rl.DrawText(fmt.ctprintf("%s", sp.name), i32(rec.x) + 30, i32(rec.y) + 4, 16, sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 200, 215, 255})
+		draw_text(fmt.ctprintf("%s", sp.name), i32(rec.x) + 30, i32(rec.y) + 4, 16, sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 200, 215, 255})
 		label := elements_label(sp.elements)
-		ew := rl.MeasureText(label, 13)
-		rl.DrawText(label, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 6, 13, element_color(sp.elements[0]))
+		ew := measure_text(label, 13)
+		draw_text(label, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 6, 13, element_color(sp.elements[0]))
 	}
 
 	if g.encyclopedia_index < 0 || g.encyclopedia_index >= n {
@@ -1033,29 +1034,29 @@ draw_encyclopedia :: proc(g: ^Game) {
 	rl.DrawCircleV(rl.Vector2{dx + 40, dy + 40}, 38, sp.color)
 	rl.DrawCircleLinesV(rl.Vector2{dx + 40, dy + 40}, 38, rl.Color{235, 235, 245, 255})
 	initial := fmt.ctprintf("%c", sp.name[0])
-	iw := rl.MeasureText(initial, 36)
-	rl.DrawText(initial, i32(dx + 40) - iw / 2, i32(dy + 40) - 18, 36, rl.Color{255, 255, 255, 255})
+	iw := measure_text(initial, 36)
+	draw_text(initial, i32(dx + 40) - iw / 2, i32(dy + 40) - 18, 36, rl.Color{255, 255, 255, 255})
 
-	rl.DrawText(fmt.ctprintf("%s", sp.name), i32(dx + 96), i32(dy) + 6, 30, rl.Color{235, 235, 245, 255})
+	draw_text(fmt.ctprintf("%s", sp.name), i32(dx + 96), i32(dy) + 6, 30, rl.Color{235, 235, 245, 255})
 	type_label := elements_label(sp.elements)
-	rl.DrawText(type_label, i32(dx + 96), i32(dy) + 44, 20, element_color(sp.elements[0]))
-	rl.DrawText(fmt.ctprintf("Role: %s", role_name(sp.role)), i32(dx + 96), i32(dy) + 70, 16, rl.Color{170, 170, 190, 255})
-	rl.DrawText(rarity_name(sp.rarity), i32(dx + 210), i32(dy) + 70, 16, rarity_color(sp.rarity))
+	draw_text(type_label, i32(dx + 96), i32(dy) + 44, 20, element_color(sp.elements[0]))
+	draw_text(fmt.ctprintf("Role: %s", role_name(sp.role)), i32(dx + 96), i32(dy) + 70, 16, rl.Color{170, 170, 190, 255})
+	draw_text(rarity_name(sp.rarity), i32(dx + 210), i32(dy) + 70, 16, rarity_color(sp.rarity))
 
 	// Stats (drawn one at a time; ctprintf shares one buffer).
 	sx := i32(dx)
 	sy := i32(dy) + 112
 	step := i32(26)
-	rl.DrawText(fmt.ctprintf("HP %d", sp.base_hp), sx, sy, 18, rl.Color{205, 205, 220, 255})
-	rl.DrawText(fmt.ctprintf("PWR x%s", fmt_num(sp.base_power)), sx, sy + step, 18, rl.Color{205, 205, 220, 255})
-	rl.DrawText(fmt.ctprintf("DEF %s", fmt_num(sp.base_defense)), sx, sy + step * 2, 18, rl.Color{205, 205, 220, 255})
-	rl.DrawText(fmt.ctprintf("SPD %s", fmt_num(sp.base_speed)), sx, sy + step * 3, 18, rl.Color{205, 205, 220, 255})
-	rl.DrawText(fmt.ctprintf("Energy %d regen / %d max", sp.base_energy, sp.base_energy_max), sx, sy + step * 4, 18, rl.Color{205, 205, 220, 255})
-	rl.DrawText(fmt.ctprintf("Satiety %d   Upkeep %d", sp.base_satiety, sp.base_upkeep), sx, sy + step * 5, 18, rl.Color{205, 205, 220, 255})
+	draw_text(fmt.ctprintf("HP %d", sp.base_hp), sx, sy, 18, rl.Color{205, 205, 220, 255})
+	draw_text(fmt.ctprintf("PWR x%s", fmt_num(sp.base_power)), sx, sy + step, 18, rl.Color{205, 205, 220, 255})
+	draw_text(fmt.ctprintf("DEF %s", fmt_num(sp.base_defense)), sx, sy + step * 2, 18, rl.Color{205, 205, 220, 255})
+	draw_text(fmt.ctprintf("SPD %s", fmt_num(sp.base_speed)), sx, sy + step * 3, 18, rl.Color{205, 205, 220, 255})
+	draw_text(fmt.ctprintf("Energy %d regen / %d max", sp.base_energy, sp.base_energy_max), sx, sy + step * 4, 18, rl.Color{205, 205, 220, 255})
+	draw_text(fmt.ctprintf("Satiety %d   Upkeep %d", sp.base_satiety, sp.base_upkeep), sx, sy + step * 5, 18, rl.Color{205, 205, 220, 255})
 
 	// Starter deck (unique moves with counts).
 	cy := i32(dy) + 296
-	rl.DrawText("STARTS WITH", sx, cy, 16, rl.Color{150, 150, 170, 255})
+	draw_text("STARTS WITH", sx, cy, 16, rl.Color{150, 150, 170, 255})
 	cy += 24
 	counts: [Move_Id]int
 	shown: [Move_Id]bool
@@ -1067,29 +1068,29 @@ draw_encyclopedia :: proc(g: ^Game) {
 			continue
 		}
 		shown[m] = true
-		rl.DrawText(fmt.ctprintf("%s x%d", MOVE_DATA[m].name, counts[m]), sx, cy, 15, element_color(MOVE_DATA[m].element))
+		draw_text(fmt.ctprintf("%s x%d", MOVE_DATA[m].name, counts[m]), sx, cy, 15, element_color(MOVE_DATA[m].element))
 		cy += 20
 	}
 
 	// Learnset by level.
 	lx := i32(760)
 	ly := i32(dy) + 112
-	rl.DrawText("LEARNSET", lx, ly - 28, 16, rl.Color{150, 150, 170, 255})
+	draw_text("LEARNSET", lx, ly - 28, 16, rl.Color{150, 150, 170, 255})
 	for e in sp.learnset {
-		rl.DrawText(fmt.ctprintf("Lvl %d   %s", e.level, MOVE_DATA[e.move].name), lx, ly, 15, element_color(MOVE_DATA[e.move].element))
+		draw_text(fmt.ctprintf("Lvl %d   %s", e.level, MOVE_DATA[e.move].name), lx, ly, 15, element_color(MOVE_DATA[e.move].element))
 		ly += 20
 	}
 
 	// Ability pool: a creature rolls one of these at spawn.
 	ly += 12
-	rl.DrawText("ABILITIES  (one rolled at spawn)", lx, ly, 16, rl.Color{150, 150, 170, 255})
+	draw_text("ABILITIES  (one rolled at spawn)", lx, ly, 16, rl.Color{150, 150, 170, 255})
 	ly += 24
 	for a in species_abilities(Species_Id(g.encyclopedia_index)) {
-		rl.DrawText(fmt.ctprintf("%s - %s", ability_name(a), ability_desc(a)), lx, ly, 15, rl.Color{200, 180, 240, 255})
+		draw_text(fmt.ctprintf("%s - %s", ability_name(a), ability_desc(a)), lx, ly, 15, rl.Color{200, 180, 240, 255})
 		ly += 20
 	}
 
-	rl.DrawText(fmt.ctprintf("%d species in the underground", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
+	draw_text(fmt.ctprintf("%d species in the underground", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -1135,9 +1136,9 @@ draw_text_wrapped :: proc(cs: cstring, x, y: i32, size: i32, max_w: i32, col: rl
 			clen += 1
 		}
 		cand[clen] = 0
-		if blen > 0 && rl.MeasureText(cstring(&cand[0]), size) > max_w {
+		if blen > 0 && measure_text(cstring(&cand[0]), size) > max_w {
 			buf[blen] = 0
-			rl.DrawText(cstring(&buf[0]), x, cy, size, col)
+			draw_text(cstring(&buf[0]), x, cy, size, col)
 			cy += size + 6
 			for k in 0 ..< len(word) {
 				buf[k] = word[k]
@@ -1156,7 +1157,7 @@ draw_text_wrapped :: proc(cs: cstring, x, y: i32, size: i32, max_w: i32, col: rl
 	}
 	if blen > 0 {
 		buf[blen] = 0
-		rl.DrawText(cstring(&buf[0]), x, cy, size, col)
+		draw_text(cstring(&buf[0]), x, cy, size, col)
 		cy += size + 6
 	}
 	return cy
@@ -1204,10 +1205,10 @@ draw_improvements :: proc(g: ^Game) {
 		rec := list_row_rect(v, row)
 		sel := i == v.index
 		draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
-		rl.DrawText(fmt.ctprintf("%s", improvement_name(im)), i32(rec.x) + 12, i32(rec.y) + 3, 16, sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 200, 215, 255})
+		draw_text(fmt.ctprintf("%s", improvement_name(im)), i32(rec.x) + 12, i32(rec.y) + 3, 16, sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 200, 215, 255})
 		cat := improvement_category(im)
-		cw := rl.MeasureText(cat, 13)
-		rl.DrawText(cat, i32(rec.x + rec.width) - 10 - cw, i32(rec.y) + 5, 13, rl.Color{150, 160, 180, 255})
+		cw := measure_text(cat, 13)
+		draw_text(cat, i32(rec.x + rec.width) - 10 - cw, i32(rec.y) + 5, 13, rl.Color{150, 160, 180, 255})
 	}
 
 	if g.improvement_index < 0 || g.improvement_index >= n {
@@ -1221,15 +1222,15 @@ draw_improvements :: proc(g: ^Game) {
 	draw_improvement_icon(im, dx + 64, dy + 66, 2.0)
 
 	// Name + headline stats.
-	rl.DrawText(fmt.ctprintf("%s", improvement_name(im)), i32(dx + 148), i32(dy) + 6, 30, rl.Color{235, 235, 245, 255})
+	draw_text(fmt.ctprintf("%s", improvement_name(im)), i32(dx + 148), i32(dy) + 6, 30, rl.Color{235, 235, 245, 255})
 	head := fmt.ctprintf("%s   |   Cost %dg   |   HP %d", improvement_category(im), improvement_cost(im), improvement_hp_cap(&g.colony, im))
-	rl.DrawText(head, i32(dx + 148), i32(dy) + 44, 18, rl.Color{210, 200, 160, 255})
+	draw_text(head, i32(dx + 148), i32(dy) + 44, 18, rl.Color{210, 200, 160, 255})
 	if improvement_stacks(im) {
-		rl.DrawText("STACKABLE (overlay slot)", i32(dx + 148), i32(dy) + 68, 15, rl.Color{150, 220, 170, 255})
+		draw_text("STACKABLE (overlay slot)", i32(dx + 148), i32(dy) + 68, 15, rl.Color{150, 220, 170, 255})
 	}
 
 	// Built-on terrain chips.
-	rl.DrawText("BUILT ON", i32(dx), i32(dy) + 140, 15, rl.Color{150, 150, 170, 255})
+	draw_text("BUILT ON", i32(dx), i32(dy) + 140, 15, rl.Color{150, 150, 170, 255})
 	cx := i32(dx)
 	cy := i32(dy) + 162
 	right := i32(sw) - 40
@@ -1240,7 +1241,7 @@ draw_improvements :: proc(g: ^Game) {
 		}
 		any = true
 		label := terrain_name(t)
-		w := rl.MeasureText(label, 14) + 18
+		w := measure_text(label, 14) + 18
 		if cx + w > right {
 			cx = i32(dx)
 			cy += 28
@@ -1248,23 +1249,23 @@ draw_improvements :: proc(g: ^Game) {
 		rec := rl.Rectangle{f32(cx), f32(cy), f32(w), 23}
 		rl.DrawRectangleRounded(rec, 0.4, 4, rl.Color{26, 28, 36, 255})
 		rl.DrawRectangleRoundedLinesEx(rec, 0.4, 4, 1, terrain_color(t))
-		rl.DrawText(label, cx + 9, cy + 3, 14, terrain_color(t))
+		draw_text(label, cx + 9, cy + 3, 14, terrain_color(t))
 		cx += w + 6
 	}
 	if !any {
-		rl.DrawText("any land tile", i32(dx), cy + 3, 15, rl.Color{140, 140, 155, 255})
+		draw_text("any land tile", i32(dx), cy + 3, 15, rl.Color{140, 140, 155, 255})
 	}
 	cy += 28
 
 	// Effect (short) + detail (long, wrapped).
 	ey := cy + 20
-	rl.DrawText("EFFECT", i32(dx), ey, 15, rl.Color{150, 150, 170, 255})
+	draw_text("EFFECT", i32(dx), ey, 15, rl.Color{150, 150, 170, 255})
 	ey = draw_text_wrapped(improvement_effect(im), i32(dx), ey + 24, 17, right - i32(dx), rl.Color{210, 210, 225, 255})
 	ey += 14
-	rl.DrawText("DETAIL", i32(dx), ey, 15, rl.Color{150, 150, 170, 255})
+	draw_text("DETAIL", i32(dx), ey, 15, rl.Color{150, 150, 170, 255})
 	draw_text_wrapped(improvement_detail(im), i32(dx), ey + 24, 16, right - i32(dx), rl.Color{180, 180, 198, 255})
 
-	rl.DrawText(fmt.ctprintf("%d improvements", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
+	draw_text(fmt.ctprintf("%d improvements", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -1285,18 +1286,18 @@ draw_item_effects :: proc(it: Item, x, y: i32, size: i32) -> i32 {
 	info := ITEM_DATA[it]
 	yy := y
 	step := size + 6
-	if info.strength != 0 { rl.DrawText(fmt.ctprintf("Battle start:   +%d Strength", info.strength), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
-	if info.defense != 0 { rl.DrawText(fmt.ctprintf("Battle start:   +%s Defense", fmt_num(info.defense)), x, yy, size, rl.Color{120, 220, 190, 255}); yy += step }
-	if info.speed != 0 { rl.DrawText(fmt.ctprintf("Battle start:   +%s Speed", fmt_num(info.speed)), x, yy, size, rl.Color{140, 190, 250, 255}); yy += step }
-	if info.block != 0 { rl.DrawText(fmt.ctprintf("Battle start:   +%d Block", info.block), x, yy, size, rl.Color{130, 180, 245, 255}); yy += step }
-	if info.draw != 0 { rl.DrawText(fmt.ctprintf("Each turn:   draw +%d card", info.draw), x, yy, size, rl.Color{140, 190, 250, 255}); yy += step }
-	if info.on_hit_leech_pct != 0 { rl.DrawText(fmt.ctprintf("On dealing damage:   drain %d%%", int(info.on_hit_leech_pct * 100)), x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
-	if info.energy_regen != 0 { rl.DrawText(fmt.ctprintf("Each turn:   +%s energy regen", fmt_num(info.energy_regen)), x, yy, size, rl.Color{240, 210, 110, 255}); yy += step }
-	if info.energy_max != 0 { rl.DrawText(fmt.ctprintf("Energy bank:   +%s", fmt_num(info.energy_max)), x, yy, size, rl.Color{240, 210, 110, 255}); yy += step }
-	if info.hp_pct != 0 { rl.DrawText(fmt.ctprintf("Max HP:   +%d%%", int(info.hp_pct * 100)), x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
-	if info.power != 0 { rl.DrawText(fmt.ctprintf("Power:   +%s", fmt_num(info.power)), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
-	if info.gold_per_turn != 0 { rl.DrawText(fmt.ctprintf("Each turn:   +%d gold", info.gold_per_turn), x, yy, size, rl.Color{240, 205, 90, 255}); yy += step }
-	if info.capture_pct != 0 { rl.DrawText(fmt.ctprintf("Capture chance:   +%d%%", int(info.capture_pct * 100)), x, yy, size, rl.Color{180, 220, 255, 255}); yy += step }
+	if info.strength != 0 { draw_text(fmt.ctprintf("Battle start:   +%d Strength", info.strength), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
+	if info.defense != 0 { draw_text(fmt.ctprintf("Battle start:   +%s Defense", fmt_num(info.defense)), x, yy, size, rl.Color{120, 220, 190, 255}); yy += step }
+	if info.speed != 0 { draw_text(fmt.ctprintf("Battle start:   +%s Speed", fmt_num(info.speed)), x, yy, size, rl.Color{140, 190, 250, 255}); yy += step }
+	if info.block != 0 { draw_text(fmt.ctprintf("Battle start:   +%d Block", info.block), x, yy, size, rl.Color{130, 180, 245, 255}); yy += step }
+	if info.draw != 0 { draw_text(fmt.ctprintf("Each turn:   draw +%d card", info.draw), x, yy, size, rl.Color{140, 190, 250, 255}); yy += step }
+	if info.on_hit_leech_pct != 0 { draw_text(fmt.ctprintf("On dealing damage:   drain %d%%", int(info.on_hit_leech_pct * 100)), x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
+	if info.energy_regen != 0 { draw_text(fmt.ctprintf("Each turn:   +%s energy regen", fmt_num(info.energy_regen)), x, yy, size, rl.Color{240, 210, 110, 255}); yy += step }
+	if info.energy_max != 0 { draw_text(fmt.ctprintf("Energy bank:   +%s", fmt_num(info.energy_max)), x, yy, size, rl.Color{240, 210, 110, 255}); yy += step }
+	if info.hp_pct != 0 { draw_text(fmt.ctprintf("Max HP:   +%d%%", int(info.hp_pct * 100)), x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
+	if info.power != 0 { draw_text(fmt.ctprintf("Power:   +%s", fmt_num(info.power)), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
+	if info.gold_per_turn != 0 { draw_text(fmt.ctprintf("Each turn:   +%d gold", info.gold_per_turn), x, yy, size, rl.Color{240, 205, 90, 255}); yy += step }
+	if info.capture_pct != 0 { draw_text(fmt.ctprintf("Capture chance:   +%d%%", int(info.capture_pct * 100)), x, yy, size, rl.Color{180, 220, 255, 255}); yy += step }
 	return yy
 }
 
@@ -1367,16 +1368,16 @@ draw_bag :: proc(g: ^Game) {
 		sel := i == v.index
 		draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
 		rl.DrawCircleV(rl.Vector2{rec.x + 11, rec.y + 11}, 6, item_color(it))
-		rl.DrawText(item_name(it), i32(rec.x) + 26, i32(rec.y) + 3, 16, sel ? rl.Color{240, 240, 250, 255} : rl.Color{200, 200, 215, 255})
+		draw_text(item_name(it), i32(rec.x) + 26, i32(rec.y) + 3, 16, sel ? rl.Color{240, 240, 250, 255} : rl.Color{200, 200, 215, 255})
 	}
 
-	rl.DrawText(fmt.ctprintf("%d item%s in the bag", n, n == 1 ? "" : "s"), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
+	draw_text(fmt.ctprintf("%d item%s in the bag", n, n == 1 ? "" : "s"), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
 
 	dx := f32(390)
 	dy := f32(120)
 	if n == 0 {
-		rl.DrawText("Your bag is empty.", i32(dx), i32(dy), 22, rl.Color{170, 170, 190, 255})
-		rl.DrawText("Items drop from winning battles - equip them in the deck viewer (V).", i32(dx), i32(dy) + 34, 16, rl.Color{140, 140, 160, 255})
+		draw_text("Your bag is empty.", i32(dx), i32(dy), 22, rl.Color{170, 170, 190, 255})
+		draw_text("Items drop from winning battles - equip them in the deck viewer (V).", i32(dx), i32(dy) + 34, 16, rl.Color{140, 140, 160, 255})
 		return
 	}
 
@@ -1388,15 +1389,15 @@ draw_bag :: proc(g: ^Game) {
 	rl.DrawCircleV(rl.Vector2{dx + 44, dy + 40}, 36, rl.Color{col[0] / 3, col[1] / 3, col[2] / 3, 255})
 	rl.DrawCircleLinesV(rl.Vector2{dx + 44, dy + 40}, 36, rl.Color{235, 235, 245, 255})
 	initial := fmt.ctprintf("%c", item_info(it).name[0])
-	iw := rl.MeasureText(initial, 34)
-	rl.DrawText(initial, i32(dx + 44) - iw / 2, i32(dy + 40) - 17, 34, rl.Color{255, 255, 255, 255})
+	iw := measure_text(initial, 34)
+	draw_text(initial, i32(dx + 44) - iw / 2, i32(dy + 40) - 17, 34, rl.Color{255, 255, 255, 255})
 
-	rl.DrawText(item_name(it), i32(dx + 100), i32(dy) + 4, 30, rl.Color{235, 235, 245, 255})
-	rl.DrawText(item_desc(it), i32(dx + 100), i32(dy) + 42, 17, col)
+	draw_text(item_name(it), i32(dx + 100), i32(dy) + 4, 30, rl.Color{235, 235, 245, 255})
+	draw_text(item_desc(it), i32(dx + 100), i32(dy) + 42, 17, col)
 
 	// Effect breakdown.
 	ey := i32(dy) + 96
-	rl.DrawText("EFFECTS", i32(dx), ey, 15, rl.Color{150, 150, 170, 255})
+	draw_text("EFFECTS", i32(dx), ey, 15, rl.Color{150, 150, 170, 255})
 	draw_item_effects(it, i32(dx), ey + 24, 17)
 
 	// Equip target.
@@ -1409,7 +1410,7 @@ draw_bag :: proc(g: ^Game) {
 		cur := m.creature.item != .NONE ? item_name(m.creature.item) : cstring("nothing")
 		target_name = fmt.ctprintf("%s  (wearing: %s)", m.creature.name, cur)
 	}
-	rl.DrawText(fmt.ctprintf("Equip to: %s", target_name), i32(dx), i32(sh) - 138, 16, rl.Color{180, 180, 200, 255})
+	draw_text(fmt.ctprintf("Equip to: %s", target_name), i32(dx), i32(sh) - 138, 16, rl.Color{180, 180, 200, 255})
 
 	btn := bag_equip_rect()
 	hover := can_equip && rl.CheckCollisionPointRec(mp, btn)
@@ -1417,8 +1418,8 @@ draw_bag :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(btn, 0.24, 8, bg)
 	rl.DrawRectangleRoundedLinesEx(btn, 0.24, 8, 2, can_equip ? rl.Color{150, 220, 180, 255} : rl.Color{80, 80, 92, 255})
 	lab := cstring("Equip to selected monster")
-	lw := rl.MeasureText(lab, 18)
-	rl.DrawText(lab, i32(btn.x + btn.width / 2) - lw / 2, i32(btn.y + btn.height / 2) - 9, 18, can_equip ? rl.Color{235, 250, 240, 255} : rl.Color{130, 130, 142, 255})
+	lw := measure_text(lab, 18)
+	draw_text(lab, i32(btn.x + btn.width / 2) - lw / 2, i32(btn.y + btn.height / 2) - 9, 18, can_equip ? rl.Color{235, 250, 240, 255} : rl.Color{130, 130, 142, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -1495,8 +1496,8 @@ draw_upgrades :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(p, 0.03, 8, rl.Color{18, 20, 30, 248})
 	rl.DrawRectangleRoundedLinesEx(p, 0.03, 8, 3, rl.Color{150, 120, 235, 255})
 
-	rl.DrawText("CRYSTAL PROGRESSION", i32(p.x) + 24, i32(p.y) + 18, 30, rl.Color{210, 190, 250, 255})
-	rl.DrawText(fmt.ctprintf("Crystals: %d    -    permanent upgrades; fight the Arena and Boss Rooms for more", g.colony.crystals), i32(p.x) + 24, i32(p.y) + 58, 16, rl.Color{190, 175, 220, 255})
+	draw_text("CRYSTAL PROGRESSION", i32(p.x) + 24, i32(p.y) + 18, 30, rl.Color{210, 190, 250, 255})
+	draw_text(fmt.ctprintf("Crystals: %d    -    permanent upgrades; fight the Arena and Boss Rooms for more", g.colony.crystals), i32(p.x) + 24, i32(p.y) + 58, 16, rl.Color{190, 175, 220, 255})
 
 	mp := rl.GetMousePosition()
 	clip := rl.Rectangle{p.x + 12, p.y + 96, p.width - 24, p.height - 100 - 34}
@@ -1527,10 +1528,10 @@ draw_upgrades :: proc(g: ^Game) {
 		}
 
 		name_col := unlocked ? rl.Color{235, 232, 250, 255} : rl.Color{130, 128, 145, 255}
-		rl.DrawText(upgrade_name(u), i32(rec.x + indent) + 14, i32(rec.y) + 5, 15, name_col)
+		draw_text(upgrade_name(u), i32(rec.x + indent) + 14, i32(rec.y) + 5, 15, name_col)
 
 		// Level pips after the name.
-		nw := rl.MeasureText(upgrade_name(u), 15)
+		nw := measure_text(upgrade_name(u), 15)
 		for lv in 0..<info.max_level {
 			cx := rec.x + indent + 14 + f32(nw) + 12 + f32(lv) * 13
 			col := lv < level ? rl.Color{170, 140, 245, 255} : rl.Color{58, 56, 74, 255}
@@ -1538,10 +1539,10 @@ draw_upgrades :: proc(g: ^Game) {
 		}
 
 		if unlocked {
-			rl.DrawText(upgrade_desc(u), i32(rec.x + indent) + 14, i32(rec.y) + 24, 11, rl.Color{185, 185, 205, 255})
-			rl.DrawText("unlocked", i32(rec.x + indent) + 14, i32(rec.y) + 40, 11, rl.Color{110, 130, 118, 255})
+			draw_text(upgrade_desc(u), i32(rec.x + indent) + 14, i32(rec.y) + 24, 11, rl.Color{185, 185, 205, 255})
+			draw_text("unlocked", i32(rec.x + indent) + 14, i32(rec.y) + 40, 11, rl.Color{110, 130, 118, 255})
 		} else {
-			rl.DrawText(fmt.ctprintf("Needs %s Lv %d", upgrade_name(info.prereq), info.req_level), i32(rec.x + indent) + 14, i32(rec.y) + 30, 11, rl.Color{225, 175, 110, 255})
+			draw_text(fmt.ctprintf("Needs %s Lv %d", upgrade_name(info.prereq), info.req_level), i32(rec.x + indent) + 14, i32(rec.y) + 30, 11, rl.Color{225, 175, 110, 255})
 		}
 
 		// Buy button.
@@ -1560,9 +1561,9 @@ draw_upgrades :: proc(g: ^Game) {
 		case maxed:     label = "MAX"
 		case:           label = fmt.ctprintf("Buy %d", cost)
 		}
-		lw := rl.MeasureText(label, 14)
+		lw := measure_text(label, 14)
 		lc := maxed ? rl.Color{160, 150, 190, 255} : (enabled ? rl.Color{235, 230, 255, 255} : rl.Color{140, 132, 158, 255})
-		rl.DrawText(label, i32(btn.x + btn.width / 2) - lw / 2, i32(btn.y + btn.height / 2) - 7, 14, lc)
+		draw_text(label, i32(btn.x + btn.width / 2) - lw / 2, i32(btn.y + btn.height / 2) - 7, 14, lc)
 
 		if rl.CheckCollisionPointRec(mp, rec) {
 			if !unlocked {
@@ -1576,7 +1577,7 @@ draw_upgrades :: proc(g: ^Game) {
 	}
 	rl.EndScissorMode()
 
-	rl.DrawText("U / Esc to close   -   wheel to scroll   -   children unlock when their parent reaches the shown level", i32(p.x) + 24, i32(p.y + p.height) - 24, 13, rl.Color{140, 140, 160, 255})
+	draw_text("U / Esc to close   -   wheel to scroll   -   children unlock when their parent reaches the shown level", i32(p.x) + 24, i32(p.y + p.height) - 24, 13, rl.Color{140, 140, 160, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -1651,11 +1652,11 @@ draw_arena :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(p, 0.05, 8, rl.Color{30, 24, 18, 248})
 	rl.DrawRectangleRoundedLinesEx(p, 0.05, 8, 3, rl.Color{210, 170, 90, 255})
 
-	rl.DrawText("THE ARENA", i32(p.x) + 28, i32(p.y) + 20, 30, rl.Color{240, 210, 130, 255})
-	rl.DrawText(fmt.ctprintf("%d challengers await - skilled, and above your level.", ARENA_TEAM_SIZE), i32(p.x) + 28, i32(p.y) + 62, 17, rl.Color{215, 200, 175, 255})
-	rl.DrawText(fmt.ctprintf("Entry costs %d gold. Win and the crowd pays you %d crystals.", ARENA_ENTRY_COST, ARENA_CRYSTAL_REWARD), i32(p.x) + 28, i32(p.y) + 88, 16, rl.Color{210, 190, 150, 255})
-	rl.DrawText("Bring a full party - their numbers match yours only if you do.", i32(p.x) + 28, i32(p.y) + 114, 16, rl.Color{190, 175, 150, 255})
-	rl.DrawText(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals), i32(p.x) + 28, i32(p.y) + 150, 18, rl.Color{235, 210, 120, 255})
+	draw_text("THE ARENA", i32(p.x) + 28, i32(p.y) + 20, 30, rl.Color{240, 210, 130, 255})
+	draw_text(fmt.ctprintf("%d challengers await - skilled, and above your level.", ARENA_TEAM_SIZE), i32(p.x) + 28, i32(p.y) + 62, 17, rl.Color{215, 200, 175, 255})
+	draw_text(fmt.ctprintf("Entry costs %d gold. Win and the crowd pays you %d crystals.", ARENA_ENTRY_COST, ARENA_CRYSTAL_REWARD), i32(p.x) + 28, i32(p.y) + 88, 16, rl.Color{210, 190, 150, 255})
+	draw_text("Bring a full party - their numbers match yours only if you do.", i32(p.x) + 28, i32(p.y) + 114, 16, rl.Color{190, 175, 150, 255})
+	draw_text(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals), i32(p.x) + 28, i32(p.y) + 150, 18, rl.Color{235, 210, 120, 255})
 
 	mp := rl.GetMousePosition()
 	afford := colony_total_gold(&g.colony) >= ARENA_ENTRY_COST
@@ -1666,15 +1667,15 @@ draw_arena :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(btn, 0.22, 8, bg)
 	rl.DrawRectangleRoundedLinesEx(btn, 0.22, 8, 2, afford ? rl.Color{230, 150, 90, 255} : rl.Color{100, 90, 80, 255})
 	fl := fmt.ctprintf("Fight   (%d gold)", ARENA_ENTRY_COST)
-	fw := rl.MeasureText(fl, 20)
-	rl.DrawText(fl, i32(btn.x + btn.width / 2) - fw / 2, i32(btn.y + btn.height / 2) - 11, 20, afford ? rl.Color{250, 235, 220, 255} : rl.Color{150, 140, 130, 255})
+	fw := measure_text(fl, 20)
+	draw_text(fl, i32(btn.x + btn.width / 2) - fw / 2, i32(btn.y + btn.height / 2) - 11, 20, afford ? rl.Color{250, 235, 220, 255} : rl.Color{150, 140, 130, 255})
 
 	lr := arena_leave_rect()
 	lhover := rl.CheckCollisionPointRec(mp, lr)
 	rl.DrawRectangleRounded(lr, 0.3, 8, lhover ? rl.Color{46, 44, 52, 255} : rl.Color{34, 32, 38, 255})
 	ll := cstring("Walk away")
-	lw := rl.MeasureText(ll, 16)
-	rl.DrawText(ll, i32(lr.x + lr.width / 2) - lw / 2, i32(lr.y + lr.height / 2) - 8, 16, rl.Color{190, 185, 200, 255})
+	lw := measure_text(ll, 16)
+	draw_text(ll, i32(lr.x + lr.width / 2) - lw / 2, i32(lr.y + lr.height / 2) - 8, 16, rl.Color{190, 185, 200, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -1766,8 +1767,8 @@ draw_move_choice :: proc(g: ^Game) {
 	m := &g.colony.roster[mi]
 	title := ch.kind == .LEVEL ? cstring("LEVEL UP!") : cstring("REWARD CARD")
 	tcol := ch.kind == .LEVEL ? rl.Color{255, 235, 140, 255} : rl.Color{210, 160, 255, 255}
-	tw := rl.MeasureText(title, 40)
-	rl.DrawText(title, i32(sw) / 2 - tw / 2, 120, 40, tcol)
+	tw := measure_text(title, 40)
+	draw_text(title, i32(sw) / 2 - tw / 2, 120, 40, tcol)
 
 	sub: cstring
 	if ch.kind == .LEVEL {
@@ -1775,8 +1776,8 @@ draw_move_choice :: proc(g: ^Game) {
 	} else {
 		sub = fmt.ctprintf("%s earned a reward - choose a card", m.creature.name)
 	}
-	sw2 := rl.MeasureText(sub, 18)
-	rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, 172, 18, rl.Color{200, 200, 215, 255})
+	sw2 := measure_text(sub, 18)
+	draw_text(sub, i32(sw) / 2 - sw2 / 2, 172, 18, rl.Color{200, 200, 215, 255})
 
 	mp := rl.GetMousePosition()
 	for i in 0..<ch.count {
@@ -1789,14 +1790,14 @@ draw_move_choice :: proc(g: ^Game) {
 		r := MOVE_DATA[ch.options[i]].rarity
 		rt := card_rarity_name(r)
 		rc := card_rarity_color(r)
-		rw := rl.MeasureText(rt, 15)
-		rl.DrawText(rt, i32(rec.x) + i32(rec.width) / 2 - rw / 2, i32(tag_y), 15, rc)
+		rw := measure_text(rt, 15)
+		draw_text(rt, i32(rec.x) + i32(rec.width) / 2 - rw / 2, i32(tag_y), 15, rc)
 	}
 
 	draw_button(move_choice_skip_rect(), cstring("Skip"), true, BUTTON_PANEL, 18)
 	hint := cstring("Click a card or press 1-3 to learn it")
-	hw := rl.MeasureText(hint, 15)
-	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 44, 15, rl.Color{140, 140, 160, 255})
+	hw := measure_text(hint, 15)
+	draw_text(hint, i32(sw) / 2 - hw / 2, i32(sh) - 44, 15, rl.Color{140, 140, 160, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -1828,8 +1829,8 @@ draw_quests :: proc(g: ^Game) {
 
 	done := milestones_done_count(&g.colony)
 	total := len(MILESTONES)
-	rl.DrawText("COLONY JOURNAL", i32(p.x) + 24, i32(p.y) + 16, 28, rl.Color{180, 235, 200, 255})
-	rl.DrawText(fmt.ctprintf("Milestones %d / %d  -  each pays a small crystal bounty; finish them all to complete the run", done, total),
+	draw_text("COLONY JOURNAL", i32(p.x) + 24, i32(p.y) + 16, 28, rl.Color{180, 235, 200, 255})
+	draw_text(fmt.ctprintf("Milestones %d / %d  -  each pays a small crystal bounty; finish them all to complete the run", done, total),
 		i32(p.x) + 24, i32(p.y) + 52, 15, rl.Color{180, 190, 200, 255})
 
 	row_h := f32(42)
@@ -1843,7 +1844,7 @@ draw_quests :: proc(g: ^Game) {
 		rl.DrawRectangleRounded(rec, 0.12, 6, bg)
 		rl.DrawRectangleRoundedLinesEx(rec, 0.12, 6, 2, is_done ? rl.Color{120, 210, 150, 255} : rl.Color{56, 56, 70, 255})
 
-		rl.DrawText(MILESTONES[k].desc, i32(rec.x) + 46, i32(rec.y) + 5, 17,
+		draw_text(MILESTONES[k].desc, i32(rec.x) + 46, i32(rec.y) + 5, 17,
 			is_done ? rl.Color{190, 240, 205, 255} : rl.Color{225, 225, 235, 255})
 		bar := rl.Rectangle{rec.x + 46, rec.y + 26, rec.width - 210, 5}
 		rl.DrawRectangleRounded(bar, 0.5, 3, rl.Color{40, 40, 50, 255})
@@ -1854,18 +1855,18 @@ draw_quests :: proc(g: ^Game) {
 		}
 		mark := is_done ? cstring("DONE") : fmt.ctprintf("%d/%d", prog, tgt)
 		rew := fmt.ctprintf("+%d cr", MILESTONES[k].reward)
-		rew_w := rl.MeasureText(rew, 14)
-		mark_w := rl.MeasureText(mark, 15)
+		rew_w := measure_text(rew, 14)
+		mark_w := measure_text(mark, 15)
 		rew_x := i32(rec.x + rec.width) - 12 - rew_w
 		mark_x := rew_x - 14 - mark_w
-		rl.DrawText(mark, mark_x, i32(rec.y) + 8, 15,
+		draw_text(mark, mark_x, i32(rec.y) + 8, 15,
 			is_done ? rl.Color{150, 230, 175, 255} : rl.Color{170, 175, 190, 255})
-		rl.DrawText(rew, rew_x, i32(rec.y) + 8, 14, rl.Color{180, 150, 240, 255})
+		draw_text(rew, rew_x, i32(rec.y) + 8, 14, rl.Color{180, 150, 240, 255})
 
 		cx, cy := rec.x + 24, rec.y + 16
 		if is_done {
 			rl.DrawCircleV(rl.Vector2{cx, cy}, 9, rl.Color{80, 170, 110, 255})
-			rl.DrawText("v", i32(cx) - 4, i32(cy) - 9, 16, rl.Color{235, 255, 240, 255})
+			draw_text("v", i32(cx) - 4, i32(cy) - 9, 16, rl.Color{235, 255, 240, 255})
 		} else {
 			rl.DrawCircleLinesV(rl.Vector2{cx, cy}, 9, rl.Color{90, 90, 105, 255})
 		}
@@ -1874,13 +1875,13 @@ draw_quests :: proc(g: ^Game) {
 
 	if g.colony.goal_done {
 		banner := cstring("OBJECTIVE COMPLETE - the colony is ascendant")
-		bw := rl.MeasureText(banner, 20)
-		rl.DrawText(banner, i32(p.x + p.width / 2) - bw / 2, i32(p.y + p.height) - 60, 20, rl.Color{255, 225, 130, 255})
+		bw := measure_text(banner, 20)
+		draw_text(banner, i32(p.x + p.width / 2) - bw / 2, i32(p.y + p.height) - 60, 20, rl.Color{255, 225, 130, 255})
 	}
 
 	hint := cstring("Q / Esc to close")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -1956,25 +1957,25 @@ draw_graveyard :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(p, 0.03, 8, rl.Color{20, 18, 24, 248})
 	rl.DrawRectangleRoundedLinesEx(p, 0.03, 8, 3, rl.Color{150, 130, 170, 255})
 
-	rl.DrawText("HALL OF THE FALLEN", i32(p.x) + 24, i32(p.y) + 16, 28, rl.Color{210, 195, 225, 255})
-	rl.DrawText(fmt.ctprintf("Gold: %d   -   revive the fallen, or salvage the gear they carried", colony_total_gold(&g.colony)),
+	draw_text("HALL OF THE FALLEN", i32(p.x) + 24, i32(p.y) + 16, 28, rl.Color{210, 195, 225, 255})
+	draw_text(fmt.ctprintf("Gold: %d   -   revive the fallen, or salvage the gear they carried", colony_total_gold(&g.colony)),
 		i32(p.x) + 24, i32(p.y) + 52, 15, rl.Color{180, 175, 195, 255})
 
 	n := len(g.colony.graveyard)
 	if n == 0 {
-		rl.DrawText("No monsters have fallen. Yet.", i32(p.x) + 24, i32(p.y) + 104, 18, rl.Color{150, 150, 165, 255})
+		draw_text("No monsters have fallen. Yet.", i32(p.x) + 24, i32(p.y) + 104, 18, rl.Color{150, 150, 165, 255})
 	} else {
 		for i in g.grave_first..<min(g.grave_first + GRAVE_ROWS, n) {
 			m := &g.colony.graveyard[i]
 			rec := grave_row_rect(i, g.grave_first)
 			rl.DrawRectangleRounded(rec, 0.12, 6, rl.Color{28, 24, 30, 255})
 			rl.DrawRectangleRoundedLinesEx(rec, 0.12, 6, 2, rl.Color{70, 60, 74, 255})
-			rl.DrawText(fmt.ctprintf("%s  Lvl %d", m.creature.name, m.creature.level),
+			draw_text(fmt.ctprintf("%s  Lvl %d", m.creature.name, m.creature.level),
 				i32(rec.x) + 14, i32(rec.y) + 6, 18, rl.Color{225, 215, 225, 255})
-			rl.DrawText(elements_label(creature_elements(&m.creature)), i32(rec.x) + 14, i32(rec.y) + 27, 13,
+			draw_text(elements_label(creature_elements(&m.creature)), i32(rec.x) + 14, i32(rec.y) + 27, 13,
 				element_color(creature_element(&m.creature)))
 			item_txt := m.creature.item != .NONE ? fmt.ctprintf("item: %s", item_name(m.creature.item)) : cstring("no item")
-			rl.DrawText(item_txt, i32(rec.x) + 150, i32(rec.y) + 27, 13, rl.Color{150, 210, 170, 255})
+			draw_text(item_txt, i32(rec.x) + 150, i32(rec.y) + 27, 13, rl.Color{150, 210, 170, 255})
 
 			cost := revive_cost(m)
 			draw_button(grave_revive_rect(i, g.grave_first), fmt.ctprintf("Revive %dg", cost),
@@ -1985,8 +1986,8 @@ draw_graveyard :: proc(g: ^Game) {
 	}
 
 	hint := cstring("Y / Esc close   |   Up/Down scroll")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -2072,7 +2073,7 @@ draw_unit_picker :: proc(g: ^Game) {
 	}
 	p := unit_picker_rect(g)
 	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{120, 200, 160, 255})
-	rl.DrawText(fmt.ctprintf("Choose a monster  (%d here)", len(g.unit_picker_ids)),
+	draw_text(fmt.ctprintf("Choose a monster  (%d here)", len(g.unit_picker_ids)),
 		i32(p.x) + 12, i32(p.y) + 10, 16, rl.Color{200, 235, 210, 255})
 	mp := rl.GetMousePosition()
 	for id, i in g.unit_picker_ids {
@@ -2086,9 +2087,9 @@ draw_unit_picker :: proc(g: ^Game) {
 		draw_row(rec, false, hover, rl.Color{140, 230, 160, 255})
 		rl.DrawCircleV(rl.Vector2{rec.x + 18, rec.y + rec.height / 2}, 12, creature_color(&m.creature))
 		rl.DrawCircleLinesV(rl.Vector2{rec.x + 18, rec.y + rec.height / 2}, 12, element_color(creature_element(&m.creature)))
-		rl.DrawText(fmt.ctprintf("%d. %s  Lvl %d", i + 1, m.creature.name, m.creature.level),
+		draw_text(fmt.ctprintf("%d. %s  Lvl %d", i + 1, m.creature.name, m.creature.level),
 			i32(rec.x) + 40, i32(rec.y) + 5, 15, rl.Color{230, 235, 245, 255})
-		rl.DrawText(fmt.ctprintf("HP %d/%d   En %s/%s", m.creature.hp, m.creature.max_hp, fmt_num(m.creature.energy), fmt_num(m.creature.energy_max)),
+		draw_text(fmt.ctprintf("HP %d/%d   En %s/%s", m.creature.hp, m.creature.max_hp, fmt_num(m.creature.energy), fmt_num(m.creature.energy_max)),
 			i32(rec.x) + 40, i32(rec.y) + 23, 12, rl.Color{190, 200, 215, 255})
 	}
 }
@@ -2147,8 +2148,8 @@ draw_help :: proc(g: ^Game) {
 
 	p := rl.Rectangle{sw / 2 - 500, sh / 2 - 300, 1000, 600}
 	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
-	rl.DrawText("CONTROLS", i32(p.x) + 26, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
-	rl.DrawText("Most panels close with their key or Esc. Esc never quits.", i32(p.x) + 26, i32(p.y) + 54, 15, rl.Color{170, 180, 200, 255})
+	draw_text("CONTROLS", i32(p.x) + 26, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
+	draw_text("Most panels close with their key or Esc. Esc never quits.", i32(p.x) + 26, i32(p.y) + 54, 15, rl.Color{170, 180, 200, 255})
 
 	key_w := f32(200)
 	y0 := p.y + 92
@@ -2161,13 +2162,13 @@ draw_help :: proc(g: ^Game) {
 	}
 
 	hint := cstring("K / Esc to close")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
 }
 
 draw_help_row :: proc(x, y, key_w: f32, line: Help_Line) {
-	rl.DrawText(line.key, i32(x), i32(y), 16, rl.Color{235, 225, 170, 255})
-	rl.DrawText(line.action, i32(x + key_w), i32(y), 15, rl.Color{195, 200, 215, 255})
+	draw_text(line.key, i32(x), i32(y), 16, rl.Color{235, 225, 170, 255})
+	draw_text(line.action, i32(x + key_w), i32(y), 15, rl.Color{195, 200, 215, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -2287,7 +2288,7 @@ draw_confirm :: proc(g: ^Game) {
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 175})
 	p := confirm_panel_rect()
 	draw_panel(p, rl.Color{22, 20, 26, 250}, rl.Color{220, 160, 120, 255})
-	rl.DrawText("Are you sure?", i32(p.x) + 24, i32(p.y) + 18, 24, rl.Color{245, 220, 200, 255})
+	draw_text("Are you sure?", i32(p.x) + 24, i32(p.y) + 18, 24, rl.Color{245, 220, 200, 255})
 	draw_text_wrapped(confirm_message(g), i32(p.x) + 24, i32(p.y) + 60, 16, i32(p.width) - 48, rl.Color{210, 205, 215, 255})
 	draw_button(confirm_yes_rect(), cstring("Confirm"), true, BUTTON_GO, 18)
 	draw_button(confirm_no_rect(), cstring("Cancel"), true, BUTTON_PANEL, 18)
@@ -2361,20 +2362,20 @@ draw_settings :: proc(g: ^Game) {
 
 	p := settings_panel_rect()
 	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
-	rl.DrawText("SETTINGS", i32(p.x) + 26, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
+	draw_text("SETTINGS", i32(p.x) + 26, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
 
 	// Last turn read-out.
-	rl.DrawText("LAST TURN", i32(p.x) + 26, i32(p.y) + 62, 15, rl.Color{150, 160, 185, 255})
+	draw_text("LAST TURN", i32(p.x) + 26, i32(p.y) + 62, 15, rl.Color{150, 160, 185, 255})
 	if len(g.summary) == 0 {
-		rl.DrawText("No turns played yet.", i32(p.x) + 200, i32(p.y) + 62, 15, rl.Color{140, 140, 160, 255})
+		draw_text("No turns played yet.", i32(p.x) + 200, i32(p.y) + 62, 15, rl.Color{140, 140, 160, 255})
 	} else {
 		for s, i in g.summary {
-			rl.DrawText(fmt.ctprintf("%s", s), i32(p.x) + 200, i32(p.y) + 62 + i32(i) * 20, 15, rl.Color{200, 205, 220, 255})
+			draw_text(fmt.ctprintf("%s", s), i32(p.x) + 200, i32(p.y) + 62 + i32(i) * 20, 15, rl.Color{200, 205, 220, 255})
 		}
 	}
 
 	// Sound.
-	rl.DrawText("SOUND", i32(p.x) + 26, i32(p.y) + 170, 15, rl.Color{150, 160, 185, 255})
+	draw_text("SOUND", i32(p.x) + 26, i32(p.y) + 170, 15, rl.Color{150, 160, 185, 255})
 	vr := settings_volume_rect()
 	rl.DrawRectangleRounded(vr, 0.5, 4, rl.Color{40, 40, 52, 255})
 	frac := clamp(audio.volume, 0, 1)
@@ -2382,23 +2383,23 @@ draw_settings :: proc(g: ^Game) {
 		rl.DrawRectangleRounded(rl.Rectangle{vr.x, vr.y, vr.width * frac, vr.height}, 0.5, 4, rl.Color{120, 180, 235, 255})
 	}
 	rl.DrawCircleV(rl.Vector2{vr.x + vr.width * frac, vr.y + vr.height / 2}, 9, rl.Color{220, 232, 245, 255})
-	rl.DrawText(fmt.ctprintf("Volume %d%%", int(frac * 100)), i32(p.x) + 200, i32(p.y) + 170, 15, rl.Color{200, 205, 220, 255})
+	draw_text(fmt.ctprintf("Volume %d%%", int(frac * 100)), i32(p.x) + 200, i32(p.y) + 170, 15, rl.Color{200, 205, 220, 255})
 	draw_button(settings_mute_rect(), audio.muted ? cstring("Sound: MUTED") : cstring("Sound: ON"), true, BUTTON_PANEL, 16)
 
 	// Display.
-	rl.DrawText("DISPLAY", i32(p.x) + 26, i32(p.y) + 276, 15, rl.Color{150, 160, 185, 255})
+	draw_text("DISPLAY", i32(p.x) + 26, i32(p.y) + 276, 15, rl.Color{150, 160, 185, 255})
 	draw_button(settings_toggle_rect(0), fmt.ctprintf("Minimap: %s", g.show_minimap ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
 	draw_button(settings_toggle_rect(1), fmt.ctprintf("Tooltips: %s", g.tooltips_on ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
 	draw_button(settings_toggle_rect(2), fmt.ctprintf("FPS counter: %s", g.show_fps ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
 
 	// Autosave.
-	rl.DrawText("AUTOSAVE", i32(p.x) + 26, i32(p.y) + 448, 15, rl.Color{150, 160, 185, 255})
+	draw_text("AUTOSAVE", i32(p.x) + 26, i32(p.y) + 448, 15, rl.Color{150, 160, 185, 255})
 	draw_button(settings_autosave_rect(), fmt.ctprintf("Autosave: %s", g.autosave_on ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
-	rl.DrawText(fmt.ctprintf("every %d turns", AUTOSAVE_EVERY), i32(p.x) + 384, i32(p.y) + 484, 14, rl.Color{150, 150, 170, 255})
+	draw_text(fmt.ctprintf("every %d turns", AUTOSAVE_EVERY), i32(p.x) + 384, i32(p.y) + 484, 14, rl.Color{150, 150, 170, 255})
 
 	hint := cstring("P / Esc to close")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -2432,26 +2433,35 @@ draw_relics :: proc(g: ^Game) {
 	p := relic_panel_rect()
 	rl.DrawRectangleRounded(p, 0.03, 8, rl.Color{20, 18, 26, 248})
 	rl.DrawRectangleRoundedLinesEx(p, 0.03, 8, 3, rl.Color{235, 195, 110, 255})
-	rl.DrawText("RELICS", i32(p.x) + 24, i32(p.y) + 16, 30, rl.Color{245, 220, 150, 255})
+	draw_text("RELICS", i32(p.x) + 24, i32(p.y) + 16, 30, rl.Color{245, 220, 150, 255})
 	total := relic_total(&g.colony)
-	rl.DrawText(fmt.ctprintf("%d relic%s owned  -  colony-wide passives dropped by bosses; they STACK", total, total == 1 ? "" : "s"),
+	draw_text(fmt.ctprintf("%d relic%s owned  -  colony-wide passives dropped by bosses; they STACK", total, total == 1 ? "" : "s"),
 		i32(p.x) + 24, i32(p.y) + 54, 15, rl.Color{200, 190, 170, 255})
 
 	for r, i in RELIC_ORDER {
 		rec := relic_row_rect(i)
 		n := g.colony.relics[r]
-		bg := n > 0 ? rl.Color{40, 34, 24, 255} : rl.Color{24, 24, 30, 255}
-		rl.DrawRectangleRounded(rec, 0.12, 6, bg)
-		rl.DrawRectangleRoundedLinesEx(rec, 0.12, 6, 2, n > 0 ? rl.Color{235, 195, 110, 255} : rl.Color{54, 54, 66, 255})
-		rl.DrawCircleV(rl.Vector2{rec.x + 22, rec.y + rec.height / 2}, 12, n > 0 ? rl.Color{235, 195, 110, 255} : rl.Color{60, 60, 74, 255})
-		rl.DrawText(relic_name(r), i32(rec.x) + 44, i32(rec.y) + 5, 17, n > 0 ? rl.Color{250, 240, 210, 255} : rl.Color{150, 150, 165, 255})
-		rl.DrawText(relic_desc(r), i32(rec.x) + 44, i32(rec.y) + 24, 12, rl.Color{180, 178, 190, 255})
-		owned := fmt.ctprintf("x%d", n)
-		ow := rl.MeasureText(owned, 18)
-		rl.DrawText(owned, i32(rec.x + rec.width) - 16 - ow, i32(rec.y) + 10, 18, n > 0 ? rl.Color{245, 220, 150, 255} : rl.Color{110, 110, 125, 255})
+		owned := n > 0
+		gold := rl.Color{240, 205, 120, 255}
+		dim := rl.Color{60, 62, 76, 255}
+		// Shader panel: gold foil when owned, dim slate otherwise.
+		if !shader_panel(rec, owned ? rl.Color{126, 96, 32, 255} : rl.Color{40, 42, 52, 255}, owned ? gold : dim, owned ? 0.55 : 0, 0) {
+			rl.DrawRectangleRounded(rec, 0.12, 6, owned ? rl.Color{44, 36, 20, 255} : rl.Color{24, 24, 30, 255})
+			rl.DrawRectangleRoundedLinesEx(rec, 0.12, 6, 2, owned ? gold : dim)
+		}
+		// Gem.
+		gc := rl.Vector2{rec.x + 22, rec.y + rec.height / 2}
+		rl.DrawPoly(gc, 4, 12, 0, owned ? rl.Color{126, 96, 32, 255} : rl.Color{34, 34, 42, 255})
+		rl.DrawPolyLinesEx(gc, 4, 12, 0, 2, owned ? gold : dim)
+		rl.DrawPoly(rl.Vector2{gc.x, gc.y - 4}, 4, 4.5, 0, owned ? rl.Color{255, 240, 190, 220} : rl.Color{48, 48, 58, 255})
+		draw_text(relic_name(r), i32(rec.x) + 44, i32(rec.y) + 5, 17, owned ? rl.Color{255, 246, 216, 255} : rl.Color{150, 150, 165, 255})
+		draw_text(relic_desc(r), i32(rec.x) + 44, i32(rec.y) + 24, 12, rl.Color{190, 184, 194, 255})
+		owned_txt := fmt.ctprintf("x%d", n)
+		ow := measure_text(owned_txt, 18)
+		draw_text(owned_txt, i32(rec.x + rec.width) - 16 - ow, i32(rec.y) + 10, 18, owned ? rl.Color{250, 228, 160, 255} : rl.Color{110, 110, 125, 255})
 	}
 
 	hint := cstring("J / Esc to close   -   defeat bosses in Boss Rooms to earn more")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
 }

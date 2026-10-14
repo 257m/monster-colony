@@ -1269,9 +1269,9 @@ draw_popups :: proc(b: ^Battle) {
 		alpha := u8(clamp(p.life / p.max_life * 1.8, 0, 1) * 255)
 		col := popup_color(p.kind)
 		txt := popup_text(p)
-		tw := rl.MeasureText(txt, 26)
-		rl.DrawText(txt, i32(x) - tw / 2 + 2, i32(y) + 2, 26, rl.Color{0, 0, 0, alpha})
-		rl.DrawText(txt, i32(x) - tw / 2, i32(y), 26, rl.Color{col[0], col[1], col[2], alpha})
+		tw := measure_text(txt, 26)
+		draw_text(txt, i32(x) - tw / 2 + 2, i32(y) + 2, 26, rl.Color{0, 0, 0, alpha})
+		draw_text(txt, i32(x) - tw / 2, i32(y), 26, rl.Color{col[0], col[1], col[2], alpha})
 	}
 }
 
@@ -1293,7 +1293,15 @@ draw_energy :: proc(x, y, width, current, maximum: f32, preview: f32 = 0) {
 	}
 	rl.DrawRectangleRoundedLinesEx(rec, 0.5, 8, 2, rl.Color{12, 12, 16, 255})
 	txt := preview > 0 ? fmt.ctprintf("%s / %s   +%s per turn", fmt_num(current), fmt_num(maximum), fmt_num(preview)) : fmt.ctprintf("%s / %s", fmt_num(current), fmt_num(maximum))
-	rl.DrawText(txt, i32(x), i32(y) + 12, 13, COL_MUTED)
+	draw_text(txt, i32(x), i32(y) + 12, 13, COL_MUTED)
+}
+
+// A little 4-point sparkle, used as a rarity badge.
+draw_sparkle :: proc(center: rl.Vector2, r: f32, col: rl.Color) {
+	rl.DrawTriangle(rl.Vector2{center.x, center.y - r}, rl.Vector2{center.x - r * 0.34, center.y}, rl.Vector2{center.x + r * 0.34, center.y}, col)
+	rl.DrawTriangle(rl.Vector2{center.x, center.y + r}, rl.Vector2{center.x - r * 0.34, center.y}, rl.Vector2{center.x + r * 0.34, center.y}, col)
+	rl.DrawTriangle(rl.Vector2{center.x - r, center.y}, rl.Vector2{center.x, center.y - r * 0.34}, rl.Vector2{center.x, center.y + r * 0.34}, col)
+	rl.DrawTriangle(rl.Vector2{center.x + r, center.y}, rl.Vector2{center.x, center.y - r * 0.34}, rl.Vector2{center.x, center.y + r * 0.34}, col)
 }
 
 draw_creature_avatar :: proc(center: rl.Vector2, radius: f32, c: ^Creature, dead: bool) {
@@ -1301,13 +1309,27 @@ draw_creature_avatar :: proc(center: rl.Vector2, radius: f32, c: ^Creature, dead
 	if dead {
 		base = rl.Color{60, 60, 70, 255}
 	}
-	rl.DrawCircleV(center, radius, base)
-	rl.DrawCircleLinesV(center, radius, rl.Color{235, 235, 245, 255})
-	// element ring
-	rl.DrawCircleLinesV(center, radius - 4, element_color(creature_element(c)))
+	rar_col := dead ? rl.Color{96, 96, 110, 255} : rarity_color(species_rarity(c.species))
+	elem_col := dead ? rl.Color{90, 90, 104, 255} : element_color(creature_element(c))
+
+	// Body: a radial gradient lit from the top-left.
+	light := rl.Color{u8(min(f32(base[0]) * 1.4, 255)), u8(min(f32(base[1]) * 1.4, 255)), u8(min(f32(base[2]) * 1.4, 255)), 255}
+	rl.DrawCircleGradient(rl.Vector2{center.x, center.y - radius * 0.22}, radius - 5, light, base)
+	// ONE bold border — a thick element band with a dark rim — instead of a pile
+	// of thin concentric circles.
+	rl.DrawRing(center, radius - 5, radius, 0, 360, 64, elem_col)
+	rl.DrawRing(center, radius, radius + 2.5, 0, 360, 64, rl.Color{10, 10, 14, 255})
+	// Specular shine.
+	rl.DrawCircleV(rl.Vector2{center.x - radius * 0.30, center.y - radius * 0.34}, radius * 0.22, rl.Color{255, 255, 255, 70})
+
+	// Rarity shows as a sparkle badge (uncommon and up), not another ring.
+	if !dead && card_rarity_pips(species_rarity(c.species)) >= 2 {
+		draw_sparkle(rl.Vector2{center.x + radius * 0.64, center.y - radius * 0.64}, radius * 0.30, rar_col)
+	}
+
 	initial := fmt.ctprintf("%c", c.name[0])
-	w := rl.MeasureText(initial, i32(radius))
-	rl.DrawText(initial, i32(center.x) - w / 2, i32(center.y) - i32(radius) / 2, i32(radius), rl.Color{255, 255, 255, 255})
+	w := measure_text(initial, i32(radius))
+	draw_text(initial, i32(center.x) - w / 2, i32(center.y) - i32(radius) / 2, i32(radius), rl.Color{255, 255, 255, 255})
 
 	if c.flash > 0 {
 		a := u8(clamp(c.flash / 0.22, 0, 1) * 180)
@@ -1325,45 +1347,78 @@ draw_creature_avatar :: proc(center: rl.Vector2, radius: f32, c: ^Creature, dead
 	}
 }
 
+// How many rarity pips a card shows.
+card_rarity_pips :: proc(r: Rarity) -> int {
+	#partial switch r {
+	case .UNCOMMON:  return 2
+	case .RARE:      return 3
+	case .EPIC:      return 4
+	case .LEGENDARY: return 5
+	case:            return 1
+	}
+	return 1
+}
+
+// A diamond cost gem with a faceted highlight.
+draw_cost_gem :: proc(center: rl.Vector2, radius: f32, col: rl.Color, text: cstring) {
+	rl.DrawPoly(center, 4, radius + 2, 0, rl.Color{10, 12, 20, 255})
+	rl.DrawPoly(center, 4, radius, 0, rl.Color{u8(f32(col[0]) * 0.30), u8(f32(col[1]) * 0.30), u8(f32(col[2]) * 0.30), 255})
+	rl.DrawPolyLinesEx(center, 4, radius, 0, 2, col)
+	rl.DrawPoly(rl.Vector2{center.x, center.y - radius * 0.35}, 4, radius * 0.40, 0, rl.Color{u8(f32(col[0]) * 0.6), u8(f32(col[1]) * 0.6), u8(f32(col[2]) * 0.6), 220})
+	tw := measure_text(text, 18)
+	draw_text(text, i32(center.x) - tw / 2, i32(center.y) - 9, 18, rl.Color{245, 245, 252, 255})
+}
+
 draw_card :: proc(id: Move_Id, rec: rl.Rectangle, playable, hovered: bool) {
 	m := move_data(id)
 	r := rec
 	if hovered && playable {
 		r.y -= CARD_HOVER_LIFT
 	}
-
 	base := element_color(m.element)
-	fill := rl.Color{u8(f32(base[0]) * 0.30), u8(f32(base[1]) * 0.30), u8(f32(base[2]) * 0.30), 255}
-	if !playable {
-		fill = rl.Color{28, 28, 36, 255}
+	rar := m.rarity
+	rar_col := card_rarity_color(rar)
+	rarf := f32(card_rarity_pips(rar)-1) / 4.0
+	hoverf := (hovered && playable) ? f32(1) : f32(0)
+
+	// Hover glow + drop shadow (drawn outside the shader panel).
+	if hovered && playable {
+		rl.DrawRectangleRounded(rl.Rectangle{r.x - 6, r.y - 6, r.width + 12, r.height + 12}, 0.16, 8, rl.Color{rar_col[0], rar_col[1], rar_col[2], 46})
+	}
+	rl.DrawRectangleRounded(rl.Rectangle{r.x + 2, r.y + 5, r.width, r.height}, 0.16, 8, rl.Color{0, 0, 0, 120})
+
+	// The whole card face (rounded panel + rarity frame + element gradient +
+	// holo) is one shader draw. Fall back to primitives if the shader is out.
+	if !shader_panel(r, base, playable ? rar_col : rl.Color{72, 74, 88, 255}, playable ? rarf : 0, hoverf) {
+		fill := playable ? rl.Color{u8(f32(base[0]) * 0.55), u8(f32(base[1]) * 0.55), u8(f32(base[2]) * 0.55), 255} : rl.Color{30, 30, 38, 255}
+		rl.DrawRectangleRounded(r, 0.15, 8, fill)
+		rl.DrawRectangleRoundedLinesEx(r, 0.15, 8, 4, playable ? rar_col : rl.Color{72, 74, 88, 255})
 	}
 
-	rl.DrawRectangleRounded(r, 0.14, 8, fill)
-
-	outline := base
-	if !playable {
-		outline = rl.Color{90, 90, 104, 255}
+	// Rarity pips (top-right).
+	pips := card_rarity_pips(rar)
+	for k in 0..<pips {
+		px := r.x + r.width - 12 - f32(k) * 9
+		rl.DrawPoly(rl.Vector2{px, r.y + 12}, 4, 3.4, 0, playable ? rar_col : rl.Color{90, 90, 104, 255})
 	}
-	rl.DrawRectangleRoundedLinesEx(r, 0.14, 8, 2, outline)
 
-	cc := rl.Vector2{r.x + 19, r.y + 19}
-	rl.DrawCircleV(cc, 14, rl.Color{30, 34, 52, 255})
-	rl.DrawCircleLinesV(cc, 14, base)
-	cost := fmt_num(m.cost)
-	cw := rl.MeasureText(cost, 18)
-	rl.DrawText(cost, i32(cc.x) - cw / 2, i32(cc.y) - 9, 18, COL_TEXT)
+	// Cost gem.
+	draw_cost_gem(rl.Vector2{r.x + 20, r.y + 20}, 15, base, fmt_num(m.cost))
 
+	// Name plate.
 	name := fmt.ctprintf("%s", m.name)
-	nw := rl.MeasureText(name, 16)
-	rl.DrawText(name, i32(r.x + r.width / 2) - nw / 2, i32(r.y + 40), 16, COL_TEXT)
+	nw := measure_text(name, 16)
+	rl.DrawRectangleRounded(rl.Rectangle{r.x + 6, r.y + 44, r.width - 12, 22}, 0.4, 5, rl.Color{6, 7, 12, 205})
+	draw_text(name, i32(r.x + r.width / 2) - nw / 2, i32(r.y + 47), 16, rl.Color{240, 240, 250, 255})
 
+	// Desc + element on a dark plate for contrast.
 	desc := fmt.ctprintf("%s", m.desc)
-	dw := rl.MeasureText(desc, 13)
-	rl.DrawText(desc, i32(r.x + r.width / 2) - dw / 2, i32(r.y + r.height - 30), 13, rl.Color{215, 215, 228, 255})
-
+	dw := measure_text(desc, 13)
+	rl.DrawRectangleRounded(rl.Rectangle{r.x + 6, r.y + r.height - 34, r.width - 12, 28}, 0.3, 5, rl.Color{6, 7, 12, 180})
+	draw_text(desc, i32(r.x + r.width / 2) - dw / 2, i32(r.y + r.height - 30), 13, rl.Color{224, 226, 238, 255})
 	elem := element_name(m.element)
-	ew := rl.MeasureText(elem, 11)
-	rl.DrawText(elem, i32(r.x + r.width / 2) - ew / 2, i32(r.y + r.height - 14), 11, base)
+	ew := measure_text(elem, 11)
+	draw_text(elem, i32(r.x + r.width / 2) - ew / 2, i32(r.y + r.height - 14), 11, base)
 
 	if hovered {
 		tooltip_set("%s [%s]  -  %s  (%s, cost %s)", m.name, card_rarity_name(m.rarity), m.desc, elem, fmt_num(m.cost))
@@ -1402,8 +1457,8 @@ draw_battle :: proc(b: ^Battle) {
 		label := b.phase == .PLAYER_ACTION ? cstring("YOUR MOVE") : cstring("ENEMY MOVE")
 		col := b.phase == .PLAYER_ACTION ? rl.Color{140, 240, 190, 255} : rl.Color{240, 140, 120, 255}
 		ind := fmt.ctprintf("Turn %d   -   %s", b.round, label)
-		iw := rl.MeasureText(ind, 22)
-		rl.DrawText(ind, i32(sw) / 2 - iw / 2, 14, 22, col)
+		iw := measure_text(ind, 22)
+		draw_text(ind, i32(sw) / 2 - iw / 2, 14, 22, col)
 	}
 	draw_initiative(b)
 
@@ -1432,13 +1487,13 @@ draw_initiative :: proc(b: ^Battle) {
 		return
 	}
 	count := min(n, 9)
-	chip_w := f32(70)
+	chip_w := f32(74)
 	gap := f32(6)
 	total := f32(count) * chip_w + f32(count - 1) * gap
 	x := sw / 2 - total / 2
 	y := f32(44)
 	start := (b.order_pos - 1 + n) % n
-	rl.DrawText("NEXT", i32(x) - 42, i32(y) + 8, 12, rl.Color{150, 150, 170, 255})
+	draw_text("NEXT", i32(x) - 42, i32(y) + 8, 12, rl.Color{150, 150, 170, 255})
 	for k in 0..<count {
 		a := b.order[(start + k) % n]
 		c := actor_creature(b, a)
@@ -1447,15 +1502,16 @@ draw_initiative :: proc(b: ^Battle) {
 		}
 		rec := rl.Rectangle{x + f32(k) * (chip_w + gap), y, chip_w, 30}
 		is_now := k == 0
-		col := element_color(creature_element(c))
-		bg := is_now ? rl.Color{u8(f32(col[0]) * 0.45), u8(f32(col[1]) * 0.45), u8(f32(col[2]) * 0.45), 255} : rl.Color{24, 26, 34, 235}
+		// Side is shown by the border (green = yours, red = wild); the name is
+		// tinted by element. No stray dot under the text.
+		side_col := a.side == .PLAYER ? rl.Color{140, 230, 160, 255} : rl.Color{235, 90, 90, 255}
+		elem_col := element_color(creature_element(c))
+		bg := is_now ? rl.Color{u8(f32(elem_col[0]) * 0.28), u8(f32(elem_col[1]) * 0.28), u8(f32(elem_col[2]) * 0.28), 255} : rl.Color{22, 24, 32, 235}
 		rl.DrawRectangleRounded(rec, 0.25, 5, bg)
-		rl.DrawRectangleRoundedLinesEx(rec, 0.25, 5, 2, is_now ? col : rl.Color{70, 74, 90, 255})
-		dot := a.side == .PLAYER ? rl.Color{140, 230, 160, 255} : rl.Color{235, 90, 90, 255}
-		rl.DrawCircleV(rl.Vector2{rec.x + 8, rec.y + 15}, 4, dot)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.25, 5, is_now ? 3 : 2, side_col)
 		name := fmt.ctprintf("%s", c.name)
-		nw := rl.MeasureText(name, 11)
-		rl.DrawText(name, i32(rec.x + chip_w / 2) - nw / 2 + 4, i32(rec.y) + 9, 11, rl.Color{230, 235, 245, 255})
+		nw := measure_text(name, 11)
+		draw_text(name, i32(rec.x + chip_w / 2) - nw / 2, i32(rec.y) + 9, 11, is_now ? rl.Color{240, 244, 255, 255} : elem_col)
 	}
 }
 
@@ -1602,11 +1658,11 @@ effect_tooltip :: proc(e: Effect) -> string {
 }
 
 draw_effect_chip :: proc(x, y: f32, text: cstring, col: rl.Color) -> f32 {
-	w := f32(rl.MeasureText(text, 13)) + 12
+	w := f32(measure_text(text, 13)) + 12
 	rec := rl.Rectangle{x, y, w, 19}
 	rl.DrawRectangleRounded(rec, 0.45, 4, rl.Color{col[0] / 5, col[1] / 5, col[2] / 5, 235})
 	rl.DrawRectangleRoundedLinesEx(rec, 0.45, 4, 1, col)
-	rl.DrawText(text, i32(x) + 6, i32(y) + 3, 13, col)
+	draw_text(text, i32(x) + 6, i32(y) + 3, 13, col)
 	return w
 }
 
@@ -1614,7 +1670,7 @@ draw_effect_chip :: proc(x, y: f32, text: cstring, col: rl.Color) -> f32 {
 draw_effects_row :: proc(effects: []Effect, center_x, y: f32) {
 	total := f32(0)
 	for e in effects {
-		total += f32(rl.MeasureText(effect_chip_text(e), 13)) + 12 + 4
+		total += f32(measure_text(effect_chip_text(e), 13)) + 12 + 4
 	}
 	if len(effects) > 0 {
 		total -= 4
@@ -1639,65 +1695,66 @@ draw_enemies :: proc(b: ^Battle) {
 
 	for e, i in b.enemies {
 		ex := start + f32(i) * spacing
-		radius := f32(56)
+		radius := f32(52)
 		ox, oy := creature_offset(e)
 		draw_creature_avatar(rl.Vector2{ex + ox, ey + oy}, radius, e, e.hp <= 0)
 
 		name := fmt.ctprintf("%s", e.name)
-		nw := rl.MeasureText(name, 20)
-		rl.DrawText(name, i32(ex) - nw / 2, i32(ey) - 112, 20, COL_TEXT)
+		nw := measure_text(name, 20)
+		draw_text(name, i32(ex) - nw / 2, i32(ey) - 112, 20, COL_TEXT)
 
 		// Level, then the enemy's element types as coloured chips.
 		lvl := fmt.ctprintf("Lvl %d", e.level)
-		lw := rl.MeasureText(lvl, 15)
+		lw := measure_text(lvl, 15)
 		els := creature_elements(e)
 		chip_gap := f32(6)
 		total_w := f32(lw)
 		for el in els {
-			total_w += f32(rl.MeasureText(element_name(el), 12)) + 12 + chip_gap
+			total_w += f32(measure_text(element_name(el), 12)) + 12 + chip_gap
 		}
 		x0 := ex - total_w / 2
-		rl.DrawText(lvl, i32(x0), i32(ey) - 88, 15, rl.Color{175, 175, 195, 255})
+		draw_text(lvl, i32(x0), i32(ey) - 88, 15, rl.Color{175, 175, 195, 255})
 		ccx := x0 + f32(lw) + chip_gap
 		for el in els {
 			txt := element_name(el)
-			w := f32(rl.MeasureText(txt, 12)) + 12
+			w := f32(measure_text(txt, 12)) + 12
 			crec := rl.Rectangle{ccx, ey - 91, w, 18}
 			col := element_color(el)
 			rl.DrawRectangleRounded(crec, 0.4, 4, rl.Color{col[0] / 5, col[1] / 5, col[2] / 5, 235})
 			rl.DrawRectangleRoundedLinesEx(crec, 0.4, 4, 1, col)
-			rl.DrawText(txt, i32(ccx) + 6, i32(ey) - 88, 12, col)
+			draw_text(txt, i32(ccx) + 6, i32(ey) - 88, 12, col)
 			ccx += w + chip_gap
 		}
 
 		if e.ability != .NONE {
 			ab := ability_name(e.ability)
-			aw := rl.MeasureText(ab, 13)
-			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 70, 13, rl.Color{200, 180, 240, 255})
+			aw := measure_text(ab, 13)
+			draw_text(ab, i32(ex) - aw / 2, i32(ey) - 72, 13, rl.Color{200, 180, 240, 255})
 		}
 
 		hp_rec := rl.Rectangle{ex - 70, ey + 70, 140, 18}
 		draw_bar(hp_rec, e.hp, e.max_hp, COL_HP)
 		hp_txt := fmt.ctprintf("%d/%d", e.hp, e.max_hp)
-		hw := rl.MeasureText(hp_txt, 13)
-		rl.DrawText(hp_txt, i32(ex) - hw / 2, i32(hp_rec.y) + 2, 13, COL_TEXT)
+		hw := measure_text(hp_txt, 13)
+		draw_text(hp_txt, i32(ex) - hw / 2, i32(hp_rec.y) + 2, 13, COL_TEXT)
 
 		// Energy (the same pool the wild uses on the colony map).
 		en_rec := rl.Rectangle{ex - 70, ey + 91, 140, 7}
 		draw_bar(en_rec, int(e.energy * 100), int(max(e.energy_max, 0.01) * 100), COL_ENERGY)
 		en_txt := fmt.ctprintf("En %s/%s  +%s", fmt_num(e.energy), fmt_num(e.energy_max), fmt_num(e.energy_regen))
-		ew := rl.MeasureText(en_txt, 11)
-		rl.DrawText(en_txt, i32(ex) - ew / 2, i32(en_rec.y) + 7, 11, COL_TEXT)
+		ew := measure_text(en_txt, 11)
+		draw_text(en_txt, i32(ex) - ew / 2, i32(en_rec.y) + 7, 11, COL_TEXT)
 
 		// Active boosts, each with the damage multiplier it contributes.
 		effs, ne := build_effects(e)
 		draw_effects_row(effs[:ne], ex, ey + 120)
 
+		// One selection ring at most: gold if targeted, red if it's acting.
 		if i == b.target && e.hp > 0 {
 			rl.DrawCircleLinesV(rl.Vector2{ex, ey}, radius + 5, rl.Color{255, 235, 140, 255})
-			rl.DrawText("TARGET", i32(ex) - 27, i32(ey) - 134, 14, rl.Color{255, 235, 140, 255})
+			draw_text("TARGET", i32(ex) - 27, i32(ey) - 134, 14, rl.Color{255, 235, 140, 255})
 		} else if i == b.enemy_acting && e.hp > 0 && b.phase == .ENEMY_ACTION {
-			rl.DrawCircleLinesV(rl.Vector2{ex, ey}, radius + 10, rl.Color{240, 140, 120, 200})
+			rl.DrawCircleLinesV(rl.Vector2{ex, ey}, radius + 5, rl.Color{240, 140, 120, 220})
 		}
 	}
 }
@@ -1716,19 +1773,19 @@ draw_player_panel :: proc(b: ^Battle) {
 	draw_creature_avatar(rl.Vector2{panel.x + 48 + ox, panel.y + 62 + oy}, 34, c, false)
 
 	name := fmt.ctprintf("%s", c.name)
-	rl.DrawText(name, i32(panel.x) + 94, i32(panel.y) + 14, 22, COL_TEXT)
+	draw_text(name, i32(panel.x) + 94, i32(panel.y) + 14, 22, COL_TEXT)
 	if c.ability != .NONE {
 		ab := ability_name(c.ability)
-		aw := rl.MeasureText(ab, 14)
-		rl.DrawText(ab, i32(panel.x + panel.width) - aw - 12, i32(panel.y) + 22, 14, rl.Color{200, 180, 240, 255})
+		aw := measure_text(ab, 14)
+		draw_text(ab, i32(panel.x + panel.width) - aw - 12, i32(panel.y) + 22, 14, rl.Color{200, 180, 240, 255})
 	}
 	sub := fmt.ctprintf("Lvl %d  %s  PWR x%s  DEF %s  SPD %s", c.level, element_label(c), fmt_num(c.power), fmt_num(creature_defense(c)), fmt_num(c.speed))
-	rl.DrawText(sub, i32(panel.x) + 94, i32(panel.y) + 40, 16, element_color(creature_element(c)))
+	draw_text(sub, i32(panel.x) + 94, i32(panel.y) + 40, 16, element_color(creature_element(c)))
 
 	hp_rec := rl.Rectangle{panel.x + 94, panel.y + 64, 210, 20}
 	draw_bar(hp_rec, c.hp, c.max_hp, COL_HP)
 	hp_txt := fmt.ctprintf("%d / %d", c.hp, c.max_hp)
-	rl.DrawText(hp_txt, i32(hp_rec.x) + 8, i32(hp_rec.y) + 2, 15, COL_TEXT)
+	draw_text(hp_txt, i32(hp_rec.x) + 8, i32(hp_rec.y) + 2, 15, COL_TEXT)
 
 	// XP toward the next level.
 	need := xp_to_next(c.level)
@@ -1738,13 +1795,13 @@ draw_player_panel :: proc(b: ^Battle) {
 	if xf > 0 {
 		rl.DrawRectangleRounded(rl.Rectangle{xp_rec.x, xp_rec.y, xp_rec.width * xf, xp_rec.height}, 0.5, 4, rl.Color{150, 210, 255, 255})
 	}
-	rl.DrawText(fmt.ctprintf("XP %d/%d", c.xp, need), i32(panel.x) + 276, i32(panel.y) + 82, 11, rl.Color{150, 210, 255, 255})
+	draw_text(fmt.ctprintf("XP %d/%d", c.xp, need), i32(panel.x) + 276, i32(panel.y) + 82, 11, rl.Color{150, 210, 255, 255})
 
-	rl.DrawText(fmt.ctprintf("Energy +%s/turn", fmt_num(c.energy_regen)), i32(panel.x) + 94, i32(panel.y) + 96, 15, COL_ENERGY)
+	draw_text(fmt.ctprintf("Energy +%s/turn", fmt_num(c.energy_regen)), i32(panel.x) + 94, i32(panel.y) + 96, 15, COL_ENERGY)
 	draw_energy(panel.x + 156, panel.y + 104, 160, c.energy, c.energy_max, c.energy_regen)
 
 	piles := vfmt(b, "deck %d", len(c.deck))
-	rl.DrawText(piles, i32(panel.x) + 94, i32(panel.y) + 116, 14, COL_MUTED)
+	draw_text(piles, i32(panel.x) + 94, i32(panel.y) + 116, 14, COL_MUTED)
 
 	// Active boosts, each with the damage multiplier it contributes.
 	effs, ne := build_effects(c)
@@ -1782,7 +1839,8 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 			bg = rl.Color{18, 20, 26, 240}
 		}
 		rl.DrawRectangleRounded(rec, 0.09, 6, bg)
-		border := rl.Color{56, 58, 72, 255}
+		// Border by species rarity, with active/dead overrides.
+		border := rarity_color(species_rarity(c.species))
 		if active {
 			border = rl.Color{120, 230, 180, 255}
 		} else if dead {
@@ -1799,14 +1857,14 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 		} else if done {
 			name_col = rl.Color{165, 165, 180, 255}
 		}
-		rl.DrawText(fmt.ctprintf("%s", c.name), i32(x) + 60, i32(top) + 6, 15, name_col)
-		rl.DrawText(fmt.ctprintf("Lvl %d  %s", c.level, element_label(c)), i32(x) + 60, i32(top) + 23, 13, element_color(creature_element(c)))
+		draw_text(fmt.ctprintf("%s", c.name), i32(x) + 60, i32(top) + 6, 15, name_col)
+		draw_text(fmt.ctprintf("Lvl %d  %s", c.level, element_label(c)), i32(x) + 60, i32(top) + 23, 13, element_color(creature_element(c)))
 
 		hp := rl.Rectangle{x + 60, top + 42, cw - 72, 14}
 		draw_bar(hp, c.hp, c.max_hp, COL_HP)
 		ht := fmt.ctprintf("%d/%d", c.hp, c.max_hp)
-		hw := rl.MeasureText(ht, 12)
-		rl.DrawText(ht, i32(x + 60 + (cw - 72) / 2) - hw / 2, i32(top) + 43, 12, COL_TEXT)
+		hw := measure_text(ht, 12)
+		draw_text(ht, i32(x + 60 + (cw - 72) / 2) - hw / 2, i32(top) + 43, 12, COL_TEXT)
 
 		en := rl.Rectangle{x + 60, top + 58, cw - 72, 6}
 		draw_bar(en, int(c.energy * 100), int(max(c.energy_max, 0.01) * 100), COL_ENERGY)
@@ -1825,12 +1883,12 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 		// Ability + item line.
 		ab := c.ability != .NONE ? ability_name(c.ability) : cstring("-")
 		it := c.item != .NONE ? item_name(c.item) : cstring("-")
-		rl.DrawText(fmt.ctprintf("%s  |  %s", ab, it), i32(x) + 9, i32(top) + 85, 11, rl.Color{180, 178, 200, 255})
+		draw_text(fmt.ctprintf("%s  |  %s", ab, it), i32(x) + 9, i32(top) + 85, 11, rl.Color{180, 178, 200, 255})
 
 		if done && !dead {
 			ed := cstring("ENDED")
-			ew := rl.MeasureText(ed, 11)
-			rl.DrawText(ed, i32(x + cw) - 8 - ew, i32(top) + 4, 11, rl.Color{150, 150, 168, 255})
+			ew := measure_text(ed, 11)
+			draw_text(ed, i32(x + cw) - 8 - ew, i32(top) + 4, 11, rl.Color{150, 150, 168, 255})
 		}
 	}
 }
@@ -1867,10 +1925,10 @@ draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rec
 		num_col = rl.Color{245, 160, 130, 255}
 	}
 
-	lw := f32(rl.MeasureText(label, 18))
+	lw := f32(measure_text(label, 18))
 	nw := f32(0)
 	if has_note {
-		nw = f32(rl.MeasureText(note, 13))
+		nw = f32(measure_text(note, 13))
 	}
 	box_w := max(lw, nw) + 24
 	box_h := has_note ? f32(48) : f32(30)
@@ -1881,9 +1939,9 @@ draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rec
 	box := rl.Rectangle{bx, by, box_w, box_h}
 	rl.DrawRectangleRounded(box, 0.28, 6, rl.Color{16, 16, 24, 242})
 	rl.DrawRectangleRoundedLinesEx(box, 0.28, 6, 2, rl.Color{130, 130, 150, 255})
-	rl.DrawText(label, i32(bx) + 12, i32(by) + 6, 18, num_col)
+	draw_text(label, i32(bx) + 12, i32(by) + 6, 18, num_col)
 	if has_note {
-		rl.DrawText(note, i32(bx) + 12, i32(by) + 29, 13, note_col)
+		draw_text(note, i32(bx) + 12, i32(by) + 29, 13, note_col)
 	}
 }
 
@@ -1923,8 +1981,8 @@ draw_buttons :: proc(b: ^Battle) {
 	rl.DrawRectangleRounded(cap, 0.25, 8, cap_col)
 	rl.DrawRectangleRoundedLinesEx(cap, 0.25, 8, 2, rl.Color{200, 220, 240, 255})
 	cap_txt := fmt.ctprintf("Capture Card x%d  %d%%", b.capture_cards, chance)
-	cpw := rl.MeasureText(cap_txt, 18)
-	rl.DrawText(cap_txt, i32(cap.x + cap.width / 2) - cpw / 2, i32(cap.y + cap.height / 2) - 9, 18, rl.Color{235, 245, 255, 255})
+	cpw := measure_text(cap_txt, 18)
+	draw_text(cap_txt, i32(cap.x + cap.width / 2) - cpw / 2, i32(cap.y + cap.height / 2) - 9, 18, rl.Color{235, 245, 255, 255})
 
 	// end turn
 	btn := end_turn_rect()
@@ -1938,11 +1996,11 @@ draw_buttons :: proc(b: ^Battle) {
 	rl.DrawRectangleRounded(btn, 0.25, 8, btn_col)
 	rl.DrawRectangleRoundedLinesEx(btn, 0.25, 8, 2, rl.Color{210, 230, 220, 255})
 	et := cstring("End Turn (E)")
-	ew := rl.MeasureText(et, 18)
-	rl.DrawText(et, i32(btn.x + btn.width / 2) - ew / 2, i32(btn.y + btn.height / 2) - 9, 18, rl.Color{240, 255, 245, 255})
+	ew := measure_text(et, 18)
+	draw_text(et, i32(btn.x + btn.width / 2) - ew / 2, i32(btn.y + btn.height / 2) - 9, 18, rl.Color{240, 255, 245, 255})
 
 	hint := cstring("D piles  |  C capture")
-	rl.DrawText(hint, i32(btn.x), i32(cap.y) - 26, 15, COL_MUTED)
+	draw_text(hint, i32(btn.x), i32(cap.y) - 26, 15, COL_MUTED)
 }
 
 // --- draw / discard pile viewer ---------------------------------------------
@@ -1970,10 +2028,10 @@ draw_pile_readout :: proc(b: ^Battle) {
 	}
 	rl.DrawRectangleRounded(dr, 0.25, 6, hd ? rl.Color{40, 52, 70, 240} : rl.Color{24, 30, 42, 230})
 	rl.DrawRectangleRoundedLinesEx(dr, 0.25, 6, 1, rl.Color{90, 140, 200, 255})
-	rl.DrawText(fmt.ctprintf("Draw %d", len(c.draw_pile)), i32(dr.x) + 10, i32(dr.y) + 6, 16, rl.Color{150, 210, 255, 255})
+	draw_text(fmt.ctprintf("Draw %d", len(c.draw_pile)), i32(dr.x) + 10, i32(dr.y) + 6, 16, rl.Color{150, 210, 255, 255})
 	rl.DrawRectangleRounded(dc, 0.25, 6, hc ? rl.Color{52, 44, 34, 240} : rl.Color{30, 26, 20, 230})
 	rl.DrawRectangleRoundedLinesEx(dc, 0.25, 6, 1, rl.Color{200, 150, 90, 255})
-	rl.DrawText(fmt.ctprintf("Discard %d", len(c.discard)), i32(dc.x) + 10, i32(dc.y) + 6, 16, rl.Color{230, 180, 120, 255})
+	draw_text(fmt.ctprintf("Discard %d", len(c.discard)), i32(dc.x) + 10, i32(dc.y) + 6, 16, rl.Color{230, 180, 120, 255})
 	if hd || hc {
 		tooltip_set("Click (or press D) to view your draw and discard piles.")
 	}
@@ -1988,17 +2046,17 @@ draw_piles :: proc(b: ^Battle) {
 
 	p := rl.Rectangle{sw / 2 - 500, 40, 1000, sh - 80}
 	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
-	rl.DrawText(fmt.ctprintf("%s  -  piles", c.name), i32(p.x) + 24, i32(p.y) + 14, 26, rl.Color{230, 235, 245, 255})
+	draw_text(fmt.ctprintf("%s  -  piles", c.name), i32(p.x) + 24, i32(p.y) + 14, 26, rl.Color{230, 235, 245, 255})
 
 	col_w := (p.width - 68) / 2
-	rl.DrawText(fmt.ctprintf("DRAW PILE  (%d)", len(c.draw_pile)), i32(p.x) + 24, i32(p.y) + 56, 18, rl.Color{150, 210, 255, 255})
+	draw_text(fmt.ctprintf("DRAW PILE  (%d)", len(c.draw_pile)), i32(p.x) + 24, i32(p.y) + 56, 18, rl.Color{150, 210, 255, 255})
 	draw_pile_list(c.draw_pile[:], p.x + 24, p.y + 84, col_w)
-	rl.DrawText(fmt.ctprintf("DISCARD PILE  (%d)", len(c.discard)), i32(p.x) + 24 + i32(col_w) + 20, i32(p.y) + 56, 18, rl.Color{230, 180, 120, 255})
+	draw_text(fmt.ctprintf("DISCARD PILE  (%d)", len(c.discard)), i32(p.x) + 24 + i32(col_w) + 20, i32(p.y) + 56, 18, rl.Color{230, 180, 120, 255})
 	draw_pile_list(c.discard[:], p.x + 24 + col_w + 20, p.y + 84, col_w)
 
 	hint := cstring("D / Esc to close")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
+	hw := measure_text(hint, 16)
+	draw_text(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
 }
 
 draw_pile_list :: proc(cards: []Move_Id, x, y, w: f32) {
@@ -2006,21 +2064,21 @@ draw_pile_list :: proc(cards: []Move_Id, x, y, w: f32) {
 	max_rows := int((f32(rl.GetScreenHeight()) - y - 50) / row_h)
 	for id, i in cards {
 		if i >= max_rows {
-			rl.DrawText(fmt.ctprintf("+%d more", len(cards) - i), i32(x), i32(y + f32(i) * row_h), 14, rl.Color{140, 140, 160, 255})
+			draw_text(fmt.ctprintf("+%d more", len(cards) - i), i32(x), i32(y + f32(i) * row_h), 14, rl.Color{140, 140, 160, 255})
 			break
 		}
 		m := MOVE_DATA[id]
 		col := element_color(m.element)
-		rl.DrawText(fmt.ctprintf("%s", m.name), i32(x), i32(y + f32(i) * row_h), 15, rl.Color{220, 222, 235, 255})
+		draw_text(fmt.ctprintf("%s", m.name), i32(x), i32(y + f32(i) * row_h), 15, rl.Color{220, 222, 235, 255})
 		right := fmt.ctprintf("%s  %s", fmt_num(m.cost), element_name(m.element))
-		rw := rl.MeasureText(right, 14)
-		rl.DrawText(right, i32(x + w) - rw, i32(y + f32(i) * row_h), 14, col)
+		rw := measure_text(right, 14)
+		draw_text(right, i32(x + w) - rw, i32(y + f32(i) * row_h), 14, col)
 	}
 }
 
 draw_battle_log :: proc(b: ^Battle) {
 	for msg, i in b.log {
-		rl.DrawText(fmt.ctprintf("%s", msg), 16, 196 + i32(i) * 21, 15, COL_MUTED)
+		draw_text(fmt.ctprintf("%s", msg), 16, 196 + i32(i) * 21, 15, COL_MUTED)
 	}
 }
 
@@ -2029,11 +2087,11 @@ draw_center_overlay :: proc(title, sub: cstring, color: rl.Color, timer: f32) {
 	sh := f32(rl.GetScreenHeight())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 150})
 
-	tw := rl.MeasureText(title, 62)
-	rl.DrawText(title, i32(sw) / 2 - tw / 2, i32(sh) / 2 - 60, 62, color)
+	tw := measure_text(title, 62)
+	draw_text(title, i32(sw) / 2 - tw / 2, i32(sh) / 2 - 60, 62, color)
 
 	if timer > 0.4 {
-		sw2 := rl.MeasureText(sub, 23)
-		rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, i32(sh) / 2 + 18, 23, COL_TEXT)
+		sw2 := measure_text(sub, 23)
+		draw_text(sub, i32(sw) / 2 - sw2 / 2, i32(sh) / 2 + 18, 23, COL_TEXT)
 	}
 }
