@@ -2,6 +2,7 @@ package main
 
 import rl "vendor:raylib"
 import "core:fmt"
+import "core:math"
 
 // ============================================================================
 // SPECIES + CREATURES
@@ -56,6 +57,11 @@ Species_Id :: enum {
 	Galebeast,     // 24
 	Venomtail,     // 25
 	Blizzard,      // 26
+	// Bosses (Phase 25): unique, very powerful, with synergy movesets.
+	Boss_Leviathan, // 27
+	Boss_Infernal,  // 28
+	Boss_Titan,     // 29
+	Boss_Sovereign, // 30
 }
 
 Species :: struct {
@@ -80,6 +86,14 @@ Species :: struct {
 // Neutral moves any creature can pick up as a reward but that no learnset
 // grants — i.e. reward-only options.
 COMMON_MOVES := []Move_Id{.Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin, .Fang, .Exploit, .Payback, .Followup, .Second_Wind, .Gnaw, .Warcry, .Twin_Fangs, .Feint, .Weaken, .Disarm, .Sunder, .Corrode}
+
+// Premium reward-only cards: expensive, high-impact energy sinks. Choosing one
+// commits a large chunk of a monster's energy, so it is a real trade-off.
+PREMIUM_MOVES := []Move_Id{.Meteor, .Tsunami, .Maelstrom, .Cataclysm, .Aegis, .Phoenix}
+
+// Status-effect reward-only cards (Phase 21): poison/burn DoT, stun, regen and
+// thorns. Like COMMON_MOVES these are never in a learnset.
+STATUS_MOVES := []Move_Id{.Toxic_Cloud, .Envenom, .Plague, .Ember_Coil, .Immolate, .Wildfire, .Concuss, .Static_Shock, .Paralyze, .Photosynth, .Rejuvenate, .Bramble_Armor, .Spike_Shell}
 
 SPECIES := [Species_Id]Species{
 	// Emberling
@@ -402,6 +416,54 @@ SPECIES := [Species_Id]Species{
 		},
 		move_pool = []Move_Id{.Frost_Shard, .Glacier_Slam, .Gust, .Cyclone, .Frost_Bite, .Followup, .Twin_Fangs, .Iron_Skin, .Second_Wind, .Guard, .Fortify, .Mend, .Insight},
 	},
+
+	// --- Bosses (Phase 25) ---------------------------------------------------
+	// Unique, very powerful, and built around a synergy combo. They spawn with
+	// a pack of cronies and roam as a unit of six.
+	.Boss_Leviathan = {
+		name = "The Leviathan", elements = []Element{.AQUA}, base_hp = 210, base_energy = 4, base_energy_max = 12, base_power = 1.8, base_defense = 3.6, base_speed = 6.0, base_satiety = 280, base_upkeep = 12,
+		color = rl.Color{38, 96, 168, 255}, role = .BOSS, rarity = .LEGENDARY,
+		// Combo: Undertow marks Vulnerable, then Torrent / Tsunami cash it in.
+		starter = []Move_Id{.Undertow, .Undertow, .Torrent, .Torrent, .Tidal_Slam, .Heal_Spring, .Bubble_Shield, .Rejuvenate, .Tsunami, .Torrent},
+		learnset = []Learn_Entry{
+			{.Undertow, 1}, {.Torrent, 1}, {.Tidal_Slam, 1}, {.Heal_Spring, 1}, {.Bubble_Shield, 1},
+			{.Rejuvenate, 1}, {.Tsunami, 2}, {.Aqua_Jet, 2}, {.Sunder, 3}, {.Regrowth, 4}, {.Insight, 5},
+		},
+		move_pool = []Move_Id{.Undertow, .Torrent, .Tidal_Slam, .Heal_Spring, .Bubble_Shield, .Rejuvenate, .Tsunami, .Aqua_Jet, .Sunder, .Regrowth, .Insight, .Fortify, .Mend},
+	},
+	.Boss_Infernal = {
+		name = "The Infernal", elements = []Element{.EMBER}, base_hp = 170, base_energy = 4, base_energy_max = 12, base_power = 2.2, base_defense = 2.6, base_speed = 9.0, base_satiety = 240, base_upkeep = 11,
+		color = rl.Color{214, 74, 44, 255}, role = .BOSS, rarity = .LEGENDARY,
+		// Combo: Cinder marks Vulnerable, Hone buffs Strength, Rampage/Combust finish.
+		starter = []Move_Id{.Cinder, .Cinder, .Blaze, .Blaze, .Combust, .Combust, .Hone, .Immolate, .Wildfire, .Rampage},
+		learnset = []Learn_Entry{
+			{.Cinder, 1}, {.Blaze, 1}, {.Combust, 1}, {.Hone, 1}, {.Immolate, 1}, {.Wildfire, 1},
+			{.Rampage, 2}, {.Inferno, 2}, {.Sunder, 3}, {.Warcry, 4}, {.Mend, 5},
+		},
+		move_pool = []Move_Id{.Cinder, .Blaze, .Combust, .Hone, .Immolate, .Wildfire, .Rampage, .Inferno, .Sunder, .Warcry, .Mend, .Fortify, .Ash_Screen},
+	},
+	.Boss_Titan = {
+		name = "The Titan", elements = []Element{.GROUND}, base_hp = 280, base_energy = 4, base_energy_max = 12, base_power = 1.7, base_defense = 5.2, base_speed = 4.0, base_satiety = 320, base_upkeep = 14,
+		color = rl.Color{146, 112, 66, 255}, role = .BOSS, rarity = .LEGENDARY,
+		// Combo: Crush marks Vulnerable, then Cataclysm / Quake land; thorns punish.
+		starter = []Move_Id{.Crush, .Crush, .Quake, .Quake, .Rock_Toss, .Fortify, .Iron_Skin, .Bramble_Armor, .Cataclysm, .Quake},
+		learnset = []Learn_Entry{
+			{.Crush, 1}, {.Quake, 1}, {.Rock_Toss, 1}, {.Fortify, 1}, {.Iron_Skin, 1}, {.Bramble_Armor, 1},
+			{.Cataclysm, 2}, {.Body_Slam, 2}, {.Sunder, 3}, {.Regrowth, 4}, {.Screech, 5},
+		},
+		move_pool = []Move_Id{.Crush, .Quake, .Rock_Toss, .Fortify, .Iron_Skin, .Bramble_Armor, .Cataclysm, .Body_Slam, .Sunder, .Regrowth, .Screech, .Mend, .Warcry},
+	},
+	.Boss_Sovereign = {
+		name = "The Sovereign", elements = []Element{.ELECTRIC, .AIR}, base_hp = 180, base_energy = 4, base_energy_max = 12, base_power = 1.9, base_defense = 3.0, base_speed = 13.0, base_satiety = 250, base_upkeep = 11,
+		color = rl.Color{226, 196, 70, 255}, role = .BOSS, rarity = .LEGENDARY,
+		// Combo: Static Shock / Paralyze lock you down, then Maelstrom / Thunderbolt.
+		starter = []Move_Id{.Static_Shock, .Static_Shock, .Thunderbolt, .Thunderbolt, .Paralyze, .Cyclone, .Maelstrom, .Hone, .Gust, .Thunderbolt},
+		learnset = []Learn_Entry{
+			{.Static_Shock, 1}, {.Thunderbolt, 1}, {.Cyclone, 1}, {.Hone, 1}, {.Gust, 1}, {.Paralyze, 1},
+			{.Maelstrom, 2}, {.Spark, 2}, {.Sunder, 3}, {.Followup, 4}, {.Insight, 5},
+		},
+		move_pool = []Move_Id{.Static_Shock, .Thunderbolt, .Cyclone, .Hone, .Gust, .Paralyze, .Maelstrom, .Spark, .Sunder, .Followup, .Insight, .Second_Wind, .Warcry},
+	},
 }
 
 STARTER_SPECIES := [?]Species_Id{.Emberling, .Tidepup, .Sproutle}
@@ -416,6 +478,15 @@ Creature :: struct {
 	block:        int,
 	vulnerable:   int,
 	strength:     int,
+
+	// Status effects (Phase 21). Damage/heal-over-time statuses tick once per
+	// round and decay by 1; Thorns persists; Stun skips the creature's actions.
+	poison:     int,
+	burn:       int,
+	regen:      int,
+	thorns:     int,
+	stun:       int,
+	stun_round: int, // transient: round in which Stun was last consumed
 	power:        f32, // permanent bonus damage from leveling
 	defense:      f32, // permanent damage reduction from leveling
 	defense_buff: f32, // temporary, from moves (resets each battle)
@@ -440,6 +511,9 @@ Creature :: struct {
 	// transient hit feedback (decays each frame, not saved)
 	shake: f32,
 	flash: f32,
+
+	// true for monsters you own (relic stat bonuses apply to these only)
+	player: bool,
 
 	// short effect burst (heal/buff/debuff...): an expanding coloured ring
 	fx_t:   f32,       // remaining time, counts down
@@ -613,21 +687,9 @@ Gene :: enum { HP, POWER, DEFENSE, SPEED, ENERGY }
 
 GENE_MAX           :: 5
 GENE_BONUS         :: f32(0.05) // +5% to a stat's base per gene point
-GENE_MUTATE_CHANCE :: f32(0.05) // breeding: rare extra +1
 // Weights for a random roll: 0 common ... 5 very rare (out of 100).
 @(rodata)
 GENE_WEIGHTS := [GENE_MAX + 1]int{40, 28, 18, 9, 4, 1}
-
-gene_name :: proc(g: Gene) -> cstring {
-	#partial switch g {
-	case .HP:      return "HP"
-	case .POWER:   return "Power"
-	case .DEFENSE: return "Defense"
-	case .SPEED:   return "Speed"
-	case .ENERGY:  return "Energy"
-	}
-	return "?"
-}
 
 // A random gene value on the rarity curve.
 gene_roll_random :: proc(rng: ^Rng) -> int {
@@ -659,12 +721,9 @@ gene_breed_mid :: proc(a, b: int) -> int {
 	return clamp((a + b + 1) / 2, 0, GENE_MAX)
 }
 
-// Breed one gene: average the parents, nudge by -1..+1, and rarely mutate up.
+// Breed one gene: average the parents, nudge by -1..+1.
 gene_breed :: proc(a, b: int, rng: ^Rng) -> int {
 	v := clamp(gene_breed_mid(a, b) + rng_range(rng, -1, 2), 0, GENE_MAX)
-	if rng_chance(rng, GENE_MUTATE_CHANCE) {
-		v = clamp(v + 1, 0, GENE_MAX)
-	}
 	return v
 }
 
@@ -691,6 +750,20 @@ genes_total :: proc(g: [Gene]int) -> int {
 	return sum
 }
 
+// Energy is the one pool shared by map movement and card play, so it must stay a
+// real constraint at every level. Unlike HP/power/defence/speed (linear in
+// level), energy grows on a **logarithmic** curve — slow enough that a
+// high-level monster doesn't out-regenerate its hand, with no hard cap. This is
+// only computed when stats are recomputed (level-up / gear), never per frame.
+energy_scale :: proc(level: int) -> f32 {
+	return 1.0 + 0.12 * math.ln(f32(max(level, 1)))
+}
+
+// Energy regen is deliberately halved: it is the one pool shared by map movement
+// and card play, and it was too generous — a monster could cross the map in a
+// turn and still play a full hand.
+ENERGY_REGEN_FACTOR :: f32(0.5)
+
 creature_stats_for_level :: proc(species_idx: Species_Id, level: int) -> (max_hp: int, power, defense, speed, energy_regen, energy_max: f32) {
 	sp := SPECIES[species_idx]
 	scale := level_scale(level)
@@ -699,10 +772,12 @@ creature_stats_for_level :: proc(species_idx: Species_Id, level: int) -> (max_hp
 	defense = sp.base_defense * scale
 	speed = sp.base_speed * scale
 	// Energy is continuous (no rounding), so costs can be any value the
-	// designer wants. Regen is the per-turn income; max is the bank cap. Species
-	// base stats keep max well above regen so saving for expensive cards pays off.
-	energy_regen = clamp(f32(sp.base_energy) * scale, f32(sp.base_energy), 6.0)
-	energy_max = clamp(f32(sp.base_energy_max) * scale, energy_regen, 16.0)
+	// designer wants. Regen is the per-turn income; max is the bank cap. Both
+	// grow on the same slow curve, so the bank stays well above the regen and
+	// saving for a premium card pays off.
+	es := energy_scale(level)
+	energy_regen = f32(sp.base_energy) * es * ENERGY_REGEN_FACTOR
+	energy_max = f32(sp.base_energy_max) * es
 	return
 }
 
@@ -747,6 +822,61 @@ creature_make :: proc(species_idx: Species_Id, level: int, name: string, rng: ^R
 	return creature_make_genes(species_idx, level, name, genes, rng)
 }
 
+// A status card that fits an element, for wild decks (and only wilds — the
+// player curates their own deck through rewards). DoT/regen are preferred over
+// Stun so a wild can't lock the player down.
+thematic_status_move :: proc(el: Element) -> (Move_Id, bool) {
+	switch el {
+	case .EMBER:    return .Ember_Coil, true
+	case .POISON:   return .Toxic_Cloud, true
+	case .FLORA:    return .Bramble_Armor, true
+	case .ELECTRIC: return .Static_Shock, true
+	case .AQUA:     return .Rejuvenate, true
+	case .NEUTRAL, .ICE, .GROUND, .AIR: return .Tackle, false
+	}
+	return .Tackle, false
+}
+
+// Wilds fight with a real deck: their learnset moves up to their level, a
+// thematic status card once they're tough enough, then starter basics to fill.
+// Player creatures keep their curated starter deck — this is wilds only (called
+// from `spawn_wild_at`).
+WILD_DECK_MAX :: 12
+enrich_wild_deck :: proc(c: ^Creature) {
+	sp := SPECIES[c.species]
+	clear(&c.deck)
+	// A thematic status card first (higher-level wilds), so it's never crowded
+	// out by the learnset.
+	if c.level >= 8 {
+		if id, ok := thematic_status_move(creature_element(c)); ok {
+			append(&c.deck, id)
+		}
+	}
+	// Learnset moves up to the wild's level — the cards that scale with it.
+	for entry in sp.learnset {
+		if entry.level > c.level || len(c.deck) >= WILD_DECK_MAX {
+			continue
+		}
+		dup := false
+		for m in c.deck {
+			if m == entry.move {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			append(&c.deck, entry.move)
+		}
+	}
+	// Fill the rest with starter basics so the deck is never too thin.
+	for m in sp.starter {
+		if len(c.deck) >= WILD_DECK_MAX {
+			break
+		}
+		append(&c.deck, m)
+	}
+}
+
 // Recompute stored stats from (species, level), genetic bonuses, and the
 // equipped item's stat bonuses. Call after leveling up or changing the item.
 creature_recompute_stats :: proc(c: ^Creature) {
@@ -767,6 +897,16 @@ creature_recompute_stats :: proc(c: ^Creature) {
 	speed += it.speed
 	energy_regen += it.energy_regen
 	energy_max += it.energy_max
+
+	// Colony relics (Phase 25): stackable passives for player monsters only.
+	// The state global is synced from the colony whenever relics change.
+	if c.player {
+		max_hp = int(f32(max_hp) * relic_state.hp)
+		power *= relic_state.power
+		speed *= relic_state.speed
+		energy_regen += relic_state.energy_regen
+	}
+
 	c.max_hp = max_hp
 	c.power = power
 	c.defense = defense
@@ -803,35 +943,37 @@ creature_free_all :: proc(c: ^Creature) {
 	creature_free_piles(c)
 }
 
-// Deep-copies the creature (deck included) so the copy owns its own cards.
-creature_copy :: proc(src: ^Creature) -> Creature {
-	cap := src^
-	cap.deck = make([dynamic]Move_Id, 0)
-	for m in src.deck {
-		append(&cap.deck, m)
-	}
-	cap.draw_pile = make([dynamic]Move_Id, 0)
-	cap.hand = make([dynamic]Move_Id, 0)
-	cap.discard = make([dynamic]Move_Id, 0)
-	cap.shake = 0
-	cap.flash = 0
-	cap.fx_t = 0
-	return cap
-}
-
 // Level up: recompute scaled stats and automatically learn any learnset moves
 // whose level is now reached. Reward picks happen separately (from move_pool).
-creature_level_up :: proc(c: ^Creature) {
+// Levels the creature up and returns the learnset moves newly available at this
+// level that it doesn't already know (up to MAX_CHOICE_OPTIONS). Learning is the
+// caller's job, so several options can become a player choice.
+creature_level_up :: proc(c: ^Creature) -> (opts: [MAX_CHOICE_OPTIONS]Move_Id, n: int) {
 	old_max := c.max_hp
 	c.level += 1
 	creature_recompute_stats(c)
-	c.hp = min(c.hp + (c.max_hp - old_max) + c.max_hp / 8, c.max_hp)
+	if c.hp > 0 {
+		// Leveling heals — but never revives a fainted monster.
+		c.hp = min(c.hp + (c.max_hp - old_max) + c.max_hp / 8, c.max_hp)
+	}
 
 	for entry in SPECIES[c.species].learnset {
-		if entry.level == c.level && !creature_knows(c, entry.move) {
-			append(&c.deck, entry.move)
+		if entry.level != c.level || creature_knows(c, entry.move) {
+			continue
+		}
+		dup := false
+		for k in 0..<n {
+			if opts[k] == entry.move {
+				dup = true
+				break
+			}
+		}
+		if !dup && n < MAX_CHOICE_OPTIONS {
+			opts[n] = entry.move
+			n += 1
 		}
 	}
+	return
 }
 
 // Clear per-battle state so temporary buffs/debuffs don't carry over. Energy is
@@ -843,6 +985,12 @@ creature_reset_battle_state :: proc(c: ^Creature) {
 	c.defense_buff = 0
 	c.defense_debuff = 0
 	c.speed_buff = 0
+	c.poison = 0
+	c.burn = 0
+	c.regen = 0
+	c.thorns = 0
+	c.stun = 0
+	c.stun_round = 0
 	c.shake = 0
 	c.flash = 0
 	c.fx_t = 0
@@ -854,21 +1002,4 @@ creature_burst :: proc(c: ^Creature, col: rl.Color, dur: f32 = 0.55) {
 	c.fx_col = col
 	c.fx_dur = dur
 	c.fx_t = dur
-}
-
-party_free :: proc(p: ^[dynamic]Creature) {
-	arr := p^
-	for i in 0..<len(arr) {
-		creature_free_all(&arr[i])
-	}
-	delete(arr)
-	p^ = make([dynamic]Creature, 0)
-}
-
-party_heal :: proc(p: ^[dynamic]Creature, fraction: f32) {
-	arr := p^
-	for i in 0..<len(arr) {
-		amount := int(f32(arr[i].max_hp) * fraction)
-		arr[i].hp = min(arr[i].hp + amount, arr[i].max_hp)
-	}
 }

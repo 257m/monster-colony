@@ -6,6 +6,15 @@ wilds, and settle fights in a symmetric **deck-builder** battle engine.
 
 Built with [Odin](https://odin-lang.org/) and [raylib](https://www.raylib.com/).
 
+The game opens on a **title screen**: start a **New Game** or **Load Game**
+(saves live beside the executable as `save_1.mcs`…`save_3.mcs`). The save/load
+panel also has a **New Run** button that returns to the starter picker, handy for
+rerolling seeds until you like the map — pick a starter by clicking a card or
+pressing **1**–**3**.
+
+Sound effects and the looping music are **synthesised at startup** (no audio
+files ship with the repo); press **F2** to mute.
+
 ## 🎬 Demo
 
 ![Monster Colony gameplay](demo.gif)
@@ -64,6 +73,8 @@ press **F** (or the **⛶ Fullscreen** button) to go fullscreen.
 | `U` | crystal progression upgrades |
 | `C` | nursery (breeding) panel |
 | `H` | monster storage (Dens) |
+| `O` | save / load (also `F5` quick-save, `F9` quick-load, `N` new run) |
+| `F2` | mute / unmute sound |
 | RMB / `WASD` | pan, wheel to zoom |
 
 Battles are played with `1`–`5` / clicks to play cards, `E` to end your turn, and

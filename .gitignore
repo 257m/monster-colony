@@ -5,3 +5,6 @@
 /build/
 /web/lib/
 /.emsdk/
+
+# Save files
+/save_*.mcs

@@ -1,4 +1,1 @@
-Status effects
-Graveyard
-Monster storage improvement
-Item storage improvement
+Rework monsters, cards, abilities, items, upgrades, relics etc...

@@ -37,7 +37,7 @@ Item_Info :: struct {
 	block:    int,
 	// per-turn / on-hit
 	draw:        int,
-	on_hit_heal: int,
+	on_hit_leech_pct: f32,
 	gold_per_turn: int,
 	capture_pct:   f32,
 	// stat bonuses (applied in creature_recompute_stats)
@@ -54,7 +54,7 @@ ITEM_DATA := [Item]Item_Info{
 	.Swift_Boots  = {name = "Swift Boots",  desc = "+2 Speed for initiative.", speed = 2.0},
 	.War_Banner   = {name = "War Banner",   desc = "+6 Block at battle start.", block = 6},
 	.Lucky_Coin   = {name = "Lucky Coin",   desc = "Draws 1 extra card each turn.", draw = 1},
-	.Vampire_Fang = {name = "Vampire Fang", desc = "Heals 3 whenever it deals card damage.", on_hit_heal = 3},
+	.Vampire_Fang = {name = "Vampire Fang", desc = "Drains 30% of the damage it deals.", on_hit_leech_pct = 0.30},
 	.Focus_Sash   = {name = "Focus Sash",   desc = "+1 energy generated per turn.", energy_regen = 1.0},
 	.Deep_Pocket  = {name = "Deep Pocket",  desc = "+3 energy bank.", energy_max = 3.0},
 	.Life_Gem     = {name = "Life Gem",     desc = "+12% max HP.", hp_pct = 0.12},
@@ -88,7 +88,7 @@ random_item :: proc(rng: ^Rng) -> Item {
 item_color :: proc(it: Item) -> rl.Color {
 	info := ITEM_DATA[it]
 	switch {
-	case info.strength != 0 || info.power != 0 || info.on_hit_heal != 0:
+	case info.strength != 0 || info.power != 0 || info.on_hit_leech_pct != 0:
 		return rl.Color{240, 150, 110, 255} // offense
 	case info.defense != 0 || info.block != 0 || info.hp_pct != 0:
 		return rl.Color{110, 210, 180, 255} // defense

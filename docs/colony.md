@@ -38,6 +38,9 @@ value-noise fBm fields, **elevation × moisture**, into the 11 natural terrains,
 plus a high-frequency field for small **Lava / Quicksand** pockets. Everything
 is a pure function of `(seed, hex)`, so the world never shifts as you explore.
 Key knobs: `TERRAIN_SCALE` (region size), the band thresholds in `biome_at`.
+Elevation bands are **Water < 0.40** and **Cave < 0.48** (water is deliberately
+generous, ~20% of the map, so lakes and coastlines shape the colony), then
+moisture picks the mid/high biomes.
 
 `pick_terrain_at(seed, origin, hex)` layers **Trading Posts (~1.5%, ≥2 from the
 entrance)** and **Boss Rooms (~0.8%, ≥6 away)** on top of the biome.
@@ -81,19 +84,47 @@ on the tile and the fight is forced. Winning pays `ARENA_CRYSTAL_REWARD` crystal
 (in `resolve_won`); losing calls `arena_reset` to clear the tile.
 
 ### Raids, heat & alphas (Phase D)
-`colony_heat` = `improvement_total/3 + total_monster_levels/6` minus defence
-points (Watchtower/Beacon/Wall/Gate/Turret), clamped to `HEAT_MAX`; it's
-recomputed each turn and shown in the HUD. Once past `RAID_GRACE`,
-`colony_raids` counts `raid_timer` down (from turn 0, so the grace doesn't
-double-delay it) and then spawns a band of **raiders** (role `RAIDER`) in a ring
-around `player_center`, sized, cadenced **and levelled** by heat (`raid_size`,
-`raid_interval`, `raid_level_bonus`), with an **alpha** (`ALPHA`) leading hot
-raids. The HUD shows `Raids from turn 35` / `Raid in N` / `Raid calm (low heat)`
-and a notification fires when the grace ends. In `colony_roam_wilds`, non-`WILD`
-roles
-use `step_hunt`: raiders head to `nearest_player_hex`, alphas to
-`nearest_improvement_hex`, battering fortifications in the way. They're skipped
-by despawn/scarecrow/the wild cap.
+`colony_heat` = `colony_improvement_heat/3 + total_monster_levels/6`, clamped to
+`HEAT_MAX`; **nothing lowers it** (defences don't cool the colony) and it counts
+every standing building *and* overlay, each by its own weight (`improvement_heat`:
+**1** roads/walls/gates/bridges/traps, **2** ordinary production/support,
+**3** watchtower/turret, **4** beacon/refinery). It's recomputed each turn and
+shown in the HUD. Once past `RAID_GRACE`, `colony_raids` counts `raid_timer` down
+(from turn 0, so the grace doesn't double-delay it) and then spawns a band of
+**raiders** (role `RAIDER`) in a ring around `player_center`, sized, cadenced
+**and levelled** by heat (`raid_size` = `2 + heat/4`, up to `RAID_MAX_SIZE` 14;
+`raid_interval`; `raid_level_bonus`), with an **alpha** (`ALPHA`, **double the
+raiders' level**) leading hot raids. Raid spawns **ignore spawn deterrence**
+(they don't check `tile_prevents_spawn` or watchtower/beacon/scarecrow radii).
+The HUD shows `Raids from turn 35` / `Raid in N` / `Raid calm (low heat)` and a
+notification fires when the grace ends. In `colony_roam_wilds`, non-`WILD` roles
+use `step_hunt`: raiders head to `nearest_player_or_improvement_hex` (the closer
+of your monsters and your buildings), alphas to `nearest_player_hex` (your
+monsters), battering fortifications in the way. They're skipped by
+despawn/scarecrow/the wild cap.
+
+**Threat variety (Phase 21).** Two specialist roles now mix into raids:
+**sieges** (`SIEGE`) march on `nearest_improvement_hex` and deal **double**
+improvement damage (`wild_improvement_damage`), and **stalkers** (`STALKER`)
+take **two** `step_hunt` steps a turn and slip past fortifications
+(`step_hunt(..., ignore_walls = true)` → `terrain_passable`). The share of
+specialists grows with `colony_escalation`. On the map, sieges draw a heavy
+double red ring and stalkers a pale flickering ring.
+
+**Escalation (Phase 21).** `spawn_level_for` adds `colony_escalation` (`turn/20`)
+and clamps up to **2/3 of `player_top_level`**, so wilds and raids stay relevant
+as the run drags on — progression can't trivialise the map. `tile_passable` now
+delegates its terrain gate to `terrain_passable`, reused by stalkers.
+
+**Boss packs (Phase 25).** A revealed **Boss Room** within `BOSS_SPAWN_RANGE` of
+your nearest monster grows a **pack of six** (`colony_spawn_boss_packs` →
+`colony_spawn_boss_pack`): one of four unique `BOSS_SPECIES` plus five themed
+cronies (`boss_cronies`), sharing a `Monster.pack` id. The timer lives in
+`Tile.stored` (Boss Rooms hold no production), so packs **respawn** every
+`BOSS_RESPAWN_TURNS` for relic farming. `colony_roam_boss_packs` moves a pack as
+a **unit**: the boss picks the step toward `nearest_player_hex` and the retinue
+follows. Packs are skipped by despawn/scarecrow/the wild cap, and a Boss Room win
+drops a **relic** (see [content.md](content.md#relics-relicsodin)).
 
 ### A safe entrance
 - `choose_start_hex(seed)` scans ~13×13 hexes around the origin and picks the
@@ -123,28 +154,40 @@ for call-site compatibility).
 
 `move_block_reason` turns a blocked move into a readable status line.
 
+`colony_demolish(c, hex)` tears down the **overlay** first (so a Road can be
+peeled off a building) or the building, refunding `improvement_refund` = **50% of
+the base cost** (`IMPROVEMENT_REFUND_PCT`) into the stockpile. The build panel's
+**Demolish** button (`build_demolish_rect`) asks for a confirm
+(`Confirm_Kind.DEMOLISH`) first.
+
 `terrain_spawn_chance(t)` is the per-tile wild spawn probability;
 `terrain_move_cost(t)` is the movement cost multiplier. Step cost goes through
 `monster_step_cost(c, m, hex)` (which applies a `ROAD` discount).
 
 ## 3. Improvements
 
-`Improvement` enum: `NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY`.
+`Improvement` enum: `NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON, DEN, VAULT, NURSERY, MENDER`.
 
 Beyond production, several are **defensive** and there's now an **energy network**:
 `GATE`/`DRAWBRIDGE` block wilds (the drawbridge toggles raised/lowered);
 a wild whose step is blocked by a `WALL`/`GATE` (or a raised `DRAWBRIDGE`) **batters
 the blocker** instead of walking around — see `colony_roam_wilds` and
 `improvement_blocks_wilds`, using `wild_improvement_damage`;
-`SPIKE_TRAP`/`TURRET` deal damage (`colony_apply_traps` / `colony_turrets`),
+`SPIKE_TRAP`/`TURRET` deal damage (`colony_apply_traps` / `colony_turrets`) —
+spike traps take a **percentage** of the wild's max HP
+(`SPIKE_TRAP_DAMAGE_PCT` 15% + `upgrade_spike_pct`), so they keep pace;
 `SCARECROW` deters spawns and spooks nearby wilds into **moving a couple of tiles
 away** (they don't despawn), `WATCHTOWER` reveals and gives defenders starting
 Block, and `BEACON` reveals over a wider radius and makes attacking wilds start
 **Vulnerable** (`BEACON_VULN`, applied in `begin_battle`).
-`FOUNTAIN` hands energy to the closest unit or Turret (`colony_fountains`);
-`TURRET` needs that charge to fire. `MARKETPLACE` boosts nearby Mines,
-`KITCHEN` spends food for battle-start Strength, and `BARRACKS` eats food to
-heal + train nearby monsters. `QUARRY`/`LUMBER_MILL` are the second producer
+`FOUNTAIN` hands energy to the closest unit, Turret or Mender
+(`colony_fountains`); `TURRET` needs that charge to fire, and `MENDER` spends
+charge to repair every damaged improvement within `MENDER_REPAIR_RANGE` by
+`MENDER_HEAL` HP per turn (`colony_menders`) — energy reaches it via the
+Fountain's `FOUNTAIN_RANGE`, exactly like a Turret. `MARKETPLACE` boosts nearby
+Mines, `KITCHEN` spends food for battle-start Strength, and `BARRACKS` eats food
+to heal (a **percentage** of max HP, `BARRACKS_HEAL_PCT` 8%) + train nearby
+monsters. `QUARRY`/`LUMBER_MILL` are the second producer
 chain (Lumber needs water adjacent). `ROAD` halves step cost, `SILO` adds food
 storage, and `CRYSTAL_REFINERY` converts gold into crystals each turn.
 
@@ -195,11 +238,22 @@ Caps are recomputed by `colony_recompute_caps`: `gold_cap = BASE_GOLD_CAP +
 `Monster.creature.energy` (there is no `Monster.energy`).
 
 - `colony_move(c, index, target)` returns `0 ok, 1 not adjacent, 2 blocked,
-  3 tile full, 4 not enough energy`, and spends `monster_move_cost`.
-- `monster_move_cost(m, terrain) = terrain_move_cost · clamp(10/speed, 0.6, 1.6) · 0.5`
-  (the `·0.5` keeps the map feeling like it used to when the pool was larger).
-- `creature.energy_max` / `energy_regen` scale with level
-  (`creature_stats_for_level`), so higher-level monsters move and cast more.
+  3 tile full, 4 not enough energy, 5 already acted`, and spends
+  `monster_move_cost`.
+- `monster_move_cost(m, terrain) = terrain_move_cost · clamp(10/speed, 0.7, 1.6) · MOVE_STEP_FACTOR`
+  (`MOVE_STEP_FACTOR` = **0.8**). `terrain_move_cost` varies by the tile you're
+  **entering** (0.9 Grove/Mushroom … 1.8 Quicksand), so routes and Roads matter.
+- **Attacking ends the turn** (`Monster.acted`, set in `begin_battle`, cleared in
+  `colony_end_turn`): a monster that fought can't move again until next turn, so
+  you can't chain fights to keep moving on battle-refilled energy. Acted monsters
+  show `(done)` in the roster and red move hints.
+- Clicking a wild tile opens the attacker picker **without moving**;
+  `attack_move_attackers` (called on commit in `update_attack_select`) steps the
+  chosen attackers onto the tile, so cancelling costs nothing.
+- `creature.energy_max` / `energy_regen` grow **logarithmically** with level
+  (`creature_stats_for_level` → `energy_scale`, no hard cap); `energy_regen` is
+  then **halved** (`ENERGY_REGEN_FACTOR` 0.5), so higher-level monsters get a
+  little more but energy stays a real constraint.
 
 ## 6. The turn loop — `colony_end_turn(c)`
 
@@ -216,7 +270,9 @@ Runs in a fixed order. **Read this top-to-bottom before changing any economy.**
 4. **Feed monsters** (range-gated): eat from the nearest food store that holds
    enough (`nearest_food_store_with`), else a Farm/Well pool.
    Fed → `+REFILL_FRAC` satiety (full bar heals); unfed → `−STARVE_FRAC`, and at
-   zero satiety the monster takes damage.
+   zero satiety the monster takes damage. **Fainted monsters (0 HP) are skipped**
+   — otherwise a full meal would heal them above 0 before step 5 and they'd
+   "revive" instead of dying. Leveling up likewise never heals a fainted monster.
 
 Steps 1–4 also call `colony_add_float` so the map shows a brief `+4g`/`+6f`
 production popup on the tile (see [ui-and-input.md](ui-and-input.md)).
@@ -241,10 +297,18 @@ Then `c.turn += 1`.
   `spawn_ramp` gives a **grace period** (`SPAWN_GRACE_TURNS = 30`): from 10% to
   full rate over the first 30 turns.
 - **Level** (`spawn_level_for`) scales with distance from the entrance
-  (`start_hex`) and `floor`.
-- **Roam** (`colony_roam_wilds`): each wild sometimes steps to a passable
-  neighbour (may not move). Type gates apply, so an Ice wild can leave Tundra but
-  a neutral monster can't enter it.
+  (`start_hex`), `floor`, `colony_escalation` (`turn/20`) and never falls below
+  **2/3 of `player_top_level`** — so wilds stay relevant as the run goes on.
+- **Deck** (`enrich_wild_deck`, called from `spawn_wild_at`): wilds don't keep
+  the plain starter deck. They get their **learnset moves up to their level**, a
+  **thematic status card** at level 8+ (`thematic_status_move`), then starter
+  basics to fill, capped at `WILD_DECK_MAX` (12). So a level-20 wild fights with
+  real cards, and high-level fights are genuinely harder.
+- **Roam** (`colony_roam_wilds`): every wild steps each turn (no staying put).
+  Plain wilds pick a **random** passable neighbour (a random start heading, then
+  the first passable one clockwise); role wilds `step_hunt` **greedily** toward
+  their target. Type gates apply, so an Ice wild can leave Tundra but a neutral
+  monster can't enter it.
 - **Despawn** (`colony_despawn_wilds`): far wilds may wander off; a hard cap
   (`MAX_WILDS`) culls the farthest.
 - **Crowd fights** (`colony_crowd_fights`): too many wilds on one tile may

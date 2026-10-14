@@ -48,6 +48,7 @@ draw_improvement_icon :: proc(im: Improvement, cx, cy, zoom: f32) {
 	case .DEN:        draw_icon_den(cx, cy, z, t)
 	case .VAULT:      draw_icon_vault(cx, cy, z, t)
 	case .NURSERY:    draw_icon_nursery(cx, cy, z, t)
+	case .MENDER:     draw_icon_mender(cx, cy, z, t)
 	case .NONE:
 	}
 }
@@ -331,4 +332,24 @@ draw_icon_nursery :: proc(cx, cy, z, t: f32) {
 	rl.DrawEllipse(i32(ex), i32(cy - 1 * z), 8 * z, 11 * z, rl.Color{236, 232, 216, 255})
 	rl.DrawCircleV(rl.Vector2{ex - 2.5 * z, cy - 5 * z}, 2.0 * z, rl.Color{255, 255, 255, 160})
 	rl.DrawEllipseLines(i32(ex), i32(cy - 1 * z), 8 * z, 11 * z, rl.Color{196, 190, 170, 255})
+}
+
+// Mender: a little repair drone with a pulsing green cross.
+draw_icon_mender :: proc(cx, cy, z, t: f32) {
+	bob := math.sin(t * 2.2) * 1.2 * z
+	body := rl.Color{104, 118, 134, 255}
+	rl.DrawRectangleRounded(rl.Rectangle{cx - 11 * z, cy - 8 * z + bob, 22 * z, 17 * z}, 0.3, 6, body)
+	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{cx - 11 * z, cy - 8 * z + bob, 22 * z, 17 * z}, 0.3, 6, 1.5 * z, rl.Color{64, 74, 86, 255})
+	// Two stubby arms.
+	rl.DrawRectangleRounded(rl.Rectangle{cx - 15 * z, cy - 4 * z + bob, 4 * z, 9 * z}, 0.4, 3, rl.Color{88, 100, 114, 255})
+	rl.DrawRectangleRounded(rl.Rectangle{cx + 11 * z, cy - 4 * z + bob, 4 * z, 9 * z}, 0.4, 3, rl.Color{88, 100, 114, 255})
+	// Antenna with a blinking tip.
+	rl.DrawLineEx(rl.Vector2{cx, cy - 8 * z + bob}, rl.Vector2{cx, cy - 14 * z + bob}, 1.5 * z, rl.Color{120, 130, 144, 255})
+	pulse := 0.5 + 0.5 * math.sin(t * 3.0)
+	rl.DrawCircleV(rl.Vector2{cx, cy - 14 * z + bob}, (1.6 + 0.8 * pulse) * z, rl.Color{150, 245, 170, 255})
+	// Glowing green cross on the body.
+	green := rl.Color{150, 240, 165, 255}
+	rl.DrawRectangleRec(rl.Rectangle{cx - 5 * z, cy - 2 * z + bob, 10 * z, 3 * z}, green)
+	rl.DrawRectangleRec(rl.Rectangle{cx - 1.5 * z, cy - 5.5 * z + bob, 3 * z, 10 * z}, green)
+	rl.DrawCircleLinesV(rl.Vector2{cx, cy + bob}, (10 + 4 * pulse) * z, rl.Color{140, 235, 160, u8(90 * (1 - pulse))})
 }

@@ -4,21 +4,33 @@
 
 | File | Lines* | Responsibility |
 |---|---|---|
-| `src/main.odin` | ~2090 | `Game` state, `main()`, per-mode update/draw, every panel & HUD, battle glue, results |
-| `src/colony.odin` | ~1600 | Map generation, tiles, improvements, economy, turn loop, wild-monster AI |
-| `src/battle.odin` | ~1600 | The battle engine + battle rendering |
-| `src/creature.odin` | ~590 | `Species` table, `Creature` struct, stat/level helpers |
-| `src/abilities.odin` | ~130 | Species ability pools, names/descriptions, battle-start hook |
+| `src/main.odin` | ~775 | `Game` state, `main()`, lifecycle, update/draw dispatch, colony update, build/trade update |
+| `src/ui_colony.odin` | ~660 | Colony-screen rendering: map monsters, floats, HUD, roster, legend |
+| `src/ui_panels.odin` | ~1585 | Every overlay panel: deck, dexes, bag, upgrades, nursery, storage, save, arena, build/trade |
+| `src/ui_screens.odin` | ~240 | Title, starter picker and game-over screens |
+| `src/ui_draw.odin` | ~180 | Shared UI drawing: `draw_panel`, `draw_button` (+ styles), `draw_row`, `List_View` (list nav + chrome) |
+| `src/battle_glue.odin` | ~700 | Map ⇄ battle glue: attacker picker, begin/update/resolve, results |
+| `src/colony.odin` | ~1860 | Constants, types, improvement table, terrain, hex/grid, generation, economy, turn loop, movement |
+| `src/colony_improvements.odin` | ~250 | Improvement metadata accessors, build/cost/repair, heat |
+| `src/colony_wilds.odin` | ~685 | Wild spawning/roaming/AI, raids, heat, alphas |
+| `src/colony_storage.odin` | ~315 | Dens/Nurseries: stasis, breeding, item cap |
+| `src/battle.odin` | ~1665 | The battle engine + battle rendering |
+| `src/creature.odin` | ~830 | `Species` table, `Creature` struct, stat/level helpers, genetics |
+| `src/abilities.odin` | ~120 | Species ability pools, names/descriptions, battle-start hook |
 | `src/items.odin` | ~110 | Item table, effects, battle-start hook |
-| `src/upgrades.odin` | ~70 | Crystal progression tree: upgrades, costs, effect readers |
-| `src/web.odin` | ~80 | Browser (wasm) entry: exported `main_start` / `main_update` / … |
+| `src/upgrades.odin` | ~176 | Crystal progression tree: upgrades, costs, effect readers |
+| `src/web.odin` | ~93 | Browser (wasm) entry: exported `main_start` / `main_update` / … |
 | `src/web_allocator.odin` | ~110 | Emscripten-backed allocator used by the web build |
 | `src/moves.odin` | ~292 | `Element` chart, `Move` struct, `MOVE_DATA`, `Move_Id` enum |
-| `src/hex_math.odin` | ~100 | Axial hex coordinate math |
-| `src/hex_render.odin` | ~127 | Hex <-> screen transforms, camera, hex drawing |
-| `src/improvement_icons.odin` | ~155 | Animated improvement icons drawn on the map |
-| `src/tile_detail.odin` | ~140 | Procedural per-terrain tile detail (rocks, grass, mushrooms…) |
+| `src/hex_math.odin` | ~100 | Axial hex coordinate math (incl. `hex_range`) |
+| `src/hex_render.odin` | ~140 | Hex <-> screen transforms, camera, hex drawing, `visible_hex_bounds` |
+| `src/improvement_icons.odin` | ~355 | Animated improvement icons drawn on the map |
+| `src/tile_detail.odin` | ~158 | Procedural per-terrain tile detail (rocks, grass, mushrooms…) |
 | `src/rng.odin` | ~49 | SplitMix64 PRNG |
+| `src/audio.odin` | ~384 | Synthesised sound effects + looping music (no asset files) |
+| `src/save.odin` | ~495 | Save format: serialization + slots + panel data |
+| `src/save_io_desktop.odin` | ~25 | Save file I/O (`#+build !js`) |
+| `src/save_io_js.odin` | ~20 | Save stubs for the browser build (`#+build js`) |
 
 \* Approximate; use `wc -l` for exact counts.
 
@@ -70,6 +82,7 @@ improvement slot (Road/Scarecrow/Spike Trap), with its own `overlay_hp`.
 tiles: [dynamic]^Tile, tile_index: map[u64]int   // the infinite map
 roster, graveyard: [dynamic]Monster
 storage: [dynamic]Monster   // monsters in Dens/Nurseries (Phase 10)
+choices: [dynamic]Move_Choice // pending level-up / reward card picks
 gold, crystals, capture_cards, gold_cap, food_cap
 turn, floor, seed, rng, start_hex, next_id
 pending_tiles: [dynamic]Hex   // tiles where a wild and your monster share
@@ -84,7 +97,8 @@ heat, raid_timer, raids       // Phase D: raid pressure + scheduling
 ### `Game` (`main.odin`)
 Owns the whole session:
 ```
-mode: Game_Mode, renderer, colony, has_colony, selected
+mode: Game_Mode (TITLE|STARTER|MAP|BATTLE|GAME_OVER), renderer, colony, has_colony,
+selected, quit
 show_deck/view_index/view_scroll, show_encyclopedia/...
 status, status_timer
 build_mode/build_hex/has_build, trade_open

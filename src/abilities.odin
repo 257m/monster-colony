@@ -25,8 +25,8 @@ ABILITY_GUARDIAN_BLOCK :: 8
 ABILITY_THICK_HIDE_DEF :: f32(2.0)
 ABILITY_SWIFT_SPEED    :: f32(2.0)
 ABILITY_LUCKY_DRAW     :: 1
-ABILITY_VAMPIRIC_HEAL  :: 2
-ABILITY_REGENERATOR_HP :: 4
+ABILITY_VAMPIRIC_PCT   :: f32(0.25) // heal as a fraction of damage dealt
+ABILITY_REGENERATOR_PCT :: f32(0.06) // heal as a fraction of max HP each turn
 ABILITY_INTIMIDATE_STR :: 2
 
 ability_name :: proc(a: Ability) -> cstring {
@@ -52,8 +52,8 @@ ability_desc :: proc(a: Ability) -> cstring {
 	case .Thick_Hide:  return "Starts a fight with +2 Defense."
 	case .Swift:       return "Acts with +2 Speed for initiative."
 	case .Lucky:       return "Draws 1 extra card each turn."
-	case .Vampiric:    return "Heals 2 whenever it deals card damage."
-	case .Regenerator: return "Heals 4 at the end of each turn."
+	case .Vampiric:    return "Heals 25% of the damage it deals."
+	case .Regenerator: return "Heals 6% of its max HP each turn."
 	case .Intimidate:  return "Enemies start a fight with -2 Strength."
 	}
 	return ""
@@ -88,6 +88,11 @@ ABILITY_POOLS := [Species_Id][3]Ability{
 	.Galebeast     = {.Swift, .Lucky, .Berserk},
 	.Venomtail     = {.Vampiric, .Intimidate, .Lucky},
 	.Blizzard      = {.Swift, .Guardian, .Thick_Hide},
+	// Bosses: two of three so they vary run to run.
+	.Boss_Leviathan = {.Regenerator, .Guardian, .Thick_Hide},
+	.Boss_Infernal  = {.Berserk, .Vampiric, .Intimidate},
+	.Boss_Titan     = {.Guardian, .Thick_Hide, .Intimidate},
+	.Boss_Sovereign = {.Swift, .Berserk, .Lucky},
 }
 
 DEFAULT_ABILITY_POOL := [3]Ability{.Berserk, .Guardian, .Thick_Hide}
@@ -117,12 +122,4 @@ ability_battle_start :: proc(self: ^Creature, foes: []^Creature) {
 		}
 	case .NONE, .Lucky, .Vampiric, .Regenerator:
 	}
-}
-
-// One-line summary used by the colony/battle UI.
-ability_label :: proc(a: Ability) -> cstring {
-	if a == .NONE {
-		return "-"
-	}
-	return ability_name(a)
 }

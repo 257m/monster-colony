@@ -139,10 +139,26 @@ DEBUFF, DEFEND, WEAKEN, SHATTER, CAPTURE`).
 | `strength` | persists (can go negative) | ±10% outgoing damage |
 | `defense_buff` / `defense_debuff` | persists | raise/lower the defense divisor |
 | `played` | reset each turn | enables combo synergies |
+| `poison` | ticks down each round | lose `poison × POISON_PCT` of **max HP** at round start, then −1 |
+| `burn` | ticks down each round | lose `burn × BURN_PCT` of **max HP** at round start, then −1 |
+| `regen` | ticks down each round | heal `regen × REGEN_PCT` of **max HP** at round start, then −1 |
+| `thorns` | persists | reflect `thorns × THORNS_REFLECT_PCT` of the hit back |
+| `stun` | consumed per round | skip the creature's action(s) |
+
+Damage/heal-over-time statuses tick in `tick_status` (called from
+`begin_round`); **Stun** is consumed in `advance` (`actor_is_stunned`, guarded
+by `stun_round` so it only decays once per round) and DoT deaths are checked at
+the round boundary. Thorns fire from `play_creature_card` after a hit lands.
+**These are all percentages** (`POISON_PCT` 2%, `BURN_PCT` 3%, `REGEN_PCT` 3%,
+`THORNS_REFLECT_PCT` 10% per stack) so they scale with HP instead of going stale.
+Lifesteal (Leech/Gnaw/Phoenix, the Vampiric ability, the Vampire Fang item) is a
+fraction of the damage dealt. Cards apply them via the
+`poison`/`burn`/`stun`/`regen`/`thorns` fields on
+`Move` (`STATUS_MOVES` in `creature.odin`).
 
 `creature_reset_battle_state` clears all per-battle statuses at battle start
 (**not** energy). `build_effects` + `draw_effects_row/column` render them as
-chips with their multipliers.
+chips with their multipliers, and each chip has a hover tooltip.
 
 ## Actions
 
@@ -175,17 +191,19 @@ chips with their multipliers.
 
 ## Battle rendering
 
-`draw_battle` (in `battle.odin`) draws everything: `draw_enemies` (name, ability,
-HP bar, energy bar with `En cur/max +regen`, modifier chip row),
-`draw_player_panel` (name, ability, stats, HP, **XP bar**, an energy bar that
-shows a dim **regen preview** and `cur / max +regen per turn`, deck size,
-modifier row), `draw_party_field` (your whole party as info cards on the field —
-avatar, name, level/element, HP numbers, energy bar, active buff chips, and
-ability/item; the acting monster is ringed, ended-turn ones are dimmed with an
-`ENDED` tag, the dead are greyed), `draw_hand`,
+`draw_battle` (in `battle.odin`) draws everything: `draw_enemies` (name, level +
+**element-type chips**, ability, HP bar, energy bar with `En cur/max +regen`,
+modifier chip row), `draw_player_panel` (name, ability, stats, HP, **XP bar**, an
+energy bar that shows a dim **regen preview** and `cur / max +regen per turn`,
+deck size, modifier row), `draw_party_field` (your whole party as info cards on
+the field — avatar, name, level/element, HP numbers, energy bar, active buff
+chips, and ability/item; the acting monster is ringed, ended-turn ones are dimmed
+with an `ENDED` tag, the dead are greyed), `draw_hand`,
 `draw_card_estimate` (hover damage preview), `draw_buttons` (capture / end-turn),
-`draw_battle_log`, `draw_popups`, and the win/lose overlays. Geometry helpers
-(`*_rect`) live next to their use. `PARTY_MAX` is 6.
+`draw_pile_readout` (clickable `Draw N` / `Discard N`), `draw_piles` (the
+`D` pile viewer, listing the draw and discard piles), `draw_battle_log`,
+`draw_popups`, and the win/lose overlays. Geometry helpers (`*_rect`) live next to
+their use. `PARTY_MAX` is 6.
 
 **Effect feedback.** Playing a card spawns a `Popup` (`draw_popups`, floating
 `-12` / `+8 blk` / `+4 str` … text, coloured by `popup_color`) *and* a

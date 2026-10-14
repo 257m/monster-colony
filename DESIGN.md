@@ -29,7 +29,9 @@ creature battle from the current build stays and is what resolves combat.
 - You **send monsters each turn**; moving costs **energy** based on the
   monster's **Speed** and the destination tile. **Energy is one pool shared
   between the map and battle** — moving spends the same energy you use to play
-  cards, and it regenerates per turn in both. Wilds on your tile can be attacked
+  cards, and it regenerates per turn in both. Energy grows **logarithmically**
+  with level while everything else grows linearly, so it stays a real constraint
+  at every level. Wilds on your tile can be attacked
   by **clicking your own tile** (and they ambush you at end of turn).
 - **Capturing** a wild in battle uses a **capture card** (bought at a Trading
   Post), not a free action. Success chance scales with how wounded the target
@@ -284,6 +286,7 @@ gentler and the frontier is dangerous.
 | **Den** | Cave, Grove, Ruins, Mushroom, Desert | stasis: 32/Den, no upkeep |
 | **Vault** | Cave, Ruins, Desert, Tundra | **+12 item slots** |
 | **Nursery** | Cave, Grove, Mushroom, Jungle | breeds a Lvl 5+ pair; 4 babies |
+| **Mender** | Cave/Grove/Ruins/Desert/Mushroom | needs Fountain; +1 hp/turn |
 
 Improvements have **per-type HP** (`improvement_max_hp`): a Gate is 30, a Spike
 Trap 25, a Scarecrow 20, a Turret 35, a Road/Drawbridge 40, a Fountain/Crystal
@@ -326,27 +329,35 @@ it stored, is lost).
 
 ## Raids, heat & alphas (Phase D)
 
-- **Heat** is the colony's raid pressure: it rises with your **footprint**
-  (`improvement_total/3 + total monster levels/6`) and is pushed back down by
-  **defences** (Watchtower +2, Beacon +3, Wall/Gate +1, Turret +2), clamped to
-  `HEAT_MAX` (40). `colony_heat` recomputes it each turn and the HUD shows it.
+- **Heat** is the colony's raid pressure: it rises with your **footprint** —
+  every standing improvement adds its own weight (`improvement_heat`:
+  roads/walls/gates/bridges/traps **1**, ordinary production/support buildings
+  **2**, watchtowers/turrets **3**, beacons and crystal refineries **4**) plus
+  monster levels (`/6`), all over 3. **Nothing lowers it** — defences don't cool
+  the colony, they just make it harder to raid. Clamped to `HEAT_MAX` (60);
+  `colony_heat` recomputes it each turn and the HUD shows it.
 - **Raids**: once past `RAID_GRACE` (turn 35) and at `heat >= RAID_MIN_HEAT`
   (4), a timer (`colony_raids`) counts down and then gathers a band of
-  **raiders** in a ring a few tiles off your colony (spread across tiles so
-  they don't crowd-fight). Size scales with heat (`2 + heat/4`, max 8), the
-  cadence tightens (`RAID_BASE_INTERVAL - heat`, floor 9), and **raiders get
-  tougher** — `raid_level_bonus` adds `heat / RAID_LEVEL_PER_HEAT` levels (so
-  heat 4 → +1, heat 40 → +10). Raiders **march on your nearest monster**.
-  The timer ticks from turn 0 (so the grace doesn't double-delay the first
-  raid). The player is kept informed: the HUD reads `Raids from turn 35` before
-  the grace, `Raid in N` once one is pending, or `Raid calm (low heat)` when the
-  colony is too cold — and a notification fires when the grace ends.
+  **raiders** in a ring a few tiles off your colony (spread across tiles so they
+  don't crowd-fight). Raids **ignore spawn deterrence** — watchtowers, beacons,
+  scarecrows and the Farm/Mine no-spawn rule don't keep them out — because they
+  exist to hit your colony. **Size grows with heat** (`2 + heat/4`, up to
+  `RAID_MAX_SIZE` 14), the cadence tightens (`RAID_BASE_INTERVAL - heat`, floor
+  9), and **raiders get tougher** — `raid_level_bonus` adds
+  `heat / RAID_LEVEL_PER_HEAT` levels (heat 4 → +1, heat 60 → +15). Raiders
+  **march on whichever is closer, a monster or an improvement**. The timer ticks
+  from turn 0 (so the grace doesn't double-delay the first raid). The player is
+  kept informed: the HUD reads `Raids from turn 35` before the grace, `Raid in
+  N` once one is pending, or `Raid calm (low heat)` when the colony is too cold
+  — and a notification fires when the grace ends.
 - **Alphas**: a hot colony (`heat >= 8`) sends one **alpha** with each raid —
-  `ALPHA_LEVEL_BONUS` (4) levels higher — which **hunts your improvements**
-  instead, battering any fortification in its way.
+  **double the level** of the rank-and-file raiders — which **hunts your
+  monsters**, battering any fortification in its way.
 - Raiders and alphas are committed: they don't wander off, spook from
-  Scarecrows, or get culled by the wild cap. Both are marked on the map (warm
-  ring) and tagged `ALPHA`/`raider` in the attacker picker.
+  Scarecrows, or get culled by the wild cap. On the map a **raider** gets a warm
+  ring while an **alpha** is unmistakable — a **gold halo, a thick ring, a crown
+  and an `ALPHA` label** (`draw_alpha_marker`); both are tagged `[ALPHA]`/
+  `[raider]` in the attacker picker (the alpha row bordered gold).
 
 ## Breeding & genetics
 
@@ -370,15 +381,51 @@ it stored, is lost).
 - **Vault** — raises the item bag cap (**+12** each). Fight-loot items only fit
   while there is room.
 
-## Rewards
+## Saving
+
+- **3 save slots** (`O` panel, or `F5`/`F9` for slot 1), written as
+  `save_1.mcs`…`save_3.mcs` beside the executable. A small hand-rolled binary
+  format (`src/save.odin`) round-trips the **whole colony**: tiles, roster,
+  Dens/Nursery storage, graveyard, items, shop stock, the upgrade tree, the RNG
+  state and the turn clock. **Battle state is not saved** — save on the map.
+- The same panel has a **New Run** button (or the **`N`** key) that returns to
+  the **starter picker** (`reset_to_starter`) so you can pick again and roll a
+  fresh seed (seed hunting). A second click/press confirms while a run is in
+  progress.
+- Each slot's header carries **turn / gold / monsters / crystals / time** so the
+  panel can list saves without a full parse.
+- Not available in the **browser build** (no persistent filesystem).
+
+## Audio
+
+- **No audio files ship** — every sound effect and the looping music track are
+  **synthesised at startup** into 16-bit PCM (`src/audio.odin`) and handed to
+  raylib. A tiny oscillator (sine/square/saw/triangle/noise) with an
+  attack + decay envelope builds one-shot cues; the music is a slow A-minor
+  loop (bass, pad, pentatonic lead, kick/tick) encoded to an in-memory WAV and
+  streamed with `LoadMusicStreamFromMemory` so it loops seamlessly.
+- `audio` is a package-level singleton: any file fires a cue with
+  `audio_play(.BUILD)`. Cues are hooked on build/repair, card play and battle
+  hits, victory/defeat, level-up, crystals, raids, end-turn, save/load and
+  starter choice.
+- If the device can't open, everything no-ops. **`F2`** toggles mute.
+
+## Rewards & deck-building choices
 
 - Reward cards are **no longer given after every battle** — they become **rare
   drops**.
 - Drop tables are **per species and per level**.
 - Many **special moves** only come from reward cards.
+- **You choose your cards — or decline.** Every level that unlocks a move raises
+  a **`LEVEL UP!` prompt** (one card if the level unlocks one, up to 3 if
+  several), and a **reward drop** offers **3 cards**. In both cases you can
+  **Skip** to take nothing. The modal picker (`update_move_choice` /
+  `draw_move_choice`) queues on `Colony.choices`; click a card or press
+  **1–3**, or Skip.
 - **Kills grant XP** (scaled by the defeated monster's level); surviving
   defenders level up as thresholds are crossed. A **post-fight results screen**
-  shows gold, XP, any food delivered and any card gained.
+  shows gold, XP, any food delivered, a pending reward, and whether a monster
+  levelled up.
 
 ## Floors
 
@@ -411,14 +458,17 @@ it stored, is lost).
    range); ✅ **Arena** tiles (pay gold to fight a strong team of 6 for crystals,
    the main crystal source alongside Boss Rooms — refining is deliberately
    slow). *Multiple floors are dropped.*
-7. **Raids, heat & alphas (Phase D)** — a **heat** level that rises as you build
-   and level up and is cut by watchtowers/gates/turrets; **raids** that march on
-   the colony, ramped so they're gentle early; **alphas** that hunt your
-   improvements.
+7. **Raids, heat & alphas (Phase D)** — a **heat** level that rises with every
+   improvement and level (nothing lowers it); **raids** that ignore spawn
+   deterrence, grow with heat and march on your monsters and improvements;
+   **alphas** (double level) that hunt your monsters.
 8. **Breeding & genetics** — ✅ 0–5 genetics, breeding rolls, babies at level 1.
 9. **Storage & the Nursery** — ✅ a **Den** (monster stasis, 32/Den), a **Vault**
    (item storage, +12 slots) and a **Nursery** (the breeding building: a Lvl 5+
    pair, fed per turn, holds 4 babies).
+10. **Save files** — ✅ 3 slots (map state round-trips; `O` / `F5` / `F9`).
+11. **Title screen** — ✅ a main menu (New Game / Load Game / Quit) before the
+    starter picker; loading a save is offered from here.
 
 ## Lose conditions
 
@@ -531,7 +581,7 @@ it stored, is lost).
   `creature_recompute_stats`), gold per turn, and capture odds. Results screen
   reports drops.
 - Phase 6d ✅ **improvements dex**: press **`I`** for a browsable reference of
-  all 26 improvements (`draw_improvements`). Left = scrolling list; right =
+  all 27 improvements (`draw_improvements`). Left = scrolling list; right =
   animated icon, category, base cost, HP, stackable flag, **built-on** terrain
   chips, the short effect line, and a long-form description
   (`improvement_detail`). Text wraps via `draw_text_wrapped`.
@@ -588,12 +638,27 @@ it stored, is lost).
   Dungeon) and must be **staffed** — a monster standing on the tile — to refine,
   so the slow crystal trickle also costs you a body.
 - Phase 8 (Phase D) ✅ **raids, heat & alphas**: a **heat** meter
-  (`colony_heat` = footprint minus defences) shown in the HUD; **raids** that
-  gather raiders in a ring around your colony and march on your nearest monster
-  (ramped behind `RAID_GRACE`, sized, cadenced **and levelled** by heat via
+  (`colony_heat`) shown in the HUD; **raids** that gather raiders in a ring
+  around your colony and march on your nearest monster (ramped behind
+  `RAID_GRACE`, sized, cadenced **and levelled** by heat via
   `raid_level_bonus`); and **alphas** that lead hot raids and hunt your
-  improvements. Raiders/alphas are exempt from wandering off, Scarecrow spooking
-  and the wild cap, and are marked on the map and in the attacker picker.
+  improvements. Raiders/alphas are exempt from wandering off, Scarecrow
+  spooking and the wild cap, and are marked on the map and in the attacker
+  picker.
+- Phase 14 ✅ **raid & heat fixes**: heat now weights each improvement
+  (`improvement_heat`: 1 roads/walls/traps, 2 ordinary, 3 watchtower/turret,
+  4 beacon/refinery) and is **never lowered** (defences no longer cool the
+  colony); raids **ignore spawn deterrence** (watchtower/beacon/scarecrow +
+  Farm/Mine), **alphas hunt monsters** and **raiders hit the nearer of a monster
+  or an improvement**; and **overlay** improvements (Road / Scarecrow / Spike
+  Trap) are now **attacked** — `colony_resolve_wild_actions` wrecks a tile with
+  a building *or* an overlay.
+- Phase 15 ✅ **Mender**: an energy-powered repair building. A **Fountain**
+  charges it exactly like a Turret (`colony_fountains` now feeds Turrets *and*
+  Menders); while charged, `colony_menders` spends `MENDER_COST` to repair
+  **every** damaged improvement within `MENDER_REPAIR_RANGE` by `MENDER_HEAL`
+  HP/turn (buildings *and* overlays, with a green `+1hp` float). Useless without
+  a Fountain — a passive alternative to paying gold to repair.
 - Phase 9 ✅ **breeding & genetics**: every creature carries a **0–5 gene per
   stat** (`Gene` on `Creature.genes`), rolled on the rarity curve for wilds,
   recruits and starters, and applied as **+5%/point** on the species base in
@@ -605,4 +670,139 @@ it stored, is lost).
   in, it eats **2 food/turn** and hatches a level 1 baby every **8 fed turns**
   (`colony_nurseries`/`colony_nursery_birth`, genes averaged via `genes_breed`),
   storing up to **4**. Destroying a Den/Nursery evacuates its occupants.
+- Phase 11 ✅ **save files**: a hand-rolled binary format (`src/save.odin`) that
+  round-trips the whole colony — tiles, roster, Dens/Nursery storage, graveyard,
+  items, shop, upgrades, RNG and turn clock — into **3 slots** (`save_N.mcs`).
+  `O` opens the panel (`F5`/`F9` quick save/load slot 1); each header carries
+  turn/gold/monsters/crystals/age for the slot list. I/O is platform-gated
+  (`save_io_desktop.odin` / `save_io_js.odin`); disabled in the browser.
+- Phase 12 ✅ **title screen**: the game opens on a **main menu** (`draw_title`,
+  `Game_Mode.TITLE`) with **New Game**, **Load Game** and **Quit** (desktop
+  only). Load Game opens the save/load panel (which also has **New Run**, going
+  back to the starter picker for seed hunting); game over returns here with
+  **Esc**. The starter picker also accepts number keys **1**–**3**. Lifecycle
+  helpers `goto_title` / `reset_to_starter` share `close_all_panels`.
+- Phase 13 ✅ **world-gen tuning**: `biome_at`'s elevation bands widened so
+  **Water** rose from ~7% to ~23% of the map (Water < 0.40, Cave < 0.48), giving
+  proper lakes and coastlines while keeping Cave ~21%; the moisture band for
+  **Mushroom Grove** was narrowed (10.4% → ~5%).
+- Phase 16 ✅ **audio**: procedurally **synthesised** sound effects (16 cues) and
+  a looping A-minor music track, generated into 16-bit PCM at startup
+  (`src/audio.odin`) — no asset files. Cues are hooked across build/repair,
+  battle (card play, hits, victory/defeat), level-up, crystals, raids, end-turn,
+  save/load and the starter pick. `F2` mutes; no-ops if the device can't open.
+- Phase 17 ✅ **clearer alphas**: a raid alpha on the map gets a gold halo, a
+  thick pulsing ring, a **crown** and an `ALPHA` label (`draw_alpha_marker`),
+  while raiders get a warm ring; the attacker picker tags `[ALPHA]`/`[raider]`
+  and borders the alpha row gold.
+- Phase 18 ✅ **raid scaling**: the **heat cap** rose to `HEAT_MAX` **60** and
+  raids now grow to `RAID_MAX_SIZE` **14** (`2 + heat/4`), so hotter colonies
+  face bigger bands; the **alpha** is now **double the level** of the
+  rank-and-file raiders (replacing the flat `ALPHA_LEVEL_BONUS`).
+- Phase 19 ✅ **deck-building choices**: every level that unlocks a move now
+  raises a **`LEVEL UP!` picker** (one card, or up to 3), and battle **reward
+  drops offer 3 cards** — and in both cases you can **Skip** to decline. Choices
+  queue on `Colony.choices` and show a modal `draw_move_choice` overlay (cards
+  reuse `draw_card`; click or `1`–`3`, or Skip). `creature_level_up` now returns
+  its candidates instead of learning them.
+- Phase 20 ✅ **energy economy + premium cards**: energy no longer scales with
+  `level_scale` (linear); it follows a **logarithmic** `energy_scale`
+  (`1 + 0.12·ln(level)`) with **no hard cap**, so a high-level monster regens
+  ~4–4.5/turn against a 5-card hand instead of out-regenerating it (was 6/16
+  from ~L8). Added **6 premium reward-only cards** (`PREMIUM_MOVES`:
+  Meteor, Tsunami, Maelstrom, Cataclysm, Aegis, Phoenix) at **3.0–3.5 energy** —
+  the energy sinks you save up for.
+- Phase 21 ✅ **status effects, card rarity, deck thinning, escalation**: five
+  battle statuses — **Poison/Burn** (damage-over-time that decays each round),
+  **Stun** (skips actions), **Regen** (heal-over-time) and **Thorns**
+  (retaliation) — on `Creature`, applied by **13 new reward-only cards**
+  (`STATUS_MOVES`) and shown as chips/tooltips in battle. Cards now carry a
+  **`rarity`** (`COMMON`/`UNCOMMON`/`RARE`) and reward picks are rarity-weighted
+  (commons ×8, uncommons ×4, rares ×1). The deck viewer (`V`) supports **deck
+  thinning**: right-click a card to forget it for gold (`forget_card_cost`).
+  Difficulty now **escalates**: `spawn_level_for` adds `colony_escalation`
+  (`turn/20`) and never falls below **2/3 of your best monster's level**, so
+  over-levelling can't trivialise the wilds. **Threat variety**: raids now throw
+  in **siege** beasts (target buildings, double improvement damage) and **fast
+  stalkers** (two steps, slip past walls), with distinct map markers.
+- Phase 22 ✅ **goal, milestones, graveyard, tooltips**: a **10-entry quest
+  board** (`Q`) tracks milestones (build a Farm/Beacon/Den, survive 60 turns,
+  grow to 8/16 monsters, win 6 fights, slay an alpha, weather 3 raids, earn 40
+  crystals), each paying a **small** crystal bounty (1–5; ~27 total); finishing
+  all completes the run. The **Hall of the Fallen** (`Y`) lists every fallen
+  monster and lets you **revive** them or **salvage** the item they carried. A
+  frame-last **hover tooltip** system (`tooltip_set`/`tooltip_draw`,
+  word-wrapped) covers cards, status chips, roster entries, build options,
+  upgrade cells and map tiles.
+- Phase 23 ✅ **deeper tree + more turret upgrades**: the crystal tree grew from
+  26 to **35 nodes**. Turret damage grows only through upgrades: `Focused
+  Barrels` now runs to **5** levels at **+6 damage each** (base 10 → 40). New
+  turret nodes: **Quick Loaders** (extra shot per turn) and **Shrapnel Rounds**
+  (shots splash beside the target). New support nodes: **Long Wrenches** (Mender
+  range), **Wide Channels** (Fountain range), **Hearty Rations** (Kitchen
+  Strength), **Bright Beacon** (Beacon Vulnerable), **Deep Dens** (Den stasis),
+  **Strongboxes** (Vault item slots) and **Warm Broods** (Nursery hatch speed).
+  The upgrade panel (`U`) is now a **scrolling** 3-column grid to fit them.
+- Phase 24 ✅ **QoL & polish**: a **minimap** (top-left, `Z`, click to jump) of
+  every explored tile with POIs, wilds/raids and the viewport; **off-screen POI
+  arrows**; **edge tooltips** on the HUD resources, trade buttons, cards, chips,
+  roster, build options, upgrade cells and map tiles; a **settings panel**
+  (`F10`) holding the **last-turn summary**, a **volume slider**, and
+  **minimap / tooltips / FPS / autosave** toggles; a **controls overlay**
+  (`F1`); **unit picker** — clicking a tile with several of your monsters asks
+  which to control (instead of Tab-cycling); a **special autosave slot** written
+  every `AUTOSAVE_EVERY` turns; **confirm dialogs** for destructive actions
+  (forget card, overwrite building); **camera tweens**; **pointing-hand cursor**
+  feedback; **thousands separators**; a **net-food / starvation warning** in the
+  HUD; and a **battle initiative bar**.
+- Phase 25 ✅ **relics, boss packs, demolition**: **10 stackable relics**
+  (`Relic` / `Colony.relics`) — colony-wide passives (power, HP, speed, energy,
+  gold, food, Block, turret damage, crystals, XP) dropped by bosses and meant to
+  be farmed to keep pace with the escalating late game. **Four unique boss
+  species** (`Boss_Leviathan` / `Boss_Infernal` / `Boss_Titan` /
+  `Boss_Sovereign`) with synergy movesets spawn in **Boss Rooms** as a **pack of
+  six** (boss + 5 themed cronies) that **moves as a unit** and can be
+  re-challenged (relic farming). Improvements can be **demolished** for a
+  **50% refund** of their base cost. **Function keys are gone** (they collide
+  with the OS): help is `K`, settings `P`, mute `X`, quick-save `F`.
+- Phase 26 ✅ **movement economy & attack flow**: movement costs more
+  (`MOVE_STEP_FACTOR` **0.8**, up from 0.5) and varies by terrain
+  (`terrain_move_cost`: 0.9 Grove/Mushroom … 1.8 Quicksand), so a monster covers
+  far less ground per turn. **Attacking ends a monster's turn**
+  (`Monster.acted`, set in `begin_battle`), so chained fights can't keep it
+  moving on battle-refilled energy. Clicking a wild tile now opens the attacker
+  picker **without moving**; the step (`attack_move_attackers`) happens only
+  when you commit, so backing out no longer strands you on the tile. Acted
+  monsters show `(done)` in the roster and red move hints.
+- Phase 27 ✅ **fainted-monster & battle-HUD fixes**: fainted monsters no longer
+  "revive" at the end of the turn — the feeding step skips 0-HP monsters
+  (`colony_end_turn`) and leveling never heals a fainted one
+  (`creature_level_up`), so a lost party really is lost. The enemy battle panel
+  now shows its **element types as coloured chips** (`draw_enemies`) and its
+  buff chips no longer overlap the energy readout (the enemy block sits higher,
+  `ey` 212, effects row at `ey + 120`).
+- Phase 28 ✅ **percentage-based mechanics**: the flat battle mechanics that went
+  stale at high levels are now **fractions** — lifesteal (`Move.leech_pct`:
+  Leech/Gnaw/Phoenix drain a % of damage dealt; Vampiric ability 25%; Vampire
+  Fang 30%), heals (`Move.heal_pct`: Mend/Heal Spring/Bloom/Regrowth/Second
+  Wind/Tidecall heal a % of **max HP**), **Poison/Burn** (`POISON_PCT` 2% /
+  `BURN_PCT` 3% of max HP per stack), **Regen** (`REGEN_PCT` 3% of max HP),
+  **Thorns** (`THORNS_REFLECT_PCT` 10% of the hit per stack), and the
+  Regenerator ability (6% max HP). **Block stays flat** — a block card still
+  gives block — as do raw damage (already scaled by Power) and
+  Vulnerable/Strength (already %).
+- Phase 29 ✅ **energy regen halved & demolish guard**:
+  `creature_stats_for_level` now applies `ENERGY_REGEN_FACTOR` (0.5) to
+  `energy_regen`, so regen is ~1.5 (L1) → ~2.3 (L100) instead of ~3 → ~4.7 — the
+  shared movement/battle pool is a tighter resource. Fixed a bug where the build
+  panel's **Demolish** hit-test ran on an empty tile (its rect overlapped the
+  build-option grid), so clicking a build option could raise a spurious demolish
+  prompt; it's now gated on the tile actually holding a building/overlay.
+- Phase 30 ✅ **wilds never idle**: plain wilds always roam (the old 40% "stay
+  put" was removed) and hunters/boss packs always step (the 15% hold was
+  removed), so the map keeps moving every turn.
+- Phase 31 ✅ **pile viewer**: in battle, `D` (or clicking the `Draw N` /
+  `Discard N` readout, `draw_pile_readout`) opens `draw_piles` — a modal listing
+  the active monster's **draw pile** and **discard pile** (name, cost, element).
+  The stale "V deck" hint became "D piles".
 

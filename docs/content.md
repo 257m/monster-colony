@@ -21,23 +21,34 @@ changes gameplay immediately, no other code required.
 `Move_Id` is a flat enum; `MOVE_DATA: [Move_Id]Move` holds the data. A `Move`:
 
 ```
-name, desc, cost: f32, element: Element
-damage, block, hits, vulnerable, strength, defense: f32, heal, draw
+name, desc, cost: f32, element: Element, rarity: Rarity
+damage, block, hits, vulnerable, strength, defense: f32, draw
+heal_pct, leech_pct: f32                   // % of max HP / % of damage dealt
 strength_down: int, defense_down: f32      // debuffs applied to the TARGET
+poison, burn, stun, regen, thorns: int     // status effects (Phase 21)
 vuln_bonus, block_bonus, combo_bonus: int  // conditional damage synergies
 ```
 
 - `cost` is in energy half-steps (0.5 granularity) because energy is a float.
 - `hits` defaults to 1; multi-hit cards call `apply_damage` per hit (so Strength
   and Block apply per hit).
+- `heal_pct` heals a fraction of the **caster's max HP** (Mend, Heal Spring, …);
+  `leech_pct` heals a fraction of the **damage dealt** (Leech, Gnaw, Phoenix).
+  Percentages keep heals relevant at every level. **Block stays flat** — a block
+  card gives block.
 - Synergies add to the **first hit only** when the condition holds:
   `vuln_bonus` (target is Vulnerable), `block_bonus` (you have Block),
   `combo_bonus` (you already played a card this turn).
+- `rarity` (`COMMON`/`UNCOMMON`/`RARE`) drives reward weighting
+  (`card_rarity_weight`) and the rarity tag on the picker.
+- Status fields apply **Poison/Burn/Stun** to the target and **Regen/Thorns** to
+  the caster; see `STATUS_MOVES` and the battle docs.
 - `move_value(id)` is the **AI heuristic** — raise a term here if you want the AI
-  to value a card more (e.g. new status effects need a term).
+  to value a card more (status effects have terms).
 - `fmt_num` (top of the file) formats floats compactly (`3`, `2.5`, `1.25`).
 
-There are 62 moves. The `desc` string is what the card shows; keep it accurate.
+There are 81 moves (13 of them status cards). The `desc` string is what the card
+shows; keep it accurate.
 
 ## Species (`creature.odin`)
 
@@ -87,19 +98,37 @@ and add it to `ITEM_IDS` (for random drops). Stat fields feed
 `creature_begin_round`, `play_creature_card`, `colony_end_turn`, and
 `capture_chance`.
 
+## Relics (`relics.odin`)
+
+`Relic :: enum { War_Banner, … Beast_Fang }` with `RELIC_INFO` and `RELIC_ORDER`.
+Counts live on `Colony.relics` and **stack**: `relic_*_mult` readers scale with
+the count (e.g. `relic_power_mult = 1 + 0.08·count`). Bosses drop a random relic
+(`random_relic` → `grant_relic`). Stat relics are mirrored into a package global
+(`colony_sync_relic_state`) that `creature_recompute_stats` reads **for player
+creatures only** (`Creature.player`), so wilds are unaffected; `colony_apply_relics`
+recomputes everything you own. Non-stat relics hook into kill loot/XP
+(`resolve_won`), food production (`colony_end_turn`), battle-start Block
+(`begin_battle`) and turret damage (`colony_turrets`).
+
 ## Upgrades (`upgrades.odin`)
 
 `Upgrade :: enum { NONE, Green_Thumb, … Scouts, Drills }` with
 `UPGRADES: [Upgrade]Upgrade_Info` (name, desc, max_level, per-level cost,
 `prereq` + `req_level`). Levels live on `Colony.upgrades`. Nodes form a **tree**
-(26 nodes): `upgrade_unlocked` gates a child until its parent reaches
+(35 nodes): `upgrade_unlocked` gates a child until its parent reaches
 `req_level`, and `colony_buy_upgrade` spends crystals. `UPGRADE_ORDER` fixes the
-panel order (children listed after their parent). To add one: extend the enum,
-add an `UPGRADES` entry (set `prereq`/`req_level` for a child), read its level
-via an `upgrade_*` helper at the relevant hook (yields, `improvement_cost_scaled`,
-`improvement_hp_cap`, `storage_cap`, `monster_step_cost`, turret loop,
-`colony_barracks`, kill loot/food/XP, spawn deter, capture odds, per-battle
-Block), and add it to `UPGRADE_ORDER`.
+panel order; the panel is a 3-column grid of `UPGRADE_ROWS` (12) rows, scrolled
+with the wheel (`upgrade_cell_rect(i, scroll)` / `upgrade_max_scroll`). To add
+one: extend the enum, add an `UPGRADES` entry (set `prereq`/`req_level` for a
+child), read its level via an `upgrade_*` helper at the relevant hook (yields,
+`improvement_cost_scaled`, `improvement_hp_cap`, `storage_cap`,
+`monster_step_cost`, `colony_turrets`, `colony_menders`, `colony_fountains`,
+`colony_nurseries`, `colony_item_cap`, `den_capacity`, `colony_barracks`, kill
+loot/food/XP, spawn deter, capture odds, per-battle Block/Strength/Vulnerable),
+and add it to `UPGRADE_ORDER`.
+
+**Turret damage grows through upgrades** (`Focused Barrels` adds a flat amount
+per level) — it does not depend on the target.
 
 ## Creatures & stats (`creature.odin`)
 
@@ -108,14 +137,19 @@ Stat scaling:
 
 ```
 level_scale(level)              = 1 + 0.15*(level-1)
+energy_scale(level)             = 1 + 0.12*ln(level)     // logarithmic!
 creature_stats_for_level(...)   = base * level_scale, with
-    energy_regen = clamp(base_energy * scale, base_energy, 6)
-    energy_max   = clamp(base_energy_max * scale, energy_regen, 16)
+    energy_regen = base_energy * energy_scale * ENERGY_REGEN_FACTOR (0.5)
+    energy_max   = base_energy_max * energy_scale
 ```
 
-So `power`, `defense`, `speed`, `energy_*` all grow ~15% per level; HP too.
-Species `base_energy_max` is **8** (10 for elites/bosses) versus `base_energy` 3–4,
-so the bank is ~2.7× the regen and saving for expensive cards is worth it.
+So `power`, `defense`, `speed` and HP grow ~15% per level, but **energy grows on
+a logarithmic curve** (no hard cap) — otherwise a high-level monster would
+out-regenerate its 5-card hand and energy would stop mattering. Species
+`base_energy_max` is **8** (10 for elites/bosses) versus `base_energy` 3–4, so
+the bank stays well above the regen and saving for a premium card is worth it.
+Regen is additionally **halved** (`ENERGY_REGEN_FACTOR`), so a monster regens
+~1.5–2.3/turn — the shared movement/battle pool is a tight resource.
 
 - `creature_make(species, level, name)` builds a fresh creature + starter deck.
 - `creature_level_up` recomputes stats and learns any `learnset` moves whose

@@ -39,6 +39,16 @@ Upgrade :: enum {
 	Forage,        // needs Logistics: food from kills
 	Spoils,        // needs Bounty: more crystals from fights
 	Veterans,      // needs Academy: Barracks train more
+	// --- second wave (Phase 23) ---
+	Turret_Rate,     // needs Armory: an extra Turret shot per turn
+	Turret_Splash,   // needs Turret Range: shots also hit wilds beside the target
+	Mender_Range,    // needs Hydraulics: Menders reach further
+	Fountain_Range,  // needs Hydraulics: Fountains reach further
+	Kitchen_Rations, // needs Green Thumb: Kitchen feeds a bigger Strength bonus
+	Beacon_Power,    // needs Vigilance: Beacon marks wilds harder
+	Den_Capacity,    // needs Foundations: Dens hold more monsters
+	Vault_Capacity,  // needs Foundations: Vaults hold more items
+	Nursery_Speed,   // needs Green Thumb: Nurseries hatch sooner
 }
 
 Upgrade_Info :: struct {
@@ -75,28 +85,40 @@ UPGRADES := [Upgrade]Upgrade_Info{
 	.Deep_Core     = {name = "Deep Core",     desc = "Mines/Quarries: +3 more gold per level.", max_level = 2, cost = 9, cost_step = 7, prereq = .Rich_Seams, req_level = 2},
 	.Fortify       = {name = "Fortify",       desc = "Walls and Gates gain +15 HP per level.", max_level = 3, cost = 7, cost_step = 6, prereq = .Masonry, req_level = 1},
 	.Foundations   = {name = "Foundations",   desc = "Granary/Treasury/Silo store +25 per level.", max_level = 3, cost = 6, cost_step = 5, prereq = .Masonry, req_level = 2},
-	.Spikecraft    = {name = "Spikecraft",    desc = "Spike Traps deal +4 damage per level.", max_level = 2, cost = 6, cost_step = 6, prereq = .Fortify, req_level = 1},
-	.Turret_Damage = {name = "Focused Barrels", desc = "Turrets deal +4 damage per level.", max_level = 3, cost = 8, cost_step = 7, prereq = .Armory, req_level = 1},
+	.Spikecraft    = {name = "Spikecraft",    desc = "Spike Traps deal +5% max HP per level.", max_level = 2, cost = 6, cost_step = 6, prereq = .Fortify, req_level = 1},
+	.Turret_Damage = {name = "Focused Barrels", desc = "Turrets deal +6 damage per level.", max_level = 5, cost = 8, cost_step = 7, prereq = .Armory, req_level = 1},
 	.Turret_Health = {name = "Reinforced Mounts", desc = "Turrets gain +12 HP per level.", max_level = 3, cost = 6, cost_step = 6, prereq = .Armory, req_level = 1},
 	.Turret_Range  = {name = "Long Barrels",  desc = "Turrets shoot +1 tile further per level.", max_level = 2, cost = 10, cost_step = 8, prereq = .Armory, req_level = 2},
 	.Reservoir     = {name = "Reservoir",     desc = "Turrets store +2 more charge per level.", max_level = 3, cost = 7, cost_step = 6, prereq = .Hydraulics, req_level = 1},
 	.Forage        = {name = "Forage",        desc = "Defeated wilds drop +1 food per level.", max_level = 3, cost = 7, cost_step = 6, prereq = .Logistics, req_level = 2},
 	.Spoils        = {name = "Spoils",        desc = "Arena/Boss wins: +1 crystal per level.", max_level = 3, cost = 10, cost_step = 9, prereq = .Bounty, req_level = 2},
 	.Veterans      = {name = "Veterans",      desc = "Barracks grant +1 more XP per level.", max_level = 2, cost = 7, cost_step = 6, prereq = .Academy, req_level = 2},
+
+	// --- second wave (Phase 23) ---
+	.Turret_Rate     = {name = "Quick Loaders", desc = "Turrets fire +1 shot per turn per level.", max_level = 2, cost = 12, cost_step = 10, prereq = .Armory, req_level = 2},
+	.Turret_Splash   = {name = "Shrapnel Rounds", desc = "Shrapnel: +5 splash dmg per level.", max_level = 2, cost = 11, cost_step = 9, prereq = .Turret_Range, req_level = 1},
+	.Mender_Range    = {name = "Long Wrenches", desc = "Menders repair 1 tile further per level.", max_level = 2, cost = 7, cost_step = 6, prereq = .Hydraulics, req_level = 1},
+	.Fountain_Range  = {name = "Wide Channels", desc = "Fountains reach 1 tile further per level.", max_level = 2, cost = 8, cost_step = 6, prereq = .Hydraulics, req_level = 2},
+	.Kitchen_Rations = {name = "Hearty Rations", desc = "Kitchen feeds +2 Strength per level.", max_level = 2, cost = 7, cost_step = 6, prereq = .Green_Thumb, req_level = 2},
+	.Beacon_Power    = {name = "Bright Beacon", desc = "Beacon: +1 Vulnerable per level.", max_level = 2, cost = 8, cost_step = 6, prereq = .Vigilance, req_level = 2},
+	.Den_Capacity    = {name = "Deep Dens",   desc = "Dens hold +8 more monsters per level.", max_level = 2, cost = 8, cost_step = 7, prereq = .Foundations, req_level = 1},
+	.Vault_Capacity  = {name = "Strongboxes", desc = "Vaults hold +4 more items per level.", max_level = 2, cost = 8, cost_step = 7, prereq = .Foundations, req_level = 2},
+	.Nursery_Speed   = {name = "Warm Broods", desc = "Nurseries hatch 1 turn sooner per level.", max_level = 2, cost = 8, cost_step = 6, prereq = .Green_Thumb, req_level = 2},
 }
 
 // Panel order: grouped by branch, each child right after its parent where it
 // fits. Drawn in three columns (see draw_upgrades).
 UPGRADE_ORDER := [?]Upgrade{
-	// economy
-	.Green_Thumb, .Bumper_Crop, .Rich_Seams, .Deep_Core, .Trade, .Refining,
+	// column 1 — economy
+	.Green_Thumb, .Bumper_Crop, .Kitchen_Rations, .Nursery_Speed,
+	.Rich_Seams, .Deep_Core, .Trade, .Refining,
 	.Logistics, .Forage, .Hydraulics, .Reservoir,
-	// industry & military
-	.Masonry, .Fortify, .Spikecraft, .Foundations,
-	.Armory, .Turret_Damage, .Turret_Health, .Turret_Range,
-	// support
-	.Bounty, .Spoils, .Vigilance, .Warding,
-	.Academy, .Veterans, .Scouts, .Drills,
+	// column 2 — industry & military
+	.Masonry, .Fortify, .Spikecraft, .Foundations, .Den_Capacity, .Vault_Capacity,
+	.Armory, .Turret_Damage, .Turret_Health, .Turret_Range, .Turret_Rate, .Turret_Splash,
+	// column 3 — support
+	.Bounty, .Spoils, .Vigilance, .Warding, .Beacon_Power,
+	.Academy, .Veterans, .Scouts, .Drills, .Mender_Range, .Fountain_Range,
 }
 
 upgrade_name :: proc(u: Upgrade) -> cstring { return UPGRADES[u].name }
@@ -143,11 +165,11 @@ upgrade_masonry_mult :: proc(c: ^Colony) -> f32 { return max(1.0 - 0.05 * f32(c.
 upgrade_bounty_mult :: proc(c: ^Colony) -> f32 { return 1.0 + 0.12 * f32(c.upgrades[.Bounty]) }
 upgrade_vigilance :: proc(c: ^Colony) -> int { return c.upgrades[.Vigilance] }
 upgrade_turret_cost_mult :: proc(c: ^Colony) -> f32 { return max(1.0 - 0.08 * f32(c.upgrades[.Armory]), 0.4) }
-upgrade_turret_damage :: proc(c: ^Colony) -> int { return c.upgrades[.Turret_Damage] * 4 }
+upgrade_turret_damage :: proc(c: ^Colony) -> int { return c.upgrades[.Turret_Damage] * 6 }
 upgrade_turret_hp :: proc(c: ^Colony) -> int { return c.upgrades[.Turret_Health] * 12 }
 upgrade_turret_range :: proc(c: ^Colony) -> int { return c.upgrades[.Turret_Range] }
 upgrade_fortify_hp :: proc(c: ^Colony) -> int { return c.upgrades[.Fortify] * 15 }
-upgrade_spike_damage :: proc(c: ^Colony) -> int { return c.upgrades[.Spikecraft] * 4 }
+upgrade_spike_pct :: proc(c: ^Colony) -> f32 { return f32(c.upgrades[.Spikecraft]) * 0.05 }
 upgrade_crystal_bonus :: proc(c: ^Colony) -> int { return c.upgrades[.Spoils] }
 
 upgrade_fountain_output :: proc(c: ^Colony) -> int { return c.upgrades[.Hydraulics] }
@@ -164,6 +186,20 @@ upgrade_storage :: proc(c: ^Colony) -> int { return c.upgrades[.Foundations] * 2
 storage_cap :: proc(c: ^Colony) -> int { return STORAGE_CAP + upgrade_storage(c) }
 upgrade_veterans :: proc(c: ^Colony) -> int { return c.upgrades[.Veterans] }
 upgrade_refinery_boost :: proc(c: ^Colony) -> int { return c.upgrades[.Refining] }
+
+// --- second wave (Phase 23) ---
+upgrade_turret_rate :: proc(c: ^Colony) -> int { return c.upgrades[.Turret_Rate] }
+upgrade_turret_splash :: proc(c: ^Colony) -> int { return c.upgrades[.Turret_Splash] * TURRET_SPLASH_DAMAGE }
+upgrade_mender_range :: proc(c: ^Colony) -> int { return c.upgrades[.Mender_Range] }
+upgrade_fountain_range :: proc(c: ^Colony) -> int { return c.upgrades[.Fountain_Range] }
+upgrade_kitchen_strength :: proc(c: ^Colony) -> int { return c.upgrades[.Kitchen_Rations] * 2 }
+upgrade_beacon_vuln :: proc(c: ^Colony) -> int { return c.upgrades[.Beacon_Power] }
+upgrade_den_capacity :: proc(c: ^Colony) -> int { return c.upgrades[.Den_Capacity] * DEN_CAPACITY_PER_LEVEL }
+upgrade_vault_cap :: proc(c: ^Colony) -> int { return c.upgrades[.Vault_Capacity] * VAULT_CAP_PER_LEVEL }
+upgrade_nursery_speed :: proc(c: ^Colony) -> int { return c.upgrades[.Nursery_Speed] }
+
+// A Den's stasis capacity, including Deep Dens.
+den_capacity :: proc(c: ^Colony) -> int { return DEN_CAPACITY + upgrade_den_capacity(c) }
 
 // HP cap for a built improvement, including Fortify / Reinforced Mounts.
 improvement_hp_cap :: proc(c: ^Colony, im: Improvement) -> int {

@@ -32,16 +32,8 @@ hex_add :: proc(a, b: Hex) -> Hex {
 	return Hex{q = a.q + b.q, r = a.r + b.r}
 }
 
-hex_sub :: proc(a, b: Hex) -> Hex {
-	return Hex{q = a.q - b.q, r = a.r - b.r}
-}
-
 hex_scale :: proc(h: Hex, k: int) -> Hex {
 	return Hex{q = h.q * k, r = h.r * k}
-}
-
-hex_neg :: proc(h: Hex) -> Hex {
-	return Hex{q = -h.q, r = -h.r}
 }
 
 hex_equal :: proc(a, b: Hex) -> bool {
@@ -60,9 +52,22 @@ hex_neighbors :: proc(hex: Hex) -> [6]Hex {
 	return result
 }
 
+// Fills `out` with every hex within `radius` of `center` (the hex disk),
+// nearest-first is not guaranteed but the set is exact. Handy for range checks
+// without scanning the whole tile list.
+hex_range :: proc(center: Hex, radius: int, out: ^[dynamic]Hex) {
+	clear(out)
+	for dq in -radius..=radius {
+		lo := max(-radius, -dq - radius)
+		hi := min(radius, -dq + radius)
+		for dr in lo..=hi {
+			append(out, Hex{q = center.q + dq, r = center.r + dr})
+		}
+	}
+}
+
 // Cube coordinates: x = q, z = r, y = -x - z
-hex_to_cube :: proc(h: Hex) -> (x, y, z: int) {
-	x = h.q
+hex_to_cube :: proc(h: Hex) -> (x, y, z: int) {	x = h.q
 	z = h.r
 	y = -x - z
 	return

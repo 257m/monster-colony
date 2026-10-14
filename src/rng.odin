@@ -43,7 +43,3 @@ rng_below :: proc(r: ^Rng, n: int) -> int {
 	}
 	return int(rng_next_u64(r) % u64(n))
 }
-
-rng_chance :: proc(r: ^Rng, p: f32) -> bool {
-	return rng_f32(r) < p
-}

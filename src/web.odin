@@ -38,12 +38,21 @@ when ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32 {
 		rl.SetExitKey(.KEY_NULL)
 		rl.SetTargetFPS(60)
 
+		audio_init()
+
 		web_game.seed_rng = rng_make(u64(time.now()._nsec))
 		web_game.selected = -1
 		web_game.attack_ids = make([dynamic]int, 0)
 		web_game.attack_chosen = make([dynamic]bool, 0)
+		web_game.unit_picker_ids = make([dynamic]int, 0)
+		web_game.summary = make([dynamic]string, 0)
+		web_game.show_minimap = true
+		web_game.tooltips_on = true
+		web_game.autosave_on = true
+		web_game.ring_total = make(map[u64]int)
+		web_game.ring_seen = make(map[u64]int)
 		hex_renderer_init(&web_game.renderer, 46.0, int(rl.GetScreenWidth()), int(rl.GetScreenHeight()))
-		reset_to_starter(&web_game)
+		goto_title(&web_game)
 		web_ready = true
 	}
 
@@ -58,6 +67,7 @@ when ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32 {
 		web_game.renderer.origin_x = f32(rl.GetScreenWidth()) / 2
 		web_game.renderer.origin_y = f32(rl.GetScreenHeight()) / 2
 
+		audio_update()
 		game_update(&web_game, dt)
 
 		rl.BeginDrawing()
@@ -71,6 +81,14 @@ when ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32 {
 		context = web_context
 		if web_ready {
 			end_run(&web_game)
+			delete(web_game.attack_ids)
+			delete(web_game.attack_chosen)
+			delete(web_game.unit_picker_ids)
+			for s in web_game.summary { delete(s) }
+			delete(web_game.summary)
+			delete(web_game.ring_total)
+			delete(web_game.ring_seen)
+			audio_shutdown()
 			web_ready = false
 		}
 		rl.CloseWindow()

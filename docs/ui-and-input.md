@@ -2,10 +2,12 @@
 
 ## Modes
 
-`Game_Mode :: enum { STARTER, MAP, BATTLE, GAME_OVER }`.
+`Game_Mode :: enum { TITLE, STARTER, MAP, BATTLE, GAME_OVER }`.
 
-`main()` sets up the window and the `Game`, then loops `game_update` +
-`game_draw` until the window closes. Esc is **not** the quit key
+The game opens on the **title screen** (`draw_title`): **New Game** → the starter
+picker (`reset_to_starter`), **Load Game** → the save/load panel, **Quit** → exit
+(desktop only; the web build hides it). `main()` loops `game_update` + `game_draw`
+until the window closes or `g.quit` is set. Esc is **not** the quit key
 (`rl.SetExitKey(.KEY_NULL)`); Esc closes the current panel instead.
 
 ### Update dispatch (`game_update`)
@@ -14,27 +16,50 @@ Handled in this priority order, each returning early:
 tick status_timer
 show_deck         -> update_deck_viewer
 show_encyclopedia -> update_encyclopedia
+show_improvements -> update_improvements
+show_bag          -> update_bag
+show_upgrades     -> update_upgrades
+show_nursery      -> update_nursery
+show_storage      -> update_storage
+show_save         -> update_save_panel
 MAP|STARTER + M   -> open encyclopedia
+MAP + I / G / U   -> open improvements dex / bag / upgrades
+MAP + C / H / O   -> open nursery / storage / save panel
+MAP + F5 / F9     -> quick save / load slot 1
 attack_select_open-> update_attack_select
 battle_choice_open-> update_battle_choice
 results_open      -> update_results
 MAP + V           -> open deck viewer
 otherwise switch mode:
+  TITLE   -> update_title
   STARTER -> update_starter
   MAP     -> update_colony
   BATTLE  -> update_battle
-  GAME_OVER: N -> reset_to_starter
+  GAME_OVER: N -> reset_to_starter, Esc -> goto_title
 ```
 
 ### Draw dispatch (`game_draw`)
 ```
-switch mode: STARTER|MAP(+build/trade panels)|BATTLE|GAME_OVER
-then overlays on top: attack_select, battle_choice, results, deck viewer, encyclopedia, improvements dex, item bag
+switch mode: TITLE | STARTER | MAP(+build/trade panels) | BATTLE | GAME_OVER
+then overlays on top: attack_select, battle_choice, results, deck viewer,
+encyclopedia, improvements dex, item bag, nursery, storage, save panel
 ```
 
 **Checklist for a new overlay:** add a field to `Game`; an early-return branch
 in `game_update`; an `update_*`/`draw_*` proc; a `draw_*` call after the mode
-switch in `game_draw`; and clear it in `reset_to_starter`.
+switch in `game_draw`; and clear it in `close_all_panels` (used by both
+`goto_title` and `reset_to_starter`).
+
+### Title screen (`draw_title`)
+A centered wordmark over a soft pulsing glow, a tagline, and three buttons —
+**New Game** (`reset_to_starter`), **Load Game** (opens the save/load panel), and
+**Quit** (desktop only, sets `g.quit`). Enter/Space starts a new game, `L` opens
+the load panel.
+
+### Starter picker (`draw_starter`)
+Three species cards with a **numbered badge** (1/2/3) and a "Click or press N"
+label. Click a card, or press the matching number key (`DIGIT_KEYS`), to begin —
+`choose_starter` rolls the seed and generates the colony.
 
 ## Colony screen (`draw_colony`)
 
@@ -51,7 +76,9 @@ Draws the world, then `draw_colony_hud`, `draw_roster_panel`,
   energy (plus the move cost when valid).
 - `draw_map_monsters` draws creatures as coloured dots with a ground shadow and a
   gentle idle bob; wilds get a pulsing red ring and the selected monster a pulsing
-  ring; a small red dot marks a hungry monster.
+  ring; a small red dot marks a hungry monster. A raid **raider** gets a warm
+  ring, and a raid **alpha** is unmistakable — gold halo, thick ring, a **crown**
+  and an `ALPHA` label (`draw_alpha_marker`).
 - **Improvements are animated icons** (`src/improvement_icons.odin`): farms sway,
   mines sparkle, wells ripple, watchtowers pulse, treasuries spawn floating
   coins, granaries bob, and Walls/Bridges are drawn as bricks/planks. Water tiles
@@ -100,6 +127,15 @@ Draws the world, then `draw_colony_hud`, `draw_roster_panel`,
 | Upgrades | `U` | `update_upgrades` | `draw_upgrades` |
 | Nursery | `C` | `update_nursery` | `draw_nursery` |
 | Monster storage | `H` | `update_storage` | `draw_storage` |
+| Save / load | `O` | `update_save_panel` | `draw_save_panel` |
+| Quest journal | `Q` | `update_quests` | `draw_quests` |
+| Hall of the Fallen | `Y` | `update_graveyard` | `draw_graveyard` |
+| Relics | `J` | `update_relics` | `draw_relics` |
+| Controls help | `K` | `update_help` | `draw_help` |
+| Settings | `P` | `update_settings` | `draw_settings` |
+| Unit picker | clicking a shared tile | `update_unit_picker` | `draw_unit_picker` |
+| Confirm dialog | destructive action | `update_confirm` | `draw_confirm` |
+| Move choice | level-up / reward | `update_move_choice` | `draw_move_choice` |
 | Starter picker | mode STARTER | `update_starter` | `draw_starter` |
 
 The **deck viewer** (`draw_deck_viewer`) lists the selected monster's stats, its
@@ -119,8 +155,60 @@ selected one, the monsters **nearby** (click to store with `colony_store_monster
 and those **in stasis** (click to deploy with `colony_deploy_stored`). Stored
 monsters cost no upkeep and don't count toward heat.
 
+The **save / load panel** (`draw_save_panel`, `O`) lists **3 slots** with their
+metadata (turn, gold, monsters, crystals, age) and **Save**/**Load** buttons.
+`F5`/`F9` quick-save/quick-load slot 1. Saving is disabled mid-battle (save on
+the map) and in the browser build (no filesystem). A **New Run** button below the
+slots (or the **`N`** key) returns to the **starter picker** (`reset_to_starter`)
+so you can choose a starter again and roll a fresh seed — handy for hunting a
+good start; while a run is in progress it needs a second click/press to confirm.
+
+The **move-choice overlay** (`draw_move_choice`) is modal and takes priority over
+every other screen. It appears when a level unlocks a move (`LEVEL UP!` — one
+card, or up to 3) or when a battle reward drops (up to **3 move cards**, via
+`draw_card`); click one or press **`1`–`3`** to learn it, or **Skip** to decline.
+Pending choices queue on `Colony.choices` and are shown one at a time. Each card
+shows its **rarity** tag above it, and reward offers are rarity-weighted.
+
+The **quest journal** (`draw_quests`, `Q`) lists the 10 milestones with a
+progress bar, reward and a done marker, and shows `OBJECTIVE COMPLETE` once the
+run's goal is met. The **Hall of the Fallen** (`draw_graveyard`, `Y`) lists the
+whole graveyard (name, level, elements, carried item) with **Revive** (gold) and
+**Salvage** (move the corpse's item into your bag) buttons, scrolled with
+Up/Down. The deck viewer also supports **deck thinning**: right-click a card to
+forget it for gold (`colony_forget_card` / `forget_card_cost`).
+
+**Hover tooltips** are a frame-last overlay: a hovered widget calls
+`tooltip_set`/`tooltip_set_owned`, the frame draws it via `tooltip_draw`
+(word-wrapped, kept on screen), and `tooltip_clear` frees it at the top of the
+next frame. They cover battle cards, status-effect chips, roster entries, build
+options, upgrade cells and map tiles.
+
+The **crystal progression panel** (`draw_upgrades`, `U`) is a 3-column grid of
+upgrade nodes (`UPGRADE_ROWS` = 12 rows), **scrolled with the wheel**
+(`upgrade_cell_rect(i, scroll)` / `upgrade_max_scroll`); each cell shows level
+pips, its description and a buy button, and children are indented under their
+parent.
+
+**QoL (Phase 24).** The **minimap** (`draw_minimap`, `Z`, top-left) plots every
+explored tile, POIs, wilds/raids and the viewport; clicking it **tweens the
+camera** (`minimap_hex_at` → `tween_camera`). Off-screen POIs get **edge arrows**
+(`draw_poi_markers`). Clicking a tile with several of your monsters opens the
+**unit picker** (`select_or_pick_on_tile`) instead of Tab-cycling. The
+**autosave** is a special slot (`AUTOSAVE_SLOT`, load-only in the panel, written
+every `AUTOSAVE_EVERY` turns in `do_end_turn` when enabled). Destructive actions
+raise a **confirm dialog** (`ask_confirm` / `Confirm_Kind`). The **settings
+panel** (`F10`, `draw_settings`) holds the **last-turn summary**
+(`build_turn_summary`), a **volume slider** (`audio_set_volume`), and toggles for
+minimap / tooltips / FPS / autosave. The HUD shows **net food** (red when
+starving). `fmt_thousands` adds separators; `ui_want_hand`/`ui_cursor_apply`
+give a pointing-hand cursor. In battle, `draw_initiative` shows the upcoming
+turn order. The **relics panel** (`J`, `draw_relics`) lists the stackable
+boss-dropped relics. **No function keys are used** (they collide with the OS):
+help is `K`, settings `P`, mute `X`, and quick-save `F`.
+
 The **improvements dex** (`draw_improvements`, `I`) is a browsable reference for
-all 26 improvements: a scrolling list on the left and, on the right, the animated
+all 27 improvements: a scrolling list on the left and, on the right, the animated
 icon, base cost, HP, category, the terrains it can be built on (chips coloured by
 terrain), the short effect line, and a long-form `improvement_detail` paragraph
 (word-wrapped by `draw_text_wrapped`).
@@ -156,7 +244,22 @@ the hit-test (update) and the draw. Keep them in sync when you move things.
 | `U` | crystal progression upgrades |
 | `C` | nursery (breeding) panel |
 | `H` | monster storage (Dens) |
-| `N` | new run (**game-over screen only**) |
+| `O` | save / load panel |
+| `Q` | quest journal (milestones) |
+| `Y` | Hall of the Fallen (graveyard) |
+| `Z` | toggle the minimap |
+| `J` | relics panel |
+| `K` | controls / help overlay |
+| `P` | settings (sound, display, last turn) |
+| `X` | mute / unmute sound |
+| `F` | quick-save to slot 1 |
+| `F2` | mute / unmute sound |
+| `N` | new run — back to the starter picker (**game-over screen or save panel**) |
+
+### Starter picker
+| Input | Action |
+|---|---|
+| `1`–`3` / click a card | choose that starter (rolls a new seed) |
 
 ### Battle (`battle_input`)
 | Input | Action |
@@ -165,6 +268,7 @@ the hit-test (update) and the draw. Keep them in sync when you move things.
 | click an enemy | target it |
 | `Space` / `E` / button | end your turn |
 | `C` / button | use a capture card |
+| `D` / click the pile readout | view the draw & discard piles |
 
 Every one of your monsters takes its own turn in the Speed queue — the player
 panel and hand follow whichever monster is currently acting, and **End Turn**

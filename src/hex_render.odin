@@ -55,18 +55,27 @@ screen_to_hex :: proc(r: ^Hex_Renderer, sx, sy: f32) -> Hex {
 	return hex_round_axial(q_f, r_f)
 }
 
-center_camera_on :: proc(r: ^Hex_Renderer, hex: Hex) {
-	r.camera_x, r.camera_y = hex_world(r, hex)
+// The q/r bounding box of the hexes on screen (with a small margin). Callers use
+// this to visit only visible tiles, so an infinite, heavily-explored map doesn't
+// force a scan of every materialized tile each frame.
+visible_hex_bounds :: proc(r: ^Hex_Renderer, margin_hexes := 2) -> (min_q, max_q, min_r, max_r: int) {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	corners := [4][2]f32{{0, 0}, {sw, 0}, {0, sh}, {sw, sh}}
+	min_q, max_q = max(int), min(int)
+	min_r, max_r = max(int), min(int)
+	for c in corners {
+		h := screen_to_hex(r, c[0], c[1])
+		min_q = min(min_q, h.q)
+		max_q = max(max_q, h.q)
+		min_r = min(min_r, h.r)
+		max_r = max(max_r, h.r)
+	}
+	return min_q - margin_hexes, max_q + margin_hexes, min_r - margin_hexes, max_r + margin_hexes
 }
 
-hex_corners :: proc(r: ^Hex_Renderer, cx, cy: f32) -> [6]rl.Vector2 {
-	size := r.hex_size * r.zoom
-	corners: [6]rl.Vector2
-	for i in 0..<6 {
-		angle := f32(i) * math.PI / 3.0
-		corners[i] = rl.Vector2{cx + size * math.cos(angle), cy + size * math.sin(angle)}
-	}
-	return corners
+center_camera_on :: proc(r: ^Hex_Renderer, hex: Hex) {
+	r.camera_x, r.camera_y = hex_world(r, hex)
 }
 
 draw_hex_filled :: proc(r: ^Hex_Renderer, hex: Hex, color: rl.Color) {
@@ -78,11 +87,9 @@ draw_hex_filled :: proc(r: ^Hex_Renderer, hex: Hex, color: rl.Color) {
 
 draw_hex_outline :: proc(r: ^Hex_Renderer, hex: Hex, color: rl.Color, thickness: f32) {
 	cx, cy := hex_to_screen(r, hex)
-	corners := hex_corners(r, cx, cy)
-	for i in 0..<6 {
-		j := (i + 1) % 6
-		rl.DrawLineEx(corners[i], corners[j], thickness, color)
-	}
+	// One polygon-outline call instead of six DrawLineEx calls — matters when
+	// hundreds of hexes are on screen.
+	rl.DrawPolyLinesEx(rl.Vector2{cx, cy}, 6, r.hex_size * r.zoom, 0, thickness, color)
 }
 
 draw_hex :: proc(r: ^Hex_Renderer, hex: Hex, fill: rl.Color, outline: rl.Color, thickness: f32) {
