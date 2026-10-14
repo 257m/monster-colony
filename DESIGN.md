@@ -581,7 +581,7 @@ it stored, is lost).
   `creature_recompute_stats`), gold per turn, and capture odds. Results screen
   reports drops.
 - Phase 6d ✅ **improvements dex**: press **`I`** for a browsable reference of
-  all 28 improvements (`draw_improvements`). Left = scrolling list; right =
+  all 27 improvements (`draw_improvements`). Left = scrolling list; right =
   animated icon, category, base cost, HP, stackable flag, **built-on** terrain
   chips, the short effect line, and a long-form description
   (`improvement_detail`). Text wraps via `draw_text_wrapped`.
@@ -805,25 +805,4 @@ it stored, is lost).
   `Discard N` readout, `draw_pile_readout`) opens `draw_piles` — a modal listing
   the active monster's **draw pile** and **discard pile** (name, cost, element).
   The stale "V deck" hint became "D piles".
-- Phase 32 ✅ **Rook improvement**: a wall your monsters can **garrison**. Wilds
-  can't cross it (it `blocks` and batters would-be passers), but your own
-  monsters may stand on it — and a monster on a Rook starts battles with
-  `+ROOK_DEFENSE` (4) Defense. `attack_move_attackers` leaves a garrison on its
-  Rook so the bonus sticks. 35 HP (frailer than a Wall), same terrains, and
-  `Fortify` also raises its HP.
-- Phase 33 ✅ **foil cards, rarity monsters, shiny relics** (visual slice 1):
-  `draw_card` rebuilt — rarity frame + hover glow, gradient fill with an element
-  art-glow, a faceted **diamond cost gem**, name plate, **rarity pips**, and a
-  **holo sweep** (`draw_card_holo`: more bands as rarity rises, rainbow foil +
-  twinkles at RARE+). Monsters: gradient bodies, a specular shine and a **rarity
-  ring/halo** (`draw_creature_avatar`; party cards border-tinted by rarity).
-  Relics: gradient + gold **gem** + foil sweep (`draw_relic_foil`).
-- Phase 34 ✅ **shader cards + a real font** (visual slice 2): card and relic
-  faces are drawn by a **fragment shader** (`src/shaders.odin`): a rounded panel
-  with a rarity frame, an element gradient, a holo sweep, sparkles and a cursor
-  highlight, in one draw. Desktop is GLSL 330, web is GLSL 100 (ES2); callers
-  fall back to primitives if it fails. All text goes through `draw_text` /
-  `measure_text` (`src/font.odin`) using a subset of **Noto Sans**
-  (`assets/font.ttf`, SIL OFL) instead of raylib's rough bitmap. Avatars use one
-  bold element ring plus a rarity sparkle badge.
 

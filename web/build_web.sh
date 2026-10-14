@@ -105,7 +105,6 @@ echo "Linking with emscripten (emcc)..."
 emcc -o "$OUT/index.html" \
 	"$OUT/game.wasm.o" \
 	"$RL_LIB" \
-	--preload-file assets/font.ttf \
 	-sUSE_GLFW=3 \
 	-sWARN_ON_UNDEFINED_SYMBOLS=0 \
 	-sASSERTIONS \

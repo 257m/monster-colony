@@ -154,10 +154,6 @@ main :: proc() {
 
 	audio_init()
 	defer audio_shutdown()
-	shader_init()
-	defer shader_shutdown()
-	font_init()
-	defer font_shutdown()
 
 	g: Game
 	g.seed_rng = rng_make(u64(time.now()._nsec))

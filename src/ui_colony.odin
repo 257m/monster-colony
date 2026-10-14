@@ -136,8 +136,8 @@ draw_poi_markers :: proc(g: ^Game) {
 		ey := clamp(cy, 26, sh - 26)
 		ang := math.atan2(cy - ey, cx - ex) * 180.0 / math.PI
 		rl.DrawPoly(rl.Vector2{ex, ey}, 3, 11, ang, best_c[k])
-		lw := measure_text(best_l[k], 12)
-		draw_text(best_l[k], i32(ex) - lw / 2, i32(ey) + 14, 12, best_c[k])
+		lw := rl.MeasureText(best_l[k], 12)
+		rl.DrawText(best_l[k], i32(ex) - lw / 2, i32(ey) + 14, 12, best_c[k])
 	}
 }
 
@@ -217,8 +217,8 @@ draw_build_selection :: proc(g: ^Game) {
 	draw_hex_outline(&g.renderer, g.build_hex, rl.Color{150, 250, 190, 255}, 5.0 * z)
 	cx, cy := hex_to_screen(&g.renderer, g.build_hex)
 	label := cstring("BUILD HERE")
-	lw := measure_text(label, 15)
-	draw_text(label, i32(cx) - lw / 2, i32(cy - 40 * z), 15, rl.Color{190, 255, 210, 245})
+	lw := rl.MeasureText(label, 15)
+	rl.DrawText(label, i32(cx) - lw / 2, i32(cy - 40 * z), 15, rl.Color{190, 255, 210, 245})
 }
 
 // A raid alpha gets a gold halo, a thick pulsing ring, a crown and a label so
@@ -244,10 +244,10 @@ draw_alpha_marker :: proc(px, by, radius, z, pulse: f32) {
 	// Label (kept legible by scaling with zoom).
 	fs := i32(clamp(11.0 * z, 9.0, 16.0))
 	lbl := cstring("ALPHA")
-	lw := measure_text(lbl, fs)
+	lw := rl.MeasureText(lbl, fs)
 	ly := i32(top - h * 0.5 - f32(fs) - 2 * z)
-	draw_text(lbl, i32(px) - lw / 2 + 1, ly + 1, fs, rl.Color{40, 20, 0, 200})
-	draw_text(lbl, i32(px) - lw / 2, ly, fs, rl.Color{255, 235, 150, 255})
+	rl.DrawText(lbl, i32(px) - lw / 2 + 1, ly + 1, fs, rl.Color{40, 20, 0, 200})
+	rl.DrawText(lbl, i32(px) - lw / 2, ly, fs, rl.Color{255, 235, 150, 255})
 }
 
 draw_map_monsters :: proc(g: ^Game) {
@@ -347,8 +347,8 @@ draw_scuffles :: proc(g: ^Game) {
 		rl.DrawCircleV(rl.Vector2{cx + 6 * z, cy + 7 * z}, 3 * z, rl.Color{150, 40, 40, 150})
 		rl.DrawCircleV(rl.Vector2{cx + 2 * z, cy - 6 * z}, 3 * z, rl.Color{150, 40, 40, 150})
 		lbl := cstring("x")
-		lw := measure_text(lbl, 18)
-		draw_text(lbl, i32(cx) - lw / 2, i32(cy) - 9, 18, rl.Color{220, 100, 100, 220})
+		lw := rl.MeasureText(lbl, 18)
+		rl.DrawText(lbl, i32(cx) - lw / 2, i32(cy) - 9, 18, rl.Color{220, 100, 100, 220})
 	}
 }
 
@@ -397,9 +397,9 @@ draw_tile_floats :: proc(g: ^Game) {
 			text = fmt.ctprintf("+%dhp", f.amount)
 			col = rl.Color{150, 240, 165, alpha}
 		}
-		w := measure_text(text, 15)
-		draw_text(text, i32(x) - w / 2 + 1, i32(y) + 1, 15, rl.Color{0, 0, 0, alpha})
-		draw_text(text, i32(x) - w / 2, i32(y), 15, col)
+		w := rl.MeasureText(text, 15)
+		rl.DrawText(text, i32(x) - w / 2 + 1, i32(y) + 1, 15, rl.Color{0, 0, 0, alpha})
+		rl.DrawText(text, i32(x) - w / 2, i32(y), 15, col)
 
 		// Expanding ring for things that were created (not consumed/damaged).
 		if f.kind != .FOOD_OUT && f.kind != .DAMAGE {
@@ -538,8 +538,8 @@ draw_move_highlights :: proc(g: ^Game) {
 		if t.revealed && passable && !full && !acted {
 			cx, cy := hex_to_screen(&g.renderer, n)
 			label := fmt.ctprintf("%s", fmt_num(cost))
-			lw := measure_text(label, 14)
-			draw_text(label, i32(cx) - lw / 2, i32(cy) + 14, 14, rl.Color{230, 240, 210, 255})
+			lw := rl.MeasureText(label, 14)
+			rl.DrawText(label, i32(cx) - lw / 2, i32(cy) + 14, 14, rl.Color{230, 240, 210, 255})
 		}
 	}
 }
@@ -553,65 +553,65 @@ draw_colony_hud :: proc(g: ^Game) {
 	sw := f32(rl.GetScreenWidth())
 	sh := f32(rl.GetScreenHeight())
 
-	draw_text("THE COLONY", 20, 16, 26, rl.Color{215, 215, 235, 255})
+	rl.DrawText("THE COLONY", 20, 16, 26, rl.Color{215, 215, 235, 255})
 	res := fmt.ctprintf("Floor %d    Turn %d    Threat %d    Milestones %d/%d    Relics %d",
 		g.colony.floor, g.colony.turn, colony_escalation(&g.colony), milestones_done_count(&g.colony), len(MILESTONES), relic_total(&g.colony))
-	draw_text(res, 20, 48, 18, rl.Color{140, 140, 165, 255})
+	rl.DrawText(res, 20, 48, 18, rl.Color{140, 140, 165, 255})
 	if g.colony.goal_done {
-		gw := measure_text("OBJECTIVE COMPLETE", 18)
-		draw_text("OBJECTIVE COMPLETE", i32(sw) - gw - 256, 48, 18, rl.Color{255, 225, 130, 255})
+		gw := rl.MeasureText("OBJECTIVE COMPLETE", 18)
+		rl.DrawText("OBJECTIVE COMPLETE", i32(sw) - gw - 256, 48, 18, rl.Color{255, 225, 130, 255})
 	}
 
 	x := i32(20)
 	nb1, nb2: [24]u8
 	gold := fmt.ctprintf("Gold %s / %s", fmt_thousands(nb1[:], colony_total_gold(&g.colony)), fmt_thousands(nb2[:], g.colony.gold_cap))
-	draw_text(gold, x, 78, 20, rl.Color{240, 205, 90, 255})
-	if hud_hit(x, measure_text(gold, 20), 78) {
+	rl.DrawText(gold, x, 78, 20, rl.Color{240, 205, 90, 255})
+	if hud_hit(x, rl.MeasureText(gold, 20), 78) {
 		tooltip_set("Gold %s / %s. Mines, Quarries and defeated wilds pay it in; buildings, recruits and repairs spend it.", fmt_thousands(nb1[:], colony_total_gold(&g.colony)), fmt_thousands(nb2[:], g.colony.gold_cap))
 	}
-	x += measure_text(gold, 20) + 30
+	x += rl.MeasureText(gold, 20) + 30
 
 	if g.colony.food_cap == 0 {
-		draw_text("Food: no storage", x, 78, 20, rl.Color{150, 170, 150, 255})
-		if hud_hit(x, measure_text("Food: no storage", 20), 78) {
+		rl.DrawText("Food: no storage", x, 78, 20, rl.Color{150, 170, 150, 255})
+		if hud_hit(x, rl.MeasureText("Food: no storage", 20), 78) {
 			tooltip_set("No food storage yet - build a Granary or Silo so Farms can stockpile food.")
 		}
-		x += measure_text("Food: no storage", 20) + 30
+		x += rl.MeasureText("Food: no storage", 20) + 30
 	} else {
 		food := fmt.ctprintf("Food stored %s / %s", fmt_thousands(nb1[:], colony_total_food(&g.colony)), fmt_thousands(nb2[:], g.colony.food_cap))
-		draw_text(food, x, 78, 20, rl.Color{140, 220, 130, 255})
-		if hud_hit(x, measure_text(food, 20), 78) {
+		rl.DrawText(food, x, 78, 20, rl.Color{140, 220, 130, 255})
+		if hud_hit(x, rl.MeasureText(food, 20), 78) {
 			tooltip_set("Food stored %s / %s. Your monsters eat each turn (upkeep); a starving colony loses HP.", fmt_thousands(nb1[:], colony_total_food(&g.colony)), fmt_thousands(nb2[:], g.colony.food_cap))
 		}
-		x += measure_text(food, 20) + 30
+		x += rl.MeasureText(food, 20) + 30
 	}
 
 	cryst := fmt.ctprintf("Crystals %s", fmt_thousands(nb1[:], g.colony.crystals))
-	draw_text(cryst, x, 78, 20, rl.Color{150, 210, 255, 255})
-	if hud_hit(x, measure_text(cryst, 20), 78) {
+	rl.DrawText(cryst, x, 78, 20, rl.Color{150, 210, 255, 255})
+	if hud_hit(x, rl.MeasureText(cryst, 20), 78) {
 		tooltip_set("Crystals %s. Spend them in the progression tree (U). Mostly won from the Arena and Boss Rooms.", fmt_thousands(nb1[:], g.colony.crystals))
 	}
-	x += measure_text(cryst, 20) + 30
+	x += rl.MeasureText(cryst, 20) + 30
 
 	// Heat (Phase D): raid pressure. Turns shown once a raid is possible.
 	heat_col := g.colony.heat >= RAID_MIN_HEAT * 2 ? rl.Color{235, 120, 100, 255} : rl.Color{220, 170, 120, 255}
 	heat := fmt.ctprintf("Heat %d", g.colony.heat)
-	draw_text(heat, x, 78, 20, heat_col)
-	if hud_hit(x, measure_text(heat, 20), 78) {
+	rl.DrawText(heat, x, 78, 20, heat_col)
+	if hud_hit(x, rl.MeasureText(heat, 20), 78) {
 		tooltip_set("Heat %d. Every improvement and monster level adds heat, and nothing lowers it. Higher heat means bigger, tougher raids.", g.colony.heat)
 	}
-	x += measure_text(heat, 20) + 30
+	x += rl.MeasureText(heat, 20) + 30
 	if g.colony.turn >= RAID_GRACE && g.colony.heat >= RAID_MIN_HEAT {
 		raid := fmt.ctprintf("Raid in %d", g.colony.raid_timer)
-		draw_text(raid, x, 78, 20, rl.Color{235, 150, 120, 255})
-		x += measure_text(raid, 20) + 30
+		rl.DrawText(raid, x, 78, 20, rl.Color{235, 150, 120, 255})
+		x += rl.MeasureText(raid, 20) + 30
 	} else if g.colony.turn < RAID_GRACE {
 		raid := fmt.ctprintf("Raids from turn %d", RAID_GRACE)
-		draw_text(raid, x, 78, 20, rl.Color{170, 170, 190, 255})
-		x += measure_text(raid, 20) + 30
+		rl.DrawText(raid, x, 78, 20, rl.Color{170, 170, 190, 255})
+		x += rl.MeasureText(raid, 20) + 30
 	} else {
-		draw_text("Raid calm (low heat)", x, 78, 20, rl.Color{170, 190, 170, 255})
-		x += measure_text("Raid calm (low heat)", 20) + 30
+		rl.DrawText("Raid calm (low heat)", x, 78, 20, rl.Color{170, 190, 170, 255})
+		x += rl.MeasureText("Raid calm (low heat)", 20) + 30
 	}
 
 	upkeep := 0
@@ -626,13 +626,13 @@ draw_colony_hud :: proc(g: ^Game) {
 	fp := colony_food_production(&g.colony)
 	net_food := fp - upkeep
 	food_prod := fmt.ctprintf("Food +%d/turn (net %+d)", fp, net_food)
-	draw_text(food_prod, x, 106, 16, net_food < 0 ? rl.Color{235, 120, 110, 255} : rl.Color{140, 220, 130, 255})
-	x += measure_text(food_prod, 16) + 24
+	rl.DrawText(food_prod, x, 106, 16, net_food < 0 ? rl.Color{235, 120, 110, 255} : rl.Color{140, 220, 130, 255})
+	x += rl.MeasureText(food_prod, 16) + 24
 	gold_prod := fmt.ctprintf("Gold +%d/turn", colony_gold_production(&g.colony))
-	draw_text(gold_prod, x, 106, 16, rl.Color{240, 205, 90, 255})
-	x += measure_text(gold_prod, 16) + 24
+	rl.DrawText(gold_prod, x, 106, 16, rl.Color{240, 205, 90, 255})
+	x += rl.MeasureText(gold_prod, 16) + 24
 	up := fmt.ctprintf("Upkeep %d food/turn   Monsters %d (%d stored)   Capture cards %d", upkeep, player_monster_count(&g.colony), len(g.colony.storage), g.colony.capture_cards)
-	draw_text(up, x, 106, 16, rl.Color{150, 150, 175, 255})
+	rl.DrawText(up, x, 106, 16, rl.Color{150, 150, 175, 255})
 
 	// Hovered tile info + occupants (inspect without attacking).
 	hovered := hex_renderer_hovered(&g.renderer)
@@ -649,7 +649,7 @@ draw_colony_hud :: proc(g: ^Game) {
 		} else {
 			info = fmt.ctprintf("Tile: %s", terrain_name(t.terrain))
 		}
-		draw_text(info, 236, 130, 16, rl.Color{180, 180, 200, 255})
+		rl.DrawText(info, 236, 130, 16, rl.Color{180, 180, 200, 255})
 
 		oy := i32(152)
 		// Improvement production status (explains why it may be idle).
@@ -667,7 +667,7 @@ draw_colony_hud :: proc(g: ^Game) {
 			} else {
 				line = fmt.ctprintf("Mine: +4 gold/turn to stockpile (%d/%d - build a Treasury near the mine)", g.colony.gold, BASE_GOLD_CAP)
 			}
-			draw_text(line, 236, oy, 14, staffed ? green : amber)
+			rl.DrawText(line, 236, oy, 14, staffed ? green : amber)
 			oy += 18
 		case .FARM:
 			staffed := monsters_on_tile(&g.colony, hovered, false) > 0
@@ -677,7 +677,7 @@ draw_colony_hud :: proc(g: ^Game) {
 			} else {
 				line = "Farm: idle - put a monster here to work it"
 			}
-			draw_text(line, 236, oy, 14, staffed ? green : amber)
+			rl.DrawText(line, 236, oy, 14, staffed ? green : amber)
 			oy += 18
 		case:
 		}
@@ -685,7 +685,7 @@ draw_colony_hud :: proc(g: ^Game) {
 		// Occupants on this tile.
 		count := monsters_on_tile(&g.colony, hovered, false) + monsters_on_tile(&g.colony, hovered, true)
 		if count == 0 {
-			draw_text("no monsters here", 236, oy, 14, rl.Color{120, 120, 140, 255})
+			rl.DrawText("no monsters here", 236, oy, 14, rl.Color{120, 120, 140, 255})
 		} else {
 			for &m in g.colony.roster {
 				if !hex_equal(m.pos, hovered) {
@@ -694,26 +694,26 @@ draw_colony_hud :: proc(g: ^Game) {
 				col := m.wild ? rl.Color{240, 110, 110, 255} : rl.Color{140, 230, 160, 255}
 				tag := m.wild ? "wild" : "yours"
 				line := fmt.ctprintf("%s Lvl %d  %d/%d  XP %d/%d  (%s)", m.creature.name, m.creature.level, m.creature.hp, m.creature.max_hp, m.creature.xp, xp_to_next(m.creature.level), tag)
-				draw_text(line, 236, oy, 14, col)
+				rl.DrawText(line, 236, oy, 14, col)
 				oy += 18
 			}
 		}
 	}
 
-	draw_text("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck | M dex | I improvements | G bag | U upgrades | Q journal | J relics | Y fallen | C nursery | H storage | O save | K help | P settings | X sound", 20, i32(sh) - 70, 14, rl.Color{120, 120, 145, 255})
-	draw_text("RMB/WASD pan  |  wheel zoom  |  R recenter  |  M monsterdex  |  N new run", 20, i32(sh) - 46, 16, rl.Color{120, 120, 145, 255})
+	rl.DrawText("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck | M dex | I improvements | G bag | U upgrades | Q journal | J relics | Y fallen | C nursery | H storage | O save | K help | P settings | X sound", 20, i32(sh) - 70, 14, rl.Color{120, 120, 145, 255})
+	rl.DrawText("RMB/WASD pan  |  wheel zoom  |  R recenter  |  M monsterdex  |  N new run", 20, i32(sh) - 46, 16, rl.Color{120, 120, 145, 255})
 
 	// World notifications (scuffles in the distance, things slipping away).
 	my := i32(sh) - 130 - i32(len(g.colony.messages)) * 22
 	for msg, i in g.colony.messages {
 		text := fmt.ctprintf("%s", msg)
-		w := measure_text(text, 18)
-		draw_text(text, i32(sw) / 2 - w / 2, my + i32(i) * 22, 18, rl.Color{225, 195, 150, 255})
+		w := rl.MeasureText(text, 18)
+		rl.DrawText(text, i32(sw) / 2 - w / 2, my + i32(i) * 22, 18, rl.Color{225, 195, 150, 255})
 	}
 
 	if g.status_timer > 0 {
-		w := measure_text(g.status, 22)
-		draw_text(g.status, i32(sw) / 2 - w / 2, i32(sh) - 110, 22, rl.Color{235, 235, 250, 255})
+		w := rl.MeasureText(g.status, 22)
+		rl.DrawText(g.status, i32(sw) / 2 - w / 2, i32(sh) - 110, 22, rl.Color{235, 235, 250, 255})
 	}
 }
 
@@ -728,7 +728,7 @@ roster_entry_rect :: proc(i: int) -> rl.Rectangle {
 
 draw_roster_panel :: proc(g: ^Game) {
 	sw := f32(rl.GetScreenWidth())
-	draw_text("MONSTERS", i32(sw) - 236, 152, 18, rl.Color{170, 170, 190, 255})
+	rl.DrawText("MONSTERS", i32(sw) - 236, 152, 18, rl.Color{170, 170, 190, 255})
 
 	slot := 0
 	for &m, i in g.colony.roster {
@@ -753,20 +753,20 @@ draw_roster_panel :: proc(g: ^Game) {
 		rl.DrawCircleLinesV(rl.Vector2{rec.x + 24, rec.y + 26}, 16, element_color(creature_element(&m.creature)))
 
 		name := fmt.ctprintf("%s  Lvl %d%s", m.creature.name, m.creature.level, m.acted ? "  (done)" : "")
-		draw_text(name, i32(rec.x) + 48, i32(rec.y) + 4, 15, m.acted ? rl.Color{150, 150, 165, 255} : rl.Color{225, 225, 240, 255})
+		rl.DrawText(name, i32(rec.x) + 48, i32(rec.y) + 4, 15, m.acted ? rl.Color{150, 150, 165, 255} : rl.Color{225, 225, 240, 255})
 
 		hp := fmt.ctprintf("HP %d/%d", m.creature.hp, m.creature.max_hp)
-		draw_text(hp, i32(rec.x) + 48, i32(rec.y) + 22, 13, rl.Color{210, 130, 130, 255})
+		rl.DrawText(hp, i32(rec.x) + 48, i32(rec.y) + 22, 13, rl.Color{210, 130, 130, 255})
 
 		if m.creature.ability != .NONE {
 			ab := ability_name(m.creature.ability)
-			aw := measure_text(ab, 12)
-			draw_text(ab, i32(rec.x + rec.width) - aw - 8, i32(rec.y) + 23, 12, rl.Color{200, 180, 240, 255})
+			aw := rl.MeasureText(ab, 12)
+			rl.DrawText(ab, i32(rec.x + rec.width) - aw - 8, i32(rec.y) + 23, 12, rl.Color{200, 180, 240, 255})
 		}
 
 		pct := int(m.food / max(monster_satiety_max(&m), 1.0) * 100)
 		food := fmt.ctprintf("Food %d%%   En %s/%s", pct, fmt_num(m.creature.energy), fmt_num(m.creature.energy_max))
-		draw_text(food, i32(rec.x) + 48, i32(rec.y) + 38, 12, rl.Color{150, 210, 150, 255})
+		rl.DrawText(food, i32(rec.x) + 48, i32(rec.y) + 38, 12, rl.Color{150, 210, 150, 255})
 
 		// XP progress: bar + "XP cur / next".
 		need := xp_to_next(m.creature.level)
@@ -777,7 +777,7 @@ draw_roster_panel :: proc(g: ^Game) {
 			rl.DrawRectangleRec(rl.Rectangle{xp_rec.x, xp_rec.y, xp_rec.width * frac, xp_rec.height}, rl.Color{150, 210, 255, 255})
 		}
 		xptxt := fmt.ctprintf("XP %d/%d", m.creature.xp, need)
-		draw_text(xptxt, i32(rec.x) + i32(rec.width) - 60, i32(rec.y) + 49, 12, rl.Color{150, 210, 255, 255})
+		rl.DrawText(xptxt, i32(rec.x) + i32(rec.width) - 60, i32(rec.y) + 49, 12, rl.Color{150, 210, 255, 255})
 
 		if rl.CheckCollisionPointRec(rl.GetMousePosition(), rec) {
 			ui_want_hand()
@@ -809,8 +809,8 @@ draw_end_turn_button :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(rec, 0.25, 8, col)
 	rl.DrawRectangleRoundedLinesEx(rec, 0.25, 8, 2, rl.Color{210, 230, 220, 255})
 	lbl := cstring("End Turn (Space)")
-	w := measure_text(lbl, 18)
-	draw_text(lbl, i32(rec.x + rec.width / 2) - w / 2, i32(rec.y + rec.height / 2) - 9, 18, rl.Color{240, 255, 245, 255})
+	w := rl.MeasureText(lbl, 18)
+	rl.DrawText(lbl, i32(rec.x + rec.width / 2) - w / 2, i32(rec.y + rec.height / 2) - 9, 18, rl.Color{240, 255, 245, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -838,7 +838,7 @@ draw_terrain_legend :: proc() {
 	sh := f32(rl.GetScreenHeight())
 	x := i32(20)
 	y := i32(sh) - 250
-	draw_text("TERRAIN", x, y - 24, 16, rl.Color{150, 150, 170, 255})
+	rl.DrawText("TERRAIN", x, y - 24, 16, rl.Color{150, 150, 170, 255})
 	for e, i in entries {
 		col := i / 7
 		row := i % 7
@@ -846,7 +846,7 @@ draw_terrain_legend :: proc() {
 		ey := y + i32(row) * 24
 		rl.DrawRectangle(ex, ey, 16, 16, terrain_color(e.terrain))
 		rl.DrawRectangleLines(ex, ey, 16, 16, rl.Color{20, 20, 20, 255})
-		draw_text(e.label, ex + 26, ey - 1, 15, rl.Color{170, 170, 190, 255})
+		rl.DrawText(e.label, ex + 26, ey - 1, 15, rl.Color{170, 170, 190, 255})
 	}
 }
 
@@ -917,12 +917,12 @@ draw_minimap :: proc(g: ^Game) {
 	p := minimap_rect()
 	rl.DrawRectangleRounded(p, 0.04, 6, rl.Color{12, 14, 20, 232})
 	rl.DrawRectangleRoundedLinesEx(p, 0.04, 6, 2, rl.Color{72, 82, 102, 255})
-	draw_text("MAP", i32(p.x) + 8, i32(p.y) + 4, 13, rl.Color{150, 160, 180, 255})
-	draw_text("Z", i32(p.x + p.width) - 16, i32(p.y) + 4, 13, rl.Color{110, 120, 140, 255})
+	rl.DrawText("MAP", i32(p.x) + 8, i32(p.y) + 4, 13, rl.Color{150, 160, 180, 255})
+	rl.DrawText("Z", i32(p.x + p.width) - 16, i32(p.y) + 4, 13, rl.Color{110, 120, 140, 255})
 
 	v := minimap_view(g)
 	if !v.ok {
-		draw_text("unexplored", i32(p.x) + 8, i32(p.y) + 26, 13, rl.Color{120, 120, 140, 255})
+		rl.DrawText("unexplored", i32(p.x) + 8, i32(p.y) + 26, 13, rl.Color{120, 120, 140, 255})
 		return
 	}
 	if rl.CheckCollisionPointRec(rl.GetMousePosition(), minimap_inner()) {

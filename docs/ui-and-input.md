@@ -208,7 +208,7 @@ boss-dropped relics. **No function keys are used** (they collide with the OS):
 help is `K`, settings `P`, mute `X`, and quick-save `F`.
 
 The **improvements dex** (`draw_improvements`, `I`) is a browsable reference for
-all 28 improvements: a scrolling list on the left and, on the right, the animated
+all 27 improvements: a scrolling list on the left and, on the right, the animated
 icon, base cost, HP, category, the terrains it can be built on (chips coloured by
 terrain), the short effect line, and a long-form `improvement_detail` paragraph
 (word-wrapped by `draw_text_wrapped`).
