@@ -62,6 +62,8 @@ Game :: struct {
 	// crystal progression panel
 	show_upgrades: bool,
 	upgrade_scroll: f32,
+	// build panel option list scroll
+	build_scroll: f32,
 
 	// quest board (milestones) — Phase 22
 	show_quests: bool,
@@ -92,10 +94,12 @@ Game :: struct {
 	show_minimap: bool,
 
 	// settings panel (Phase 24)
-	show_settings: bool,
-	tooltips_on:   bool,
-	autosave_on:   bool,
-	show_fps:      bool,
+	show_settings:       bool,
+	tooltips_on:         bool,
+	autosave_on:         bool,
+	show_fps:            bool,
+	show_terrain_legend: bool,
+	show_key_hints:      bool,
 
 	// modal yes/no confirmation for destructive actions
 	confirm_kind: Confirm_Kind,
@@ -165,6 +169,8 @@ main :: proc() {
 	g.show_minimap = true
 	g.tooltips_on = true
 	g.autosave_on = true
+	g.show_terrain_legend = true
+	g.show_key_hints = true
 	g.ring_total = make(map[u64]int)
 	g.ring_seen = make(map[u64]int)
 	defer {
@@ -177,7 +183,7 @@ main :: proc() {
 		delete(g.ring_seen)
 	}
 
-	hex_renderer_init(&g.renderer, 46.0, int(rl.GetScreenWidth()), int(rl.GetScreenHeight()))
+	hex_renderer_init(&g.renderer, 46.0, int(screen_w()), int(screen_h()))
 
 	goto_title(&g)
 	defer end_run(&g)
@@ -185,15 +191,15 @@ main :: proc() {
 	for !rl.WindowShouldClose() && !g.quit {
 		dt := rl.GetFrameTime()
 
-		g.renderer.origin_x = f32(rl.GetScreenWidth()) / 2
-		g.renderer.origin_y = f32(rl.GetScreenHeight()) / 2
+		g.renderer.origin_x = f32(screen_w()) / 2
+		g.renderer.origin_y = f32(screen_h()) / 2
 
 		audio_update()
 		game_update(&g, dt)
 
-		rl.BeginDrawing()
+		screen_begin()
 		game_draw(&g)
-		rl.EndDrawing()
+		screen_end()
 	}
 }
 
@@ -286,6 +292,12 @@ game_update :: proc(g: ^Game, dt: f32) {
 	}
 	if g.new_run_armed > 0 {
 		g.new_run_armed -= dt
+	}
+
+	colony_update_move_anims(g, dt)
+	audio_set_threat(nearest_threat(&g.colony))
+	if g.colony.tremor > 0 {
+		g.colony.tremor -= dt
 	}
 
 	// Sound toggle (any mode).
@@ -475,7 +487,7 @@ update_starter :: proc(g: ^Game) {
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for i in 0..<len(STARTER_SPECIES) {
 		if rl.CheckCollisionPointRec(mp, starter_rect(i)) {
 			choose_starter(g, STARTER_SPECIES[i])
@@ -491,11 +503,11 @@ update_colony :: proc(g: ^Game, dt: f32) {
 	   rl.GetMouseWheelMove() != 0 || rl.IsMouseButtonDown(.RIGHT) {
 		g.cam_tween = 0
 	}
-	hex_renderer_update_camera(&g.renderer, dt)
+	hex_renderer_update_camera(&g.renderer, dt, !over_build_panel(g))
 	update_camera_tween(g, dt)
 
 	if rl.IsMouseButtonDown(.RIGHT) {
-		d := rl.GetMouseDelta()
+		d := mouse_delta()
 		g.renderer.camera_x -= d.x / g.renderer.zoom
 		g.renderer.camera_y -= d.y / g.renderer.zoom
 	}
@@ -510,6 +522,7 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		g.arena_open = false
 		g.has_build = false
 		g.build_preview = .NONE
+		g.build_scroll = 0
 		if g.build_mode {
 			set_status(g, "Build mode: click a tile, then pick an improvement. B/Esc exits.")
 		}
@@ -550,7 +563,7 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		return
 	}
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	if rl.IsMouseButtonPressed(.LEFT) {
 		if h, ok := minimap_hex_at(g, mp); ok {
 			tween_camera(g, h)
@@ -661,16 +674,36 @@ selected_on_arena :: proc(g: ^Game) -> bool {
 	return t != nil && t.terrain == .ARENA
 }
 
+// True when the cursor is over the build panel, so it captures the wheel
+// instead of the map zoom.
+over_build_panel :: proc(g: ^Game) -> bool {
+	return g.build_mode && rl.CheckCollisionPointRec(mouse_pos(), build_panel_rect())
+}
+
 update_build :: proc(g: ^Game) {
 	if rl.IsKeyPressed(.ESCAPE) {
 		g.build_mode = false
 		g.has_build = false
 		return
 	}
+	// Scroll the option list (only once a tile is chosen).
+	if g.has_build && over_build_panel(g) {
+		if t := tile_at(&g.colony, g.build_hex); t != nil {
+			improved := t.improvement != .NONE || t.overlay != .NONE
+			start := improved ? BUILD_REPLACE_START : BUILD_OPT_START
+			opts: [32]Improvement
+			n := buildable_improvements(&g.colony, g.build_hex, opts[:])
+			max_s := build_max_scroll(start, n)
+			if w := rl.GetMouseWheelMove(); w != 0 {
+				g.build_scroll = clamp(g.build_scroll - w * 44, 0, max_s)
+			}
+			g.build_scroll = clamp(g.build_scroll, 0, max_s)
+		}
+	}
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 
 	if g.has_build {
 		if t := tile_at(&g.colony, g.build_hex); t != nil {
@@ -702,8 +735,9 @@ update_build :: proc(g: ^Game) {
 			opts: [32]Improvement
 			n := buildable_improvements(&g.colony, g.build_hex, opts[:])
 			start := improved ? BUILD_REPLACE_START : BUILD_OPT_START
+			area := build_options_area(start)
 			for i in 0..<n {
-				if rl.CheckCollisionPointRec(mp, build_option_rect_at(start, i)) {
+				if rl.CheckCollisionPointRec(mp, area) && rl.CheckCollisionPointRec(mp, build_option_rect_at(start, i, g.build_scroll)) {
 					// Replacing a non-stackable building asks first.
 					if improved && !improvement_stacks(opts[i]) {
 						ask_confirm(g, .OVERWRITE_BUILD, int(opts[i]), 0, g.build_hex)
@@ -743,6 +777,7 @@ update_build :: proc(g: ^Game) {
 		}
 		g.build_hex = hovered
 		g.has_build = true
+		g.build_scroll = 0
 	}
 }
 
@@ -754,7 +789,7 @@ update_trade :: proc(g: ^Game) {
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	s := g.selected
 
 	// Recruit a monster from the stock.
@@ -956,6 +991,6 @@ game_draw :: proc(g: ^Game) {
 	tooltip_draw()
 	ui_cursor_apply()
 	if g.show_fps {
-		rl.DrawFPS(i32(rl.GetScreenWidth()) - 96, i32(rl.GetScreenHeight()) - 26)
+		rl.DrawFPS(i32(screen_w()) - 96, i32(screen_h()) - 26)
 	}
 }

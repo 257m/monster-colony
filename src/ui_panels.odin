@@ -8,14 +8,32 @@ build_panel_rect :: proc() -> rl.Rectangle {
 
 BUILD_OPT_START     :: f32(96)
 BUILD_REPLACE_START :: f32(216)
+BUILD_ROW_H         :: f32(40)
 
-build_option_rect_at :: proc(start_y: f32, i: int) -> rl.Rectangle {
+build_option_rect_at :: proc(start_y: f32, i: int, scroll: f32 = 0) -> rl.Rectangle {
 	p := build_panel_rect()
 	col := i % 2
 	row := i / 2
 	gap := f32(8)
 	w := (p.width - 24 - gap) / 2
-	return rl.Rectangle{p.x + 12 + f32(col) * (w + gap), p.y + start_y + f32(row) * 40, w, 38}
+	return rl.Rectangle{p.x + 12 + f32(col) * (w + gap), p.y + start_y + f32(row) * BUILD_ROW_H - scroll, w, 38}
+}
+
+// The scrollable region the option grid is clipped to.
+build_options_area :: proc(start_y: f32) -> rl.Rectangle {
+	p := build_panel_rect()
+	top := p.y + start_y - 6
+	return rl.Rectangle{p.x + 6, top, p.width - 12, (p.y + p.height - 34) - top}
+}
+
+build_options_rows :: proc(n: int) -> int {
+	return (n + 1) / 2
+}
+
+build_max_scroll :: proc(start_y: f32, n: int) -> f32 {
+	area := build_options_area(start_y)
+	content := f32(build_options_rows(n)) * BUILD_ROW_H
+	return max(0, content - area.height + 6)
 }
 
 build_repair_rect :: proc() -> rl.Rectangle {
@@ -69,13 +87,13 @@ draw_build_panel :: proc(g: ^Game) {
 		afford := can_repair && colony_total_gold(&g.colony) >= rcost
 		rep := build_repair_rect()
 		draw_button(rep, can_repair ? fmt.ctprintf("Repair %dg", rcost) : cstring("Full HP"), afford, BUTTON_PANEL, 15)
-		if rl.CheckCollisionPointRec(rl.GetMousePosition(), rep) {
+		if rl.CheckCollisionPointRec(mouse_pos(), rep) {
 			tooltip_set("%s", can_repair ? fmt.ctprintf("Repair to %d HP for %dg.", rcap, rcost) : cstring("Already at full HP."))
 		}
 		dem := build_demolish_rect()
 		refund := improvement_refund(t.overlay != .NONE ? t.overlay : t.improvement)
 		draw_button(dem, fmt.ctprintf("Demolish +%dg", refund), true, BUTTON_PANEL, 15)
-		if rl.CheckCollisionPointRec(rl.GetMousePosition(), dem) {
+		if rl.CheckCollisionPointRec(mouse_pos(), dem) {
 			tooltip_set("Tear this down and refund %dg (half its base cost).", refund)
 		}
 
@@ -99,14 +117,20 @@ draw_build_panel :: proc(g: ^Game) {
 }
 
 draw_build_options :: proc(g: ^Game, opts: []Improvement, n: int, start_y: f32) {
-	mp := rl.GetMousePosition()
+	area := build_options_area(start_y)
+	mp := mouse_pos()
+	in_area := rl.CheckCollisionPointRec(mp, area)
 	hovered := Improvement.NONE
+	scissor_begin(area)
 	for i in 0..<n {
 		im := opts[i]
-		rec := build_option_rect_at(start_y, i)
+		rec := build_option_rect_at(start_y, i, g.build_scroll)
+		if rec.y + rec.height < area.y || rec.y > area.y + area.height {
+			continue
+		}
 		cost := improvement_cost_scaled(&g.colony, im)
 		afford := colony_total_gold(&g.colony) >= cost
-		hover := rl.CheckCollisionPointRec(mp, rec)
+		hover := in_area && rl.CheckCollisionPointRec(mp, rec)
 		if hover {
 			hovered = im
 		}
@@ -134,7 +158,17 @@ draw_build_options :: proc(g: ^Game, opts: []Improvement, n: int, start_y: f32) 
 			tooltip_set("%s  -  %s\n%s", improvement_name(im), improvement_effect(im), improvement_detail(im))
 		}
 	}
+	scissor_end()
 	g.build_preview = hovered
+
+	// Scrollbar when the list is longer than the visible area.
+	if max_s := build_max_scroll(start_y, n); max_s > 0 {
+		track := rl.Rectangle{area.x + area.width - 6, area.y, 4, area.height}
+		rl.DrawRectangleRounded(track, 0.5, 4, rl.Color{30, 32, 44, 220})
+		kh := max(area.height * area.height / (area.height + max_s), 24)
+		ky := area.y + (area.height - kh) * (g.build_scroll / max_s)
+		rl.DrawRectangleRounded(rl.Rectangle{track.x, ky, 4, kh}, 0.5, 4, rl.Color{120, 130, 160, 235})
+	}
 
 	// Hovered improvement's effect, along the bottom of the panel.
 	p := build_panel_rect()
@@ -144,8 +178,8 @@ draw_build_options :: proc(g: ^Game, opts: []Improvement, n: int, start_y: f32) 
 }
 
 trade_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw / 2 - 240, sh / 2 - 292, 480, 584}
 }
 
@@ -175,7 +209,7 @@ trade_revive_rect :: proc(i: int) -> rl.Rectangle {
 }
 
 draw_trade_button :: proc(rec: rl.Rectangle, label: cstring, enabled: bool, cost_text: cstring) {
-	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), rec)
+	hover := rl.CheckCollisionPointRec(mouse_pos(), rec)
 	bg := rl.Color{30, 30, 42, 255}
 	if !enabled {
 		bg = rl.Color{26, 24, 26, 255}
@@ -192,7 +226,7 @@ draw_trade_button :: proc(rec: rl.Rectangle, label: cstring, enabled: bool, cost
 }
 
 draw_recruit_button :: proc(rec: rl.Rectangle, offer: Shop_Offer, enabled: bool) {
-	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), rec)
+	hover := rl.CheckCollisionPointRec(mouse_pos(), rec)
 	bg := rl.Color{30, 30, 42, 255}
 	if !enabled {
 		bg = rl.Color{26, 24, 26, 255}
@@ -211,8 +245,8 @@ draw_recruit_button :: proc(rec: rl.Rectangle, offer: Shop_Offer, enabled: bool)
 }
 
 draw_trade_panel :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 160})
 
 	p := trade_panel_rect()
@@ -243,19 +277,19 @@ draw_trade_panel :: proc(g: ^Game) {
 	case:             heal_label = fmt.ctprintf("Heal %s", g.colony.roster[s].creature.name)
 	}
 	draw_trade_button(trade_heal_rect(), heal_label, hc > 0 && colony_total_gold(&g.colony) >= hc, hc > 0 ? fmt.ctprintf("%dg", hc) : "")
-	if rl.CheckCollisionPointRec(rl.GetMousePosition(), trade_heal_rect()) {
+	if rl.CheckCollisionPointRec(mouse_pos(), trade_heal_rect()) {
 		tooltip_set("Heal the selected monster to full HP. The price scales with the HP it is missing.")
 	}
 
 	ec := have_sel ? energy_cost(&g.colony.roster[s]) : 0
 	draw_trade_button(trade_energy_rect(), cstring("Refill movement energy"), have_sel && colony_total_gold(&g.colony) >= ec, have_sel ? fmt.ctprintf("%dg", ec) : "")
-	if rl.CheckCollisionPointRec(rl.GetMousePosition(), trade_energy_rect()) {
+	if rl.CheckCollisionPointRec(mouse_pos(), trade_energy_rect()) {
 		tooltip_set("Top the selected monster's movement energy back up to its bank. Energy is shared with battle.")
 	}
 
 	ccost := capture_card_cost()
 	draw_trade_button(trade_capture_rect(), fmt.ctprintf("Buy Capture Card (have %d)", g.colony.capture_cards), colony_total_gold(&g.colony) >= ccost, fmt.ctprintf("%dg", ccost))
-	if rl.CheckCollisionPointRec(rl.GetMousePosition(), trade_capture_rect()) {
+	if rl.CheckCollisionPointRec(mouse_pos(), trade_capture_rect()) {
 		tooltip_set("Capture cards let you recruit a wild mid-battle instead of defeating it. Scout upgrades improve the odds.")
 	}
 
@@ -283,7 +317,7 @@ Terrain_Legend_Entry :: struct {
 
 // Screen rectangle of deck card `i` in the deck viewer, honouring scroll.
 deck_card_rect :: proc(g: ^Game, i: int) -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	total_w := f32(DV_COLS) * DV_CW + f32(DV_COLS - 1) * DV_GAP
 	start_x := sw / 2 - total_w / 2
 	base_y := DV_TOP - g.view_scroll
@@ -299,7 +333,7 @@ deck_max_scroll :: proc(g: ^Game) -> f32 {
 	n := len(g.colony.roster[g.view_index].creature.deck)
 	rows := (n + DV_COLS - 1) / DV_COLS
 	content := f32(rows) * (DV_CH + DV_GAP) - DV_GAP
-	visible := f32(rl.GetScreenHeight()) - DV_TOP - DV_BOTTOM
+	visible := f32(screen_h()) - DV_TOP - DV_BOTTOM
 	return max(f32(0), content - visible)
 }
 
@@ -318,7 +352,7 @@ update_deck_viewer :: proc(g: ^Game, dt: f32) {
 	m := &g.colony.roster[g.view_index]
 	// Item slot: equip-from-bag / unequip (your monsters only).
 	if !m.wild && rl.IsMouseButtonPressed(.LEFT) {
-		mp := rl.GetMousePosition()
+		mp := mouse_pos()
 		if rl.CheckCollisionPointRec(mp, deck_equip_rect()) && len(g.colony.items) > 0 {
 			old := m.creature.item
 			next := g.colony.items[0]
@@ -335,7 +369,7 @@ update_deck_viewer :: proc(g: ^Game, dt: f32) {
 	}
 	// Right-click a card to forget it (deck thinning) for gold — with a confirm.
 	if !m.wild && rl.IsMouseButtonPressed(.RIGHT) {
-		mp := rl.GetMousePosition()
+		mp := mouse_pos()
 		for i in 0..<len(m.creature.deck) {
 			if rl.CheckCollisionPointRec(mp, deck_card_rect(g, i)) {
 				ask_confirm(g, .FORGET_CARD, g.view_index, i, Hex{})
@@ -359,18 +393,18 @@ update_deck_viewer :: proc(g: ^Game, dt: f32) {
 }
 
 deck_equip_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	return rl.Rectangle{sw - 330, 30, 290, 42}
 }
 
 deck_unequip_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	return rl.Rectangle{sw - 330, 78, 290, 42}
 }
 
 draw_deck_viewer :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
 
 	c := &g.colony.roster[g.view_index].creature
@@ -403,13 +437,13 @@ draw_deck_viewer :: proc(g: ^Game) {
 	draw_button(deck_unequip_rect(), cstring("Unequip"), can_gear && c.item != .NONE)
 
 	n := len(c.deck)
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 
 	// Leave headroom above the grid so a hovered (lifted) top-row card is not
 	// clipped by the scissor region.
 	clip_top := i32(DV_TOP) - 36
 	clip_bottom := i32(sh - DV_BOTTOM) + 8
-	rl.BeginScissorMode(0, clip_top, i32(sw), clip_bottom - clip_top)
+	scissor_begin(rl.Rectangle{0, f32(clip_top), sw, f32(clip_bottom - clip_top)})
 	for i in 0..<n {
 		rec := deck_card_rect(g, i)
 		if rec.y + DV_CH < f32(clip_top) - 4 || rec.y > f32(clip_bottom) + 4 {
@@ -418,7 +452,7 @@ draw_deck_viewer :: proc(g: ^Game) {
 		hovered := rl.CheckCollisionPointRec(mp, rec)
 		draw_card(c.deck[i], rec, true, hovered)
 	}
-	rl.EndScissorMode()
+	scissor_end()
 
 	hint := cstring("V / Esc close   |   wheel or Up/Down scroll   |   right-click a card to forget it (gold)")
 	hw := rl.MeasureText(hint, 16)
@@ -437,7 +471,7 @@ STORAGE_STORED_ROWS :: 8
 
 // A small slot showing a stored monster (or an empty hint) with an action label.
 draw_stored_slot :: proc(rec: rl.Rectangle, c: ^Colony, si: int, empty_label, action: cstring, col: rl.Color) {
-	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), rec)
+	hover := rl.CheckCollisionPointRec(mouse_pos(), rec)
 	if si < 0 {
 		rl.DrawRectangleRounded(rec, 0.18, 4, rl.Color{24, 24, 30, 255})
 		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 4, 1.5, rl.Color{70, 70, 82, 255})
@@ -494,7 +528,7 @@ update_nursery :: proc(g: ^Game) {
 	if n == 0 || !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	hex := nursery_hex_at(&g.colony, g.nursery_sel)
 
 	for row in 0..<min(NURSERY_LIST_ROWS, n) {
@@ -549,8 +583,8 @@ update_nursery :: proc(g: ^Game) {
 }
 
 draw_nursery :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
 
 	rl.DrawText(cstring("Nurseries"), 40, 26, 34, rl.Color{235, 235, 245, 255})
@@ -560,7 +594,7 @@ draw_nursery :: proc(g: ^Game) {
 	n := nursery_count(&g.colony)
 	rl.DrawText(fmt.ctprintf("Your Nurseries (%d):", n), 40, 118, 16, rl.Color{150, 150, 170, 255})
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for row in 0..<min(NURSERY_LIST_ROWS, n) {
 		k := g.nursery_first + row
 		if k >= n {
@@ -666,7 +700,7 @@ update_storage :: proc(g: ^Game) {
 	if n == 0 || !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	hex := den_hex_at(&g.colony, g.storage_sel)
 
 	for row in 0..<min(STORAGE_LIST_ROWS, n) {
@@ -716,8 +750,8 @@ update_storage :: proc(g: ^Game) {
 }
 
 draw_storage :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
 
 	rl.DrawText(cstring("Monster Storage"), 40, 26, 34, rl.Color{235, 235, 245, 255})
@@ -727,7 +761,7 @@ draw_storage :: proc(g: ^Game) {
 	n := den_count(&g.colony)
 	rl.DrawText(fmt.ctprintf("Your Dens (%d):", n), 40, 118, 16, rl.Color{150, 150, 170, 255})
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for row in 0..<min(STORAGE_LIST_ROWS, n) {
 		k := g.storage_first + row
 		if k >= n {
@@ -821,7 +855,7 @@ save_slot_load_rect :: proc(slot: int) -> rl.Rectangle {
 // A wide "New Run" button below the slots: back to the starter picker for a
 // fresh run (and a fresh seed).
 save_new_run_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	return rl.Rectangle{sw / 2 - 170, 170 + f32(SAVE_SLOTS + 1) * SAVE_ROW_H + 8, 340, 52}
 }
 
@@ -849,7 +883,7 @@ update_save_panel :: proc(g: ^Game) {
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 
 	if rl.CheckCollisionPointRec(mp, save_new_run_rect()) {
 		try_new_run(g)
@@ -896,7 +930,7 @@ update_save_panel :: proc(g: ^Game) {
 
 draw_new_run_button :: proc(g: ^Game) {
 	rec := save_new_run_rect()
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	armed := g.new_run_armed > 0
 	hover := rl.CheckCollisionPointRec(mp, rec)
 	bg := armed ? rl.Color{96, 44, 40, 255} : (hover ? rl.Color{52, 62, 84, 255} : rl.Color{28, 32, 44, 255})
@@ -909,8 +943,8 @@ draw_new_run_button :: proc(g: ^Game) {
 }
 
 draw_save_panel :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 210})
 
 	rl.DrawText(cstring("Save / Load"), 120, 40, 34, rl.Color{235, 235, 245, 255})
@@ -927,7 +961,7 @@ draw_save_panel :: proc(g: ^Game) {
 		return
 	}
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for slot in 0 ..< SAVE_SLOTS {
 		rec := save_slot_rect(slot)
 		meta := save_read_meta(slot)
@@ -995,7 +1029,7 @@ update_encyclopedia :: proc(g: ^Game) {
 }
 
 draw_encyclopedia :: proc(g: ^Game) {
-	sh := f32(rl.GetScreenHeight())
+	sh := f32(screen_h())
 	draw_list_screen_header("MONSTER ENCYCLOPEDIA", "Up/Down, wheel or click to browse   |   M / Esc to close")
 
 	n := len(SPECIES)
@@ -1006,7 +1040,7 @@ draw_encyclopedia :: proc(g: ^Game) {
 	v.first = g.encyclopedia_first
 	panel := rl.Rectangle{30, 108, 320, f32(ENCY_ROWS) * 26 + 12}
 	draw_list_chrome(v, n, panel)
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for row in 0..<v.rows {
 		i := v.first + row
 		if i >= n {
@@ -1182,8 +1216,8 @@ update_improvements :: proc(g: ^Game) {
 }
 
 draw_improvements :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	draw_list_screen_header("IMPROVEMENTS", "Up/Down, wheel or click to browse   |   I / Esc to close")
 
 	n := len(ALL_IMPROVEMENTS)
@@ -1194,7 +1228,7 @@ draw_improvements :: proc(g: ^Game) {
 	v.first = g.improvement_first
 	panel := rl.Rectangle{30, 108, 320, f32(IMPROV_ROWS) * 24 + 12}
 	draw_list_chrome(v, n, panel)
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for row in 0 ..< v.rows {
 		i := v.first + row
 		if i >= n {
@@ -1276,7 +1310,7 @@ BAG_ROWS :: 20
 BAG_LIST :: List_View{rows = BAG_ROWS, row_h = 24, x = 40, y = 120, w = 320}
 
 bag_equip_rect :: proc() -> rl.Rectangle {
-	sh := f32(rl.GetScreenHeight())
+	sh := f32(screen_h())
 	return rl.Rectangle{390, sh - 96, 320, 46}
 }
 
@@ -1334,7 +1368,7 @@ update_bag :: proc(g: ^Game) {
 	g.bag_first = v.first
 
 	// Equip the selected item onto the map-selected monster (bag-specific).
-	if n > 0 && rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(rl.GetMousePosition(), bag_equip_rect()) {
+	if n > 0 && rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos(), bag_equip_rect()) {
 		if equip_bag_item(g, g.bag_index) {
 			set_status(g, "Item equipped.")
 			g.bag_index = clamp(g.bag_index, 0, max(len(g.colony.items) - 1, 0))
@@ -1345,7 +1379,7 @@ update_bag :: proc(g: ^Game) {
 }
 
 draw_bag :: proc(g: ^Game) {
-	sh := f32(rl.GetScreenHeight())
+	sh := f32(screen_h())
 	draw_list_screen_header(fmt.ctprintf("ITEM BAG   (%d / %d)", len(g.colony.items), colony_item_cap(&g.colony)), "Up/Down, wheel or click to browse   |   G / Esc to close")
 
 	n := len(g.colony.items)
@@ -1356,7 +1390,7 @@ draw_bag :: proc(g: ^Game) {
 	v.first = g.bag_first
 	panel := rl.Rectangle{30, 108, 320, f32(BAG_ROWS) * 24 + 12}
 	draw_list_chrome(v, n, panel)
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for row in 0 ..< v.rows {
 		i := v.first + row
 		if i >= n {
@@ -1428,8 +1462,8 @@ draw_bag :: proc(g: ^Game) {
 UPGRADE_ROWS :: 12 // rows per column; 3 columns hold up to 36 nodes
 
 upgrade_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	w := f32(1230)
 	h := f32(692)
 	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
@@ -1469,7 +1503,7 @@ update_upgrades :: proc(g: ^Game) {
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for i in 0..<len(UPGRADE_ORDER) {
 		if rl.CheckCollisionPointRec(mp, upgrade_buy_rect(i, g.upgrade_scroll)) {
 			u := UPGRADE_ORDER[i]
@@ -1487,8 +1521,8 @@ update_upgrades :: proc(g: ^Game) {
 }
 
 draw_upgrades :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 245})
 
 	p := upgrade_panel_rect()
@@ -1498,9 +1532,9 @@ draw_upgrades :: proc(g: ^Game) {
 	rl.DrawText("CRYSTAL PROGRESSION", i32(p.x) + 24, i32(p.y) + 18, 30, rl.Color{210, 190, 250, 255})
 	rl.DrawText(fmt.ctprintf("Crystals: %d    -    permanent upgrades; fight the Arena and Boss Rooms for more", g.colony.crystals), i32(p.x) + 24, i32(p.y) + 58, 16, rl.Color{190, 175, 220, 255})
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	clip := rl.Rectangle{p.x + 12, p.y + 96, p.width - 24, p.height - 100 - 34}
-	rl.BeginScissorMode(i32(clip.x), i32(clip.y), i32(clip.width), i32(clip.height))
+	scissor_begin(clip)
 	for i in 0..<len(UPGRADE_ORDER) {
 		u := UPGRADE_ORDER[i]
 		info := UPGRADES[u]
@@ -1574,7 +1608,7 @@ draw_upgrades :: proc(g: ^Game) {
 			}
 		}
 	}
-	rl.EndScissorMode()
+	scissor_end()
 
 	rl.DrawText("U / Esc to close   -   wheel to scroll   -   children unlock when their parent reaches the shown level", i32(p.x) + 24, i32(p.y + p.height) - 24, 13, rl.Color{140, 140, 160, 255})
 }
@@ -1584,8 +1618,8 @@ draw_upgrades :: proc(g: ^Game) {
 // ----------------------------------------------------------------------------
 
 arena_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw / 2 - 260, sh / 2 - 170, 520, 340}
 }
 
@@ -1620,7 +1654,7 @@ update_arena :: proc(g: ^Game) {
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	if rl.CheckCollisionPointRec(mp, arena_leave_rect()) {
 		g.arena_open = false
 		return
@@ -1643,8 +1677,8 @@ update_arena :: proc(g: ^Game) {
 }
 
 draw_arena :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 165})
 
 	p := arena_panel_rect()
@@ -1657,7 +1691,7 @@ draw_arena :: proc(g: ^Game) {
 	rl.DrawText("Bring a full party - their numbers match yours only if you do.", i32(p.x) + 28, i32(p.y) + 114, 16, rl.Color{190, 175, 150, 255})
 	rl.DrawText(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals), i32(p.x) + 28, i32(p.y) + 150, 18, rl.Color{235, 210, 120, 255})
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	afford := colony_total_gold(&g.colony) >= ARENA_ENTRY_COST
 
 	btn := arena_fight_rect()
@@ -1689,8 +1723,8 @@ CHOICE_CARD_W :: f32(150)
 CHOICE_CARD_H :: f32(190)
 
 move_choice_card_rect :: proc(i, n: int) -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	gap := f32(20)
 	total := f32(n) * CHOICE_CARD_W + f32(n - 1) * gap
 	start := sw / 2 - total / 2
@@ -1699,8 +1733,8 @@ move_choice_card_rect :: proc(i, n: int) -> rl.Rectangle {
 }
 
 move_choice_skip_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw / 2 - 90, sh / 2 + CHOICE_CARD_H / 2 + 28, 180, 44}
 }
 
@@ -1727,7 +1761,7 @@ update_move_choice :: proc(g: ^Game) {
 	}
 	ch := g.colony.choices[0]
 	if rl.IsMouseButtonPressed(.LEFT) {
-		mp := rl.GetMousePosition()
+		mp := mouse_pos()
 		for i in 0..<ch.count {
 			if rl.CheckCollisionPointRec(mp, move_choice_card_rect(i, ch.count)) {
 				take_choice(&g.colony, i)
@@ -1759,8 +1793,8 @@ draw_move_choice :: proc(g: ^Game) {
 	if mi < 0 {
 		return
 	}
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 205})
 
 	m := &g.colony.roster[mi]
@@ -1778,7 +1812,7 @@ draw_move_choice :: proc(g: ^Game) {
 	sw2 := rl.MeasureText(sub, 18)
 	rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, 172, 18, rl.Color{200, 200, 215, 255})
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for i in 0..<ch.count {
 		rec := move_choice_card_rect(i, ch.count)
 		hovered := rl.CheckCollisionPointRec(mp, rec)
@@ -1804,8 +1838,8 @@ draw_move_choice :: proc(g: ^Game) {
 // ----------------------------------------------------------------------------
 
 quest_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	w := f32(700)
 	h := f32(min(sh - 60, 640))
 	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
@@ -1818,8 +1852,8 @@ update_quests :: proc(g: ^Game) {
 }
 
 draw_quests :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 245})
 
 	p := quest_panel_rect()
@@ -1890,8 +1924,8 @@ draw_quests :: proc(g: ^Game) {
 GRAVE_ROWS :: 8
 
 grave_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	w := f32(740)
 	h := f32(min(sh - 60, 600))
 	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
@@ -1926,7 +1960,7 @@ update_graveyard :: proc(g: ^Game) {
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for i in g.grave_first..<min(g.grave_first + GRAVE_ROWS, n) {
 		if rl.CheckCollisionPointRec(mp, grave_revive_rect(i, g.grave_first)) {
 			switch colony_revive(&g.colony, i) {
@@ -1948,8 +1982,8 @@ update_graveyard :: proc(g: ^Game) {
 }
 
 draw_graveyard :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 245})
 
 	p := grave_panel_rect()
@@ -2003,8 +2037,8 @@ unit_picker_rect :: proc(g: ^Game) -> rl.Rectangle {
 	w := f32(320)
 	h := f32(40) + f32(n) * UNIT_PICKER_ROW_H
 	x, y := hex_to_screen(&g.renderer, g.unit_picker_hex)
-	x = clamp(x + 44, 16, f32(rl.GetScreenWidth()) - w - 16)
-	y = clamp(y - h / 2, 60, f32(rl.GetScreenHeight()) - h - 16)
+	x = clamp(x + 44, 16, f32(screen_w()) - w - 16)
+	y = clamp(y - h / 2, 60, f32(screen_h()) - h - 16)
 	return rl.Rectangle{x, y, w, h}
 }
 
@@ -2051,7 +2085,7 @@ update_unit_picker :: proc(g: ^Game) {
 		}
 	}
 	if rl.IsMouseButtonPressed(.LEFT) {
-		mp := rl.GetMousePosition()
+		mp := mouse_pos()
 		for i in 0..<len(g.unit_picker_ids) {
 			if rl.CheckCollisionPointRec(mp, unit_picker_row_rect(g, i)) {
 				g.selected = g.unit_picker_ids[i]
@@ -2074,7 +2108,7 @@ draw_unit_picker :: proc(g: ^Game) {
 	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{120, 200, 160, 255})
 	rl.DrawText(fmt.ctprintf("Choose a monster  (%d here)", len(g.unit_picker_ids)),
 		i32(p.x) + 12, i32(p.y) + 10, 16, rl.Color{200, 235, 210, 255})
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for id, i in g.unit_picker_ids {
 		mi := id // stored as a roster index, not a monster id
 		if mi < 0 || mi >= len(g.colony.roster) {
@@ -2141,8 +2175,8 @@ update_help :: proc(g: ^Game) {
 }
 
 draw_help :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 246})
 
 	p := rl.Rectangle{sw / 2 - 500, sh / 2 - 300, 1000, 600}
@@ -2180,8 +2214,8 @@ draw_help_row :: proc(x, y, key_w: f32, line: Help_Line) {
 Confirm_Kind :: enum { NONE, FORGET_CARD, OVERWRITE_BUILD, DEMOLISH }
 
 confirm_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw / 2 - 280, sh / 2 - 100, 560, 200}
 }
 
@@ -2230,7 +2264,7 @@ update_confirm :: proc(g: ^Game) {
 	yes := rl.IsKeyPressed(.ENTER) || rl.IsKeyPressed(.KP_ENTER)
 	no := rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.N)
 	if rl.IsMouseButtonPressed(.LEFT) {
-		mp := rl.GetMousePosition()
+		mp := mouse_pos()
 		if rl.CheckCollisionPointRec(mp, confirm_yes_rect()) {
 			yes = true
 		}
@@ -2282,8 +2316,8 @@ draw_confirm :: proc(g: ^Game) {
 	if g.confirm_kind == .NONE {
 		return
 	}
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 175})
 	p := confirm_panel_rect()
 	draw_panel(p, rl.Color{22, 20, 26, 250}, rl.Color{220, 160, 120, 255})
@@ -2301,10 +2335,10 @@ draw_confirm :: proc(g: ^Game) {
 // ----------------------------------------------------------------------------
 
 settings_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	w := f32(640)
-	h := f32(560)
+	h := f32(660)
 	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
 }
 
@@ -2325,7 +2359,7 @@ settings_toggle_rect :: proc(i: int) -> rl.Rectangle {
 
 settings_autosave_rect :: proc() -> rl.Rectangle {
 	p := settings_panel_rect()
-	return rl.Rectangle{p.x + 200, p.y + 474, 170, 38}
+	return rl.Rectangle{p.x + 200, p.y + 564, 170, 38}
 }
 
 update_settings :: proc(g: ^Game) {
@@ -2333,7 +2367,7 @@ update_settings :: proc(g: ^Game) {
 		g.show_settings = false
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 
 	// Volume slider: click or drag anywhere on the bar.
 	vr := settings_volume_rect()
@@ -2351,12 +2385,14 @@ update_settings :: proc(g: ^Game) {
 	if rl.CheckCollisionPointRec(mp, settings_toggle_rect(0)) { g.show_minimap = !g.show_minimap; return }
 	if rl.CheckCollisionPointRec(mp, settings_toggle_rect(1)) { g.tooltips_on = !g.tooltips_on; return }
 	if rl.CheckCollisionPointRec(mp, settings_toggle_rect(2)) { g.show_fps = !g.show_fps; return }
+	if rl.CheckCollisionPointRec(mp, settings_toggle_rect(3)) { g.show_terrain_legend = !g.show_terrain_legend; return }
+	if rl.CheckCollisionPointRec(mp, settings_toggle_rect(4)) { g.show_key_hints = !g.show_key_hints; return }
 	if rl.CheckCollisionPointRec(mp, settings_autosave_rect()) { g.autosave_on = !g.autosave_on; return }
 }
 
 draw_settings :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 246})
 
 	p := settings_panel_rect()
@@ -2390,11 +2426,13 @@ draw_settings :: proc(g: ^Game) {
 	draw_button(settings_toggle_rect(0), fmt.ctprintf("Minimap: %s", g.show_minimap ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
 	draw_button(settings_toggle_rect(1), fmt.ctprintf("Tooltips: %s", g.tooltips_on ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
 	draw_button(settings_toggle_rect(2), fmt.ctprintf("FPS counter: %s", g.show_fps ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
+	draw_button(settings_toggle_rect(3), fmt.ctprintf("Terrain legend: %s", g.show_terrain_legend ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
+	draw_button(settings_toggle_rect(4), fmt.ctprintf("Key hints: %s", g.show_key_hints ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
 
 	// Autosave.
-	rl.DrawText("AUTOSAVE", i32(p.x) + 26, i32(p.y) + 448, 15, rl.Color{150, 160, 185, 255})
+	rl.DrawText("AUTOSAVE", i32(p.x) + 26, i32(p.y) + 540, 15, rl.Color{150, 160, 185, 255})
 	draw_button(settings_autosave_rect(), fmt.ctprintf("Autosave: %s", g.autosave_on ? "ON" : "OFF"), true, BUTTON_PANEL, 16)
-	rl.DrawText(fmt.ctprintf("every %d turns", AUTOSAVE_EVERY), i32(p.x) + 384, i32(p.y) + 484, 14, rl.Color{150, 150, 170, 255})
+	rl.DrawText(fmt.ctprintf("every %d turns", AUTOSAVE_EVERY), i32(p.x) + 384, i32(p.y) + 574, 14, rl.Color{150, 150, 170, 255})
 
 	hint := cstring("P / Esc to close")
 	hw := rl.MeasureText(hint, 16)
@@ -2406,8 +2444,8 @@ draw_settings :: proc(g: ^Game) {
 // ----------------------------------------------------------------------------
 
 relic_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	w := f32(780)
 	h := f32(584)
 	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
@@ -2425,8 +2463,8 @@ update_relics :: proc(g: ^Game) {
 }
 
 draw_relics :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 245})
 
 	p := relic_panel_rect()

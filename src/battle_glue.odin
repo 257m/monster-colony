@@ -52,8 +52,8 @@ attack_chosen_count :: proc(g: ^Game) -> int {
 }
 
 attack_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw / 2 - 390, sh / 2 - 290, 780, 580}
 }
 
@@ -88,7 +88,7 @@ update_attack_select :: proc(g: ^Game) {
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for i in 0..<len(g.attack_ids) {
 		if i >= ATTACK_MAX_ROWS {
 			break
@@ -114,8 +114,8 @@ update_attack_select :: proc(g: ^Game) {
 }
 
 draw_attack_select :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 175})
 
 	p := attack_panel_rect()
@@ -141,7 +141,7 @@ draw_attack_select :: proc(g: ^Game) {
 	rl.DrawText("YOUR MONSTERS", i32(p.x) + 24, i32(p.y) + 78, 15, rl.Color{150, 160, 180, 255})
 	rl.DrawText("ENEMIES ON THE TILE", i32(p.x) + 416, i32(p.y) + 78, 15, rl.Color{220, 150, 130, 255})
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for id, i in g.attack_ids {
 		if i >= ATTACK_MAX_ROWS {
 			break
@@ -268,8 +268,8 @@ start_next_attack :: proc(g: ^Game) {
 }
 
 choice_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw / 2 - 250, sh / 2 - 160, 500, 320}
 }
 
@@ -292,7 +292,7 @@ update_battle_choice :: proc(g: ^Game) {
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	if rl.CheckCollisionPointRec(mp, choice_auto_rect()) {
 		begin_battle(g, true)
 		return
@@ -635,8 +635,8 @@ resolve_won :: proc(g: ^Game) {
 }
 
 results_continue_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw / 2 - 90, sh / 2 + 130, 180, 50}
 }
 
@@ -646,15 +646,15 @@ update_results :: proc(g: ^Game) {
 		start_next_attack(g)
 		return
 	}
-	if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(rl.GetMousePosition(), results_continue_rect()) {
+	if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos(), results_continue_rect()) {
 		g.results_open = false
 		start_next_attack(g)
 	}
 }
 
 draw_results :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 170})
 
 	w := f32(420)
@@ -722,8 +722,8 @@ resolve_lost :: proc(g: ^Game) {
 }
 
 draw_battle_choice :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 175})
 
 	p := choice_panel_rect()
@@ -764,7 +764,7 @@ draw_battle_choice :: proc(g: ^Game) {
 	}
 	_ = sh
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	auto_rec := choice_auto_rect()
 	manual_rec := choice_manual_rect()
 	auto_hover := rl.CheckCollisionPointRec(mp, auto_rec)

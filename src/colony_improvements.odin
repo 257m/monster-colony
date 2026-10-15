@@ -47,6 +47,7 @@ Tile :: struct {
 	overlay_hp:     int,   // health of the overlay (Road / Scarecrow / Spike Trap)
 	stored:         int,   // food (Granary) / gold (Treasury) / charge (Turret)
 	scuffle:        int,   // turns a "fight happened here" marker lingers
+	carrion:        int,   // turns a corpse marker lingers (attracts scavengers)
 	hit_t0:         f32,   // rl.GetTime of the last damage (for hit shake/flash)
 	drawbridge_down: bool, // false = raised (blocks wilds), true = lowered (bridge)
 }

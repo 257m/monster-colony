@@ -85,7 +85,7 @@ Species :: struct {
 
 // Neutral moves any creature can pick up as a reward but that no learnset
 // grants — i.e. reward-only options.
-COMMON_MOVES := []Move_Id{.Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin, .Fang, .Exploit, .Payback, .Followup, .Second_Wind, .Gnaw, .Warcry, .Twin_Fangs, .Feint, .Weaken, .Disarm, .Sunder, .Corrode}
+COMMON_MOVES := []Move_Id{.Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin, .Fang, .Exploit, .Payback, .Followup, .Second_Wind, .Gnaw, .Warcry, .Twin_Fangs, .Feint, .Weaken, .Disarm, .Sunder, .Corrode, .Channel, .Shared_Ward, .Field_Mend, .Siphon, .Cull, .Coordinated_Strike, .Overexert, .Kindle, .Conduit, .Ward}
 
 // Premium reward-only cards: expensive, high-impact energy sinks. Choosing one
 // commits a large chunk of a monster's energy, so it is a real trade-off.
@@ -464,6 +464,18 @@ SPECIES := [Species_Id]Species{
 		},
 		move_pool = []Move_Id{.Static_Shock, .Thunderbolt, .Cyclone, .Hone, .Gust, .Paralyze, .Maelstrom, .Spark, .Sunder, .Followup, .Insight, .Second_Wind, .Warcry},
 	},
+}
+
+// Some wilds keep a lair; the rest are wanderers with no fixed home. Territorial
+// species drift back toward their lair instead of diffusing across the map.
+species_territorial :: proc(id: Species_Id) -> bool {
+	#partial switch id {
+	case .Cave_Bat, .Rimescale, .Pyrelord, .Stonepaw, .Deep_One, .Mosshide, .Bogfang, .Gloomling, .Cinderwing:
+		return true
+	case:
+		return false
+	}
+	return false
 }
 
 STARTER_SPECIES := [?]Species_Id{.Emberling, .Tidepup, .Sproutle}

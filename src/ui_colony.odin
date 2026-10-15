@@ -6,11 +6,21 @@ import "core:math"
 draw_colony :: proc(g: ^Game) {
 	rl.ClearBackground(rl.Color{10, 12, 16, 255})
 
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	margin := f32(100) * g.renderer.zoom
 	now := f32(rl.GetTime())
 	z := g.renderer.zoom
+
+	// Tremor shake from a world event.
+	if g.colony.tremor > 0 {
+		f := clamp(g.colony.tremor / TREMOR_DUR, 0, 1)
+		mag := 7.0 * f * z
+		g.renderer.shake_x = math.sin(now * 71.0) * mag
+		g.renderer.shake_y = math.cos(now * 83.0) * mag
+	} else {
+		g.renderer.shake_x, g.renderer.shake_y = 0, 0
+	}
 
 	// Tiles (fog of war). Unexplored tiles get a dim "unknown" hex so the map
 	// reads as fog rather than holes in the dark background. The map is infinite,
@@ -33,6 +43,7 @@ draw_colony :: proc(g: ^Game) {
 			}
 			draw_hex(&g.renderer, t.hex, terrain_color(t.terrain), HEX_BORDER, 2.0 * g.renderer.zoom)
 			draw_tile_detail(t.terrain, t.hex, cx, cy, z)
+			draw_tile_ambient(t.terrain, t.hex, cx, cy, z, now)
 
 			// Improvement damage: a brief shake + red flash + "-N" float.
 			sx, sy := f32(0), f32(0)
@@ -67,12 +78,15 @@ draw_colony :: proc(g: ^Game) {
 	draw_move_highlights(g)
 	draw_map_monsters(g)
 	draw_scuffles(g)
+	draw_carrion(g)
 	draw_tile_floats(g)
 	draw_hover_marker(&g.renderer, hex_renderer_hovered(&g.renderer), true)
 	draw_colony_hud(g)
 	draw_roster_panel(g)
 	draw_end_turn_button(g)
-	draw_terrain_legend()
+	if g.show_terrain_legend {
+		draw_terrain_legend()
+	}
 	draw_minimap(g)
 	draw_poi_markers(g)
 	draw_tile_hover_tooltip(g)
@@ -84,8 +98,8 @@ POI_MARKER_RANGE :: 28
 POI_MARKER_MAX   :: 6
 
 draw_poi_markers :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	center := screen_to_hex(&g.renderer, g.renderer.origin_x, g.renderer.origin_y)
 
 	best_d: [POI_MARKER_MAX]int
@@ -147,9 +161,9 @@ draw_tile_hover_tooltip :: proc(g: ^Game) {
 	if g.build_mode {
 		return
 	}
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
-	mp := rl.GetMousePosition()
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	mp := mouse_pos()
 	if mp.x > sw - 248 || mp.y > sh - 136 || rl.CheckCollisionPointRec(mp, minimap_rect()) {
 		return // over the roster / end-turn controls / minimap
 	}
@@ -277,21 +291,27 @@ draw_map_monsters :: proc(g: ^Game) {
 		idx := g.ring_seen[key]
 		g.ring_seen[key] = idx + 1
 		n := max(g.ring_total[key], 1)
-		cx, cy := hex_to_screen(&g.renderer, m.pos)
-		px, py := f32(cx), f32(cy)
+		px, py := world_to_screen(&g.renderer, m.anim_x, m.anim_y)
 		if n > 1 {
 			angle := f32(idx) / f32(n) * 2.0 * math.PI - math.PI / 2.0
 			px += math.cos(angle) * 15.0 * z
 			py += math.sin(angle) * 15.0 * z
 		}
-		radius := 9.0 * z
+		radius := (7.5 + min(f32(m.creature.level), 14) * 0.45) * z
 		bob := math.sin(now * 3.0 + f32(i) * 0.7) * 1.6 * z
+		px += math.sin(now * 1.3 + f32(i) * 1.1) * 1.2 * z // slow idle drift
 		by := py + bob
 
 		// Ground shadow stays put while the body bobs.
 		rl.DrawEllipse(i32(px), i32(py + radius * 0.9), radius * 0.9, radius * 0.35, rl.Color{0, 0, 0, 90})
 		rl.DrawCircleV(rl.Vector2{px, by}, radius, creature_color(&m.creature))
 		rl.DrawCircleV(rl.Vector2{px - radius * 0.3, by - radius * 0.3}, radius * 0.32, rl.Color{255, 255, 255, 45})
+
+		// Arrival burst for a newly-spawned monster.
+		if age := now - m.spawn_t0; age >= 0 && age < SPAWN_BURST {
+			q := age / SPAWN_BURST
+			rl.DrawCircleLinesV(rl.Vector2{px, by}, radius + q * 26.0 * z, rl.Color{220, 235, 255, u8((1.0 - q) * 180)})
+		}
 		if m.wild {
 			// Wilds: pulsing red ring so they read as hostile.
 			pulse := 0.5 + 0.5 * math.sin(now * 4.0 + f32(i))
@@ -352,6 +372,21 @@ draw_scuffles :: proc(g: ^Game) {
 	}
 }
 
+// Remains left where a wild was killed — scavengers drift toward it.
+draw_carrion :: proc(g: ^Game) {
+	for t in g.colony.tiles {
+		if !t.revealed || t.carrion <= 0 {
+			continue
+		}
+		cx, cy := hex_to_screen(&g.renderer, t.hex)
+		z := g.renderer.zoom
+		rl.DrawCircleV(rl.Vector2{cx, cy + 2 * z}, 9 * z, rl.Color{70, 44, 44, 70})
+		rl.DrawLineEx(rl.Vector2{cx - 6 * z, cy + 4 * z}, rl.Vector2{cx + 5 * z, cy - 2 * z}, 2.0 * z, rl.Color{222, 216, 198, 215})
+		rl.DrawCircleV(rl.Vector2{cx - 6 * z, cy + 4 * z}, 1.9 * z, rl.Color{232, 228, 212, 230})
+		rl.DrawCircleV(rl.Vector2{cx + 5 * z, cy - 2 * z}, 1.9 * z, rl.Color{232, 228, 212, 230})
+	}
+}
+
 // Transient "+N gold/food" popups spawned by production during a turn. Each
 // rises and fades over FLOAT_LIFE seconds; produce gets an expanding ring burst.
 draw_tile_floats :: proc(g: ^Game) {
@@ -396,6 +431,9 @@ draw_tile_floats :: proc(g: ^Game) {
 		case .HEAL:
 			text = fmt.ctprintf("+%dhp", f.amount)
 			col = rl.Color{150, 240, 165, alpha}
+		case .GROW:
+			text = cstring("grows!")
+			col = rl.Color{235, 200, 255, alpha}
 		}
 		w := rl.MeasureText(text, 15)
 		rl.DrawText(text, i32(x) - w / 2 + 1, i32(y) + 1, 15, rl.Color{0, 0, 0, alpha})
@@ -546,12 +584,12 @@ draw_move_highlights :: proc(g: ^Game) {
 
 // Hit test for a HUD text run at (x, y) of the given pixel width.
 hud_hit :: proc(x: i32, w: i32, y: i32) -> bool {
-	return rl.CheckCollisionPointRec(rl.GetMousePosition(), rl.Rectangle{f32(x), f32(y) - 2, f32(w), 28})
+	return rl.CheckCollisionPointRec(mouse_pos(), rl.Rectangle{f32(x), f32(y) - 2, f32(w), 28})
 }
 
 draw_colony_hud :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 
 	rl.DrawText("THE COLONY", 20, 16, 26, rl.Color{215, 215, 235, 255})
 	res := fmt.ctprintf("Floor %d    Turn %d    Threat %d    Milestones %d/%d    Relics %d",
@@ -700,8 +738,10 @@ draw_colony_hud :: proc(g: ^Game) {
 		}
 	}
 
-	rl.DrawText("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck | M dex | I improvements | G bag | U upgrades | Q journal | J relics | Y fallen | C nursery | H storage | O save | K help | P settings | X sound", 20, i32(sh) - 70, 14, rl.Color{120, 120, 145, 255})
-	rl.DrawText("RMB/WASD pan  |  wheel zoom  |  R recenter  |  M monsterdex  |  N new run", 20, i32(sh) - 46, 16, rl.Color{120, 120, 145, 255})
+	if g.show_key_hints {
+		rl.DrawText("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck | M dex | I improvements | G bag | U upgrades | Q journal | J relics | Y fallen | C nursery | H storage | O save | K help | P settings | X sound", 20, i32(sh) - 70, 14, rl.Color{120, 120, 145, 255})
+		rl.DrawText("RMB/WASD pan  |  wheel zoom  |  R recenter  |  M monsterdex  |  N new run", 20, i32(sh) - 46, 16, rl.Color{120, 120, 145, 255})
+	}
 
 	// World notifications (scuffles in the distance, things slipping away).
 	my := i32(sh) - 130 - i32(len(g.colony.messages)) * 22
@@ -722,12 +762,12 @@ draw_colony_hud :: proc(g: ^Game) {
 // ----------------------------------------------------------------------------
 
 roster_entry_rect :: proc(i: int) -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	return rl.Rectangle{sw - 240, 180 + f32(i) * 70, 224, 66}
 }
 
 draw_roster_panel :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	rl.DrawText("MONSTERS", i32(sw) - 236, 152, 18, rl.Color{170, 170, 190, 255})
 
 	slot := 0
@@ -779,7 +819,7 @@ draw_roster_panel :: proc(g: ^Game) {
 		xptxt := fmt.ctprintf("XP %d/%d", m.creature.xp, need)
 		rl.DrawText(xptxt, i32(rec.x) + i32(rec.width) - 60, i32(rec.y) + 49, 12, rl.Color{150, 210, 255, 255})
 
-		if rl.CheckCollisionPointRec(rl.GetMousePosition(), rec) {
+		if rl.CheckCollisionPointRec(mouse_pos(), rec) {
 			ui_want_hand()
 			tooltip_set("%s  Lvl %d  %s  -  PWR x%s, DEF %s, SPD %s, ability: %s",
 				m.creature.name, m.creature.level, elements_label(creature_elements(&m.creature)),
@@ -794,14 +834,14 @@ draw_roster_panel :: proc(g: ^Game) {
 // ----------------------------------------------------------------------------
 
 colony_end_turn_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw - 240, sh - 120, 224, 48}
 }
 
 draw_end_turn_button :: proc(g: ^Game) {
 	rec := colony_end_turn_rect()
-	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), rec)
+	hover := rl.CheckCollisionPointRec(mouse_pos(), rec)
 	col := rl.Color{70, 130, 100, 255}
 	if hover {
 		col = rl.Color{95, 175, 130, 255}
@@ -835,7 +875,7 @@ draw_terrain_legend :: proc() {
 		{.DESERT,       "Desert"},
 		{.QUICKSAND,    "Quicksand (Ground)"},
 	}
-	sh := f32(rl.GetScreenHeight())
+	sh := f32(screen_h())
 	x := i32(20)
 	y := i32(sh) - 250
 	rl.DrawText("TERRAIN", x, y - 24, 16, rl.Color{150, 150, 170, 255})
@@ -925,11 +965,11 @@ draw_minimap :: proc(g: ^Game) {
 		rl.DrawText("unexplored", i32(p.x) + 8, i32(p.y) + 26, 13, rl.Color{120, 120, 140, 255})
 		return
 	}
-	if rl.CheckCollisionPointRec(rl.GetMousePosition(), minimap_inner()) {
+	if rl.CheckCollisionPointRec(mouse_pos(), minimap_inner()) {
 		ui_want_hand()
 	}
 	inner := minimap_inner()
-	rl.BeginScissorMode(i32(inner.x), i32(inner.y), i32(inner.width), i32(inner.height))
+	scissor_begin(inner)
 	cell := max(v.scale * 0.9, 2.0)
 	for t in g.colony.tiles {
 		if !t.revealed {
@@ -975,7 +1015,7 @@ draw_minimap :: proc(g: ^Game) {
 	p1x, p1y := minimap_project(v, ax, ay)
 	p2x, p2y := minimap_project(v, bx, by)
 	rl.DrawRectangleLinesEx(rl.Rectangle{min(p1x, p2x), min(p1y, p2y), abs(p2x - p1x), abs(p2y - p1y)}, 1, rl.Color{255, 255, 255, 165})
-	rl.EndScissorMode()
+	scissor_end()
 }
 
 // The hex under a minimap click, if the minimap is shown and the point is in it.

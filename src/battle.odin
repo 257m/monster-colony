@@ -47,7 +47,7 @@ hp_fraction :: proc(list: []^Creature) -> f32 {
 Battle_Phase :: enum { PLAYER_ACTION, ENEMY_ACTION, WON, LOST, CAPTURED }
 Battle_Side  :: enum { PLAYER, WILD }
 
-Popup_Kind :: enum { DAMAGE, BLOCK, HEAL, BUFF, DEBUFF, DEFEND, WEAKEN, SHATTER, CAPTURE, POISON, BURN, STUN, REGEN, THORNS }
+Popup_Kind :: enum { DAMAGE, BLOCK, HEAL, BUFF, DEBUFF, DEFEND, WEAKEN, SHATTER, CAPTURE, POISON, BURN, STUN, REGEN, THORNS, ENERGY }
 
 Popup :: struct {
 	value:    int,
@@ -69,6 +69,8 @@ Battle :: struct {
 	enemies:       [dynamic]^Creature, // the attacking wilds (external)
 	enemy_ids:     [dynamic]int,       // colony ids, parallel to enemies
 	target:        int,                // currently targeted enemy
+	ally_target:   int,                // currently targeted teammate (for support cards)
+	sel_kind:      Move_Target,        // which side the player last picked (.ENEMY or .ALLY)
 	enemy_acting:  int,                // enemy taking the current action
 	captured_ids:  [dynamic]int,       // enemies captured this battle
 	capture_cards: int,                // capture cards available (spent on capture)
@@ -88,6 +90,10 @@ Battle :: struct {
 }
 
 DIGIT_KEYS := [?]rl.KeyboardKey{.ONE, .TWO, .THREE, .FOUR, .FIVE, .SIX, .SEVEN, .EIGHT, .NINE}
+
+// Set while a battle is resolved headlessly (map skirmishes) so it doesn't fire
+// UI sounds for a fight the player never sees.
+battle_silent: bool
 
 // ----------------------------------------------------------------------------
 // Lifecycle
@@ -173,6 +179,7 @@ battle_start :: proc(defenders: []^Creature, enemies: []^Creature, enemy_ids: []
 	}
 	b.active = 0
 	b.target = 0
+	b.ally_target = 0
 	b.enemy_acting = 0
 
 	for e in b.enemies {
@@ -616,7 +623,9 @@ apply_damage :: proc(attacker: ^Creature, target: ^Creature, base: int, elem: El
 		target.hp -= d
 		target.shake = CREATURE_SHAKE_DUR
 		target.flash = 0.22
-		audio_play(.HIT, 0.8)
+		if !battle_silent {
+			audio_play(.HIT, 0.8)
+		}
 	}
 	return d
 }
@@ -624,7 +633,7 @@ apply_damage :: proc(attacker: ^Creature, target: ^Creature, base: int, elem: El
 // Damage a card would deal to a target right now, without mutating anything.
 // Mirrors apply_damage (including synergy bonuses) and also returns the type
 // multiplier so the UI can flag super-effective / resisted hits.
-estimate_damage :: proc(attacker, target: ^Creature, id: Move_Id) -> (total: int, type_mult: f32) {
+estimate_damage :: proc(attacker, target: ^Creature, id: Move_Id, allies := 0) -> (total: int, type_mult: f32) {
 	m := MOVE_DATA[id]
 	type_mult = 1
 	if m.damage <= 0 || target == nil {
@@ -639,6 +648,12 @@ estimate_damage :: proc(attacker, target: ^Creature, id: Move_Id) -> (total: int
 	}
 	if m.combo_bonus > 0 && attacker.played > 0 {
 		bonus += m.combo_bonus
+	}
+	if m.execute_bonus > 0 && m.execute_pct > 0 && f32(target.hp) < m.execute_pct * f32(target.max_hp) {
+		bonus += m.execute_bonus
+	}
+	if m.ally_bonus > 0 {
+		bonus += m.ally_bonus * allies
 	}
 	for de in creature_elements(target) {
 		type_mult *= element_multiplier(m.element, de)
@@ -672,6 +687,60 @@ side_of :: proc(b: ^Battle, c: ^Creature) -> Battle_Side {
 	return .PLAYER
 }
 
+// How many of the caster's teammates (excluding itself) are still standing.
+other_allies_alive :: proc(b: ^Battle, c: ^Creature) -> int {
+	n := 0
+	if side_of(b, c) == .PLAYER {
+		for p in b.party {
+			if p != c && p.hp > 0 {
+				n += 1
+			}
+		}
+	} else {
+		for e in b.enemies {
+			if e != c && e.hp > 0 {
+				n += 1
+			}
+		}
+	}
+	return n
+}
+
+// The currently selected teammate, falling back to the acting monster.
+ally_target_creature :: proc(b: ^Battle) -> ^Creature {
+	i := b.ally_target
+	if i >= 0 && i < len(b.party) && b.party[i].hp > 0 {
+		return b.party[i]
+	}
+	if b.active >= 0 && b.active < len(b.party) {
+		return b.party[b.active]
+	}
+	return nil
+}
+
+// Who a card lands on, given the kinds it allows and the player's last pick.
+// Single-kind cards ignore the selection; flexible ones follow it.
+pick_card_target :: proc(b: ^Battle, m: Move) -> ^Creature {
+	allowed := move_targets(m)
+	c := b.party[b.active]
+	if allowed == {.SELF} {
+		return c
+	}
+	if b.sel_kind == .ALLY && .ALLY in allowed {
+		return ally_target_creature(b)
+	}
+	if b.sel_kind == .ENEMY && .ENEMY in allowed {
+		return target_enemy(b)
+	}
+	if .ENEMY in allowed {
+		return target_enemy(b)
+	}
+	if .ALLY in allowed {
+		return ally_target_creature(b)
+	}
+	return c
+}
+
 spawn_popup :: proc(b: ^Battle, side: Battle_Side, kind: Popup_Kind, value: int) {
 	append(&b.popups, Popup{value = value, kind = kind, side = side, life = 0.95, max_life = 0.95})
 }
@@ -688,11 +757,33 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 	c.energy -= m.cost
 
 	self_side := side_of(b, c)
-	target_side := side_of(b, target)
 
-	if m.damage > 0 {
+	// Resolve who gets hurt and who gets helped: a target on the caster's own
+	// side is a beneficiary (support), an opposing one is a victim (hostile).
+	if target == nil {
+		c.energy += m.cost // no valid target: refund
+		return false
+	}
+	victim: ^Creature
+	benef := c
+	if side_of(b, target) == self_side {
+		benef = target
+	} else {
+		victim = target
+		if victim.hp <= 0 {
+			c.energy += m.cost
+			return false
+		}
+	}
+	victim_side := self_side
+	if victim != nil {
+		victim_side = side_of(b, victim)
+	}
+	benef_side := side_of(b, benef)
+
+	if m.damage > 0 && victim != nil {
 		bonus := 0
-		if m.vuln_bonus > 0 && target.vulnerable > 0 {
+		if m.vuln_bonus > 0 && victim.vulnerable > 0 {
 			bonus += m.vuln_bonus
 		}
 		if m.block_bonus > 0 && c.block > 0 {
@@ -701,14 +792,22 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 		if m.combo_bonus > 0 && c.played > 0 {
 			bonus += m.combo_bonus
 		}
+		// Execute: extra damage against a badly hurt foe.
+		if m.execute_bonus > 0 && m.execute_pct > 0 && f32(victim.hp) < m.execute_pct * f32(victim.max_hp) {
+			bonus += m.execute_bonus
+		}
+		// Teamwork: extra damage for every other ally still standing.
+		if m.ally_bonus > 0 {
+			bonus += m.ally_bonus * other_allies_alive(b, c)
+		}
 		total := 0
 		for hit in 0..<max(m.hits, 1) {
 			d := m.damage + (hit == 0 ? bonus : 0)
-			total += apply_damage(c, target, d, m.element)
+			total += apply_damage(c, victim, d, m.element)
 		}
 		if total > 0 {
-			spawn_popup(b, target_side, .DAMAGE, total)
-			creature_burst(target, popup_color(.DAMAGE), 0.4)
+			spawn_popup(b, victim_side, .DAMAGE, total)
+			creature_burst(victim, popup_color(.DAMAGE), 0.4)
 			b.shake = SHAKE_DUR
 			b.shake_mag = clamp(3.0 + f32(total) * 0.4, 3.0, 10.0)
 		}
@@ -729,79 +828,114 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 			}
 		}
 		// Thorns: a thorny target reflects a fraction of the hit back.
-		if total > 0 && target.thorns > 0 {
-			back := max(int(f32(total) * THORNS_REFLECT_PCT * f32(target.thorns)), 1)
+		if total > 0 && victim.thorns > 0 {
+			back := max(int(f32(total) * THORNS_REFLECT_PCT * f32(victim.thorns)), 1)
 			c.hp -= back
 			spawn_popup(b, self_side, .DAMAGE, back)
 			creature_burst(c, popup_color(.DAMAGE), 0.4)
-			battle_log(b, "%s's thorns bite %s for %d.", target.name, c.name, back)
+			battle_log(b, "%s's thorns bite %s for %d.", victim.name, c.name, back)
 		}
 		c.shake = CREATURE_SHAKE_DUR * 0.4
 	}
+	// Beneficial effects land on the beneficiary (the ally, or the caster).
 	if m.block > 0 {
-		c.block += m.block
-		spawn_popup(b, self_side, .BLOCK, m.block)
-		creature_burst(c, popup_color(.BLOCK), 0.5)
-	}
-	if m.vulnerable > 0 {
-		target.vulnerable += m.vulnerable
-		spawn_popup(b, target_side, .DEBUFF, m.vulnerable)
-		creature_burst(target, popup_color(.DEBUFF), 0.5)
+		benef.block += m.block
+		spawn_popup(b, benef_side, .BLOCK, m.block)
+		creature_burst(benef, popup_color(.BLOCK), 0.5)
 	}
 	if m.strength > 0 {
-		c.strength += m.strength
-		spawn_popup(b, self_side, .BUFF, m.strength)
-		creature_burst(c, popup_color(.BUFF), 0.55)
+		benef.strength += m.strength
+		spawn_popup(b, benef_side, .BUFF, m.strength)
+		creature_burst(benef, popup_color(.BUFF), 0.55)
 	}
 	if m.defense > 0 {
-		c.defense_buff += m.defense
-		spawn_popup(b, self_side, .DEFEND, int(m.defense))
-		creature_burst(c, popup_color(.DEFEND), 0.55)
-	}
-	if m.strength_down > 0 {
-		target.strength -= m.strength_down
-		spawn_popup(b, target_side, .WEAKEN, m.strength_down)
-		creature_burst(target, popup_color(.WEAKEN), 0.5)
-	}
-	if m.defense_down > 0 {
-		target.defense_debuff += m.defense_down
-		spawn_popup(b, target_side, .SHATTER, int(m.defense_down))
-		creature_burst(target, popup_color(.SHATTER), 0.5)
-	}
-	// Status effects: damage/heal-over-time, stun, thorns.
-	if m.poison > 0 {
-		target.poison += m.poison
-		spawn_popup(b, target_side, .POISON, m.poison)
-		creature_burst(target, popup_color(.POISON), 0.5)
-	}
-	if m.burn > 0 {
-		target.burn += m.burn
-		spawn_popup(b, target_side, .BURN, m.burn)
-		creature_burst(target, popup_color(.BURN), 0.5)
-	}
-	if m.stun > 0 {
-		target.stun += m.stun
-		spawn_popup(b, target_side, .STUN, m.stun)
-		creature_burst(target, popup_color(.STUN), 0.5)
+		benef.defense_buff += m.defense
+		spawn_popup(b, benef_side, .DEFEND, int(m.defense))
+		creature_burst(benef, popup_color(.DEFEND), 0.55)
 	}
 	if m.regen > 0 {
-		c.regen += m.regen
-		spawn_popup(b, self_side, .REGEN, m.regen)
-		creature_burst(c, popup_color(.REGEN), 0.5)
+		benef.regen += m.regen
+		spawn_popup(b, benef_side, .REGEN, m.regen)
+		creature_burst(benef, popup_color(.REGEN), 0.5)
 	}
 	if m.thorns > 0 {
-		c.thorns += m.thorns
-		spawn_popup(b, self_side, .THORNS, m.thorns)
-		creature_burst(c, popup_color(.THORNS), 0.5)
+		benef.thorns += m.thorns
+		spawn_popup(b, benef_side, .THORNS, m.thorns)
+		creature_burst(benef, popup_color(.THORNS), 0.5)
 	}
 	if m.heal_pct > 0 {
-		heal := max(int(f32(c.max_hp) * m.heal_pct), 1)
-		before := c.hp
-		c.hp = min(c.hp + heal, c.max_hp)
-		if c.hp > before {
-			spawn_popup(b, self_side, .HEAL, c.hp - before)
-			creature_burst(c, popup_color(.HEAL), 0.6)
+		heal := max(int(f32(benef.max_hp) * m.heal_pct), 1)
+		before := benef.hp
+		benef.hp = min(benef.hp + heal, benef.max_hp)
+		if benef.hp > before {
+			spawn_popup(b, benef_side, .HEAL, benef.hp - before)
+			creature_burst(benef, popup_color(.HEAL), 0.6)
 		}
+	}
+	if m.energy_give > 0 {
+		benef.energy = min(benef.energy + f32(m.energy_give), benef.energy_max)
+		spawn_popup(b, benef_side, .ENERGY, m.energy_give)
+		creature_burst(benef, popup_color(.ENERGY), 0.5)
+	}
+	// Hostile effects land on the victim.
+	if victim != nil {
+		if m.vulnerable > 0 {
+			victim.vulnerable += m.vulnerable
+			spawn_popup(b, victim_side, .DEBUFF, m.vulnerable)
+			creature_burst(victim, popup_color(.DEBUFF), 0.5)
+		}
+		if m.strength_down > 0 {
+			victim.strength -= m.strength_down
+			spawn_popup(b, victim_side, .WEAKEN, m.strength_down)
+			creature_burst(victim, popup_color(.WEAKEN), 0.5)
+		}
+		if m.defense_down > 0 {
+			victim.defense_debuff += m.defense_down
+			spawn_popup(b, victim_side, .SHATTER, int(m.defense_down))
+			creature_burst(victim, popup_color(.SHATTER), 0.5)
+		}
+		if m.poison > 0 {
+			victim.poison += m.poison
+			spawn_popup(b, victim_side, .POISON, m.poison)
+			creature_burst(victim, popup_color(.POISON), 0.5)
+		}
+		if m.burn > 0 {
+			victim.burn += m.burn
+			spawn_popup(b, victim_side, .BURN, m.burn)
+			creature_burst(victim, popup_color(.BURN), 0.5)
+		}
+		if m.stun > 0 {
+			victim.stun += m.stun
+			spawn_popup(b, victim_side, .STUN, m.stun)
+			creature_burst(victim, popup_color(.STUN), 0.5)
+		}
+		if m.energy_drain > 0 {
+			before := victim.energy
+			victim.energy = max(victim.energy - f32(m.energy_drain), 0)
+			gained := int(before - victim.energy)
+			if gained > 0 {
+				c.energy = min(c.energy + f32(gained), c.energy_max)
+				spawn_popup(b, self_side, .ENERGY, gained)
+				spawn_popup(b, victim_side, .ENERGY, -gained)
+				creature_burst(victim, popup_color(.ENERGY), 0.5)
+			}
+		}
+	}
+	// Self-costs: paid by the caster no matter the target.
+	if m.self_strength_down > 0 {
+		c.strength -= m.self_strength_down
+		spawn_popup(b, self_side, .WEAKEN, m.self_strength_down)
+		creature_burst(c, popup_color(.WEAKEN), 0.5)
+	}
+	if m.self_defense_down > 0 {
+		c.defense_debuff += m.self_defense_down
+		spawn_popup(b, self_side, .SHATTER, int(m.self_defense_down))
+		creature_burst(c, popup_color(.SHATTER), 0.5)
+	}
+	if m.self_damage > 0 {
+		c.hp -= m.self_damage
+		spawn_popup(b, self_side, .DAMAGE, m.self_damage)
+		creature_burst(c, popup_color(.DAMAGE), 0.4)
 	}
 	if m.draw > 0 {
 		creature_draw(c, m.draw, rng)
@@ -817,8 +951,16 @@ player_play :: proc(b: ^Battle, index: int) {
 	if b.phase != .PLAYER_ACTION {
 		return
 	}
-	if play_creature_card(b, b.party[b.active], target_enemy(b), index, &b.rng) {
-		audio_play(.CLICK, 0.7)
+	c := b.party[b.active]
+	// The card's allowed targets (and the player's last pick) decide who it hits.
+	tgt: ^Creature
+	if index >= 0 && index < len(c.hand) {
+		tgt = pick_card_target(b, move_data(c.hand[index]))
+	}
+	if play_creature_card(b, c, tgt, index, &b.rng) {
+		if !battle_silent {
+			audio_play(.CLICK, 0.7)
+		}
 		fix_target(b)
 		if enemies_alive(b) == 0 {
 			b.phase = .WON
@@ -1065,6 +1207,26 @@ player_ai_step :: proc(b: ^Battle) {
 		}
 	}
 	if best >= 0 {
+		// Support-only cards need a teammate: aim at whoever has the least energy.
+		if .ENEMY not_in move_targets(move_data(c.hand[best])) {
+			low := -1
+			low_e := f32(1 << 30)
+			for p, i in b.party {
+				if p.hp <= 0 {
+					continue
+				}
+				if p.energy < low_e {
+					low_e = p.energy
+					low = i
+				}
+			}
+			if low >= 0 {
+				b.ally_target = low
+			}
+			b.sel_kind = .ALLY
+		} else {
+			b.sel_kind = .ENEMY
+		}
 		player_play(b, best)
 	} else {
 		player_end_round(b)
@@ -1076,14 +1238,14 @@ player_ai_step :: proc(b: ^Battle) {
 // ----------------------------------------------------------------------------
 
 end_turn_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw - 236, sh - 122, 216, 46}
 }
 
 capture_rect :: proc() -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	return rl.Rectangle{sw - 236, sh - 176, 216, 46}
 }
 
@@ -1102,7 +1264,7 @@ battle_input :: proc(b: ^Battle) {
 	if b.auto_play {
 		return // auto-fight: no player input
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 
 	// Pile readout is clickable in any phase.
 	if rl.IsMouseButtonPressed(.LEFT) {
@@ -1144,6 +1306,15 @@ battle_input :: proc(b: ^Battle) {
 		for i in 0..<len(b.enemies) {
 			if b.enemies[i].hp > 0 && rl.CheckCollisionPointRec(mp, enemy_rect(i, len(b.enemies))) {
 				b.target = i
+				b.sel_kind = .ENEMY
+				return
+			}
+		}
+		// Click a teammate to target them, the same way as an enemy.
+		for i in 0..<len(b.party) {
+			if b.party[i].hp > 0 && rl.CheckCollisionPointRec(mp, party_field_rect(i, len(b.party))) {
+				b.ally_target = i
+				b.sel_kind = .ALLY
 				return
 			}
 		}
@@ -1177,8 +1348,8 @@ CARD_H :: f32(168)
 CARD_HOVER_LIFT :: f32(14) // how far a hovered hand card rises
 
 hand_card_rect :: proc(index, count: int) -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	spacing := CARD_W + 12
 	total := f32(count) * spacing - 12
 	if total < 0 { total = 0 }
@@ -1213,7 +1384,7 @@ creature_offset :: proc(c: ^Creature) -> (f32, f32) {
 }
 
 popup_anchor :: proc(b: ^Battle, side: Battle_Side) -> rl.Vector2 {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	if side == .WILD {
 		return rl.Vector2{sw / 2, 232}
 	}
@@ -1236,6 +1407,7 @@ popup_text :: proc(p: Popup) -> cstring {
 	case .STUN:    return fmt.ctprintf("stun %d", p.value)
 	case .REGEN:   return fmt.ctprintf("+%d reg", p.value)
 	case .THORNS:  return fmt.ctprintf("+%d thr", p.value)
+	case .ENERGY:  return fmt.ctprintf("+%d en", p.value)
 	}
 	return ""
 }
@@ -1256,6 +1428,7 @@ popup_color :: proc(k: Popup_Kind) -> rl.Color {
 	case .STUN:    return rl.Color{250, 240, 130, 255}
 	case .REGEN:   return rl.Color{130, 235, 140, 255}
 	case .THORNS:  return rl.Color{150, 220, 150, 255}
+	case .ENERGY:  return rl.Color{245, 205, 90, 255}
 	}
 	return COL_TEXT
 }
@@ -1366,13 +1539,13 @@ draw_card :: proc(id: Move_Id, rec: rl.Rectangle, playable, hovered: bool) {
 	rl.DrawText(elem, i32(r.x + r.width / 2) - ew / 2, i32(r.y + r.height - 14), 11, base)
 
 	if hovered {
-		tooltip_set("%s [%s]  -  %s  (%s, cost %s)", m.name, card_rarity_name(m.rarity), m.desc, elem, fmt_num(m.cost))
+		tooltip_set("%s [%s]  -  %s  (%s, cost %s, %s)", m.name, card_rarity_name(m.rarity), m.desc, elem, fmt_num(m.cost), move_target_label(m))
 	}
 }
 
 draw_battle :: proc(b: ^Battle) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 
 	rl.ClearBackground(COL_BG)
 
@@ -1383,19 +1556,16 @@ draw_battle :: proc(b: ^Battle) {
 		sx, sy = shake_offset(mag)
 	}
 
-	cam := rl.Camera2D{
-		offset = rl.Vector2{sw / 2 + sx, sh / 2 + sy},
-		target = rl.Vector2{sw / 2, sh / 2},
-		zoom   = 1,
-	}
-	rl.BeginMode2D(cam)
+	rl.BeginMode2D(ui_camera(sx, sy))
 	rl.DrawRectangle(0, i32(sh * 0.58), i32(sw), i32(sh * 0.42), COL_FLOOR)
 	draw_enemies(b)
 	draw_player_panel(b)
 	draw_party_field(b, sw, sh)
 	draw_hand(b)
 	draw_popups(b)
-	rl.EndMode2D()
+	// Re-enter the scaled space for the HUD layer. (EndMode2D would reset the
+	// transform to identity, dropping the UI scale.)
+	rl.BeginMode2D(ui_camera())
 
 	// Round + action indicator.
 	if b.phase == .PLAYER_ACTION || b.phase == .ENEMY_ACTION {
@@ -1426,7 +1596,7 @@ draw_battle :: proc(b: ^Battle) {
 
 // The upcoming initiative order: a row of chips showing who acts next.
 draw_initiative :: proc(b: ^Battle) {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	n := len(b.order)
 	if n == 0 {
 		return
@@ -1460,7 +1630,7 @@ draw_initiative :: proc(b: ^Battle) {
 }
 
 enemy_rect :: proc(i, n: int) -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	spacing := f32(170)
 	total := f32(n) * spacing
 	start := sw / 2 - total / 2 + spacing / 2
@@ -1622,7 +1792,7 @@ draw_effects_row :: proc(effects: []Effect, center_x, y: f32) {
 	x := center_x - total / 2
 	for e in effects {
 		w := draw_effect_chip(x, y, effect_chip_text(e), effect_chip_color(e))
-		if rl.CheckCollisionPointRec(rl.GetMousePosition(), rl.Rectangle{x, y, w, 19}) {
+		if rl.CheckCollisionPointRec(mouse_pos(), rl.Rectangle{x, y, w, 19}) {
 			tooltip_set_owned(effect_tooltip(e))
 		}
 		x += w + 4
@@ -1630,7 +1800,7 @@ draw_effects_row :: proc(effects: []Effect, center_x, y: f32) {
 }
 
 draw_enemies :: proc(b: ^Battle) {
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	n := len(b.enemies)
 	ey := f32(212)
 	spacing := f32(170)
@@ -1639,7 +1809,7 @@ draw_enemies :: proc(b: ^Battle) {
 
 	for e, i in b.enemies {
 		ex := start + f32(i) * spacing
-		radius := f32(56)
+		radius := f32(52)
 		ox, oy := creature_offset(e)
 		draw_creature_avatar(rl.Vector2{ex + ox, ey + oy}, radius, e, e.hp <= 0)
 
@@ -1673,7 +1843,7 @@ draw_enemies :: proc(b: ^Battle) {
 		if e.ability != .NONE {
 			ab := ability_name(e.ability)
 			aw := rl.MeasureText(ab, 13)
-			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 70, 13, rl.Color{200, 180, 240, 255})
+			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 74, 13, rl.Color{200, 180, 240, 255})
 		}
 
 		hp_rec := rl.Rectangle{ex - 70, ey + 70, 140, 18}
@@ -1755,11 +1925,9 @@ draw_player_panel :: proc(b: ^Battle) {
 // level/element, HP numbers, energy, active buff chips, and ability/item. The
 // acting monster is ringed, monsters that have ended their turn are dimmed, and
 // the dead are greyed out.
-draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
-	n := len(b.party)
-	if n == 0 {
-		return
-	}
+// The on-field party card rect (used for drawing and for ally targeting).
+party_field_rect :: proc(i, n: int) -> rl.Rectangle {
+	sw := f32(screen_w())
 	gap := f32(10)
 	cw := min(f32(178), (sw - 60 - gap * f32(n - 1)) / f32(n))
 	ch := f32(100)
@@ -1767,10 +1935,19 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 	start := sw / 2 - total / 2
 	// Sit above the hand *and* above the hovered card's damage tooltip.
 	top := hand_card_rect(0, 1).y - CARD_HOVER_LIFT - 60 - ch
+	return rl.Rectangle{start + f32(i) * (cw + gap), top, cw, ch}
+}
 
+draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
+	n := len(b.party)
+	if n == 0 {
+		return
+	}
 	for c, i in b.party {
-		x := start + f32(i) * (cw + gap)
-		rec := rl.Rectangle{x, top, cw, ch}
+		rec := party_field_rect(i, n)
+		x := rec.x
+		top := rec.y
+		cw := rec.width
 		dead := c.hp <= 0
 		done := b.party_done[i]
 		active := i == b.active && b.phase == .PLAYER_ACTION && !dead
@@ -1789,6 +1966,10 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 			border = rl.Color{74, 52, 58, 255}
 		}
 		rl.DrawRectangleRoundedLinesEx(rec, 0.09, 6, 2, border)
+		// The selected teammate gets an outer ring, mirroring the enemy target.
+		if i == b.ally_target && b.phase == .PLAYER_ACTION && !dead {
+			rl.DrawRectangleRoundedLinesEx(rl.Rectangle{rec.x - 3, rec.y - 3, rec.width + 6, rec.height + 6}, 0.09, 6, 3, rl.Color{255, 225, 130, 255})
+		}
 
 		ox, oy := creature_offset(c)
 		draw_creature_avatar(rl.Vector2{x + 30 + ox, top + 38 + oy}, 23, c, dead)
@@ -1835,12 +2016,12 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 	}
 }
 
-draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rectangle) {
+draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rectangle, allies := 0) {
 	m := MOVE_DATA[id]
 	if m.damage <= 0 {
 		return
 	}
-	total, type_mult := estimate_damage(attacker, target, id)
+	total, type_mult := estimate_damage(attacker, target, id, allies)
 	label := fmt.ctprintf("~%d dmg", total)
 
 	note: cstring
@@ -1875,7 +2056,7 @@ draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rec
 	box_w := max(lw, nw) + 24
 	box_h := has_note ? f32(48) : f32(30)
 	bx := rec.x + rec.width / 2 - box_w / 2
-	sw := f32(rl.GetScreenWidth())
+	sw := f32(screen_w())
 	bx = clamp(bx, 6, sw - box_w - 6)
 	by := rec.y - box_h - 8
 	box := rl.Rectangle{bx, by, box_w, box_h}
@@ -1888,7 +2069,7 @@ draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rec
 }
 
 draw_hand :: proc(b: ^Battle) {
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	hand := b.party[b.active].hand
 	tgt := target_enemy(b)
 	for id, i in hand {
@@ -1901,13 +2082,16 @@ draw_hand :: proc(b: ^Battle) {
 			if playable {
 				dr.y -= CARD_HOVER_LIFT // draw_card lifts hovered playable cards
 			}
-			draw_card_estimate(b.party[b.active], tgt, id, dr)
+			// Offensive cards get a damage readout when an enemy is selected.
+			if .ENEMY in move_targets(move_data(id)) && b.sel_kind == .ENEMY {
+				draw_card_estimate(b.party[b.active], tgt, id, dr, other_allies_alive(b, b.party[b.active]))
+			}
 		}
 	}
 }
 
 draw_buttons :: proc(b: ^Battle) {
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 
 	// capture
 	cap := capture_rect()
@@ -1948,7 +2132,7 @@ draw_buttons :: proc(b: ^Battle) {
 // --- draw / discard pile viewer ---------------------------------------------
 
 pile_draw_rect :: proc() -> rl.Rectangle {
-	sh := f32(rl.GetScreenHeight())
+	sh := f32(screen_h())
 	return rl.Rectangle{20, sh - 96, 172, 30}
 }
 
@@ -1960,7 +2144,7 @@ pile_discard_rect :: proc() -> rl.Rectangle {
 // Clickable readouts of the active monster's piles, bottom-left.
 draw_pile_readout :: proc(b: ^Battle) {
 	c := b.party[b.active]
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	dr := pile_draw_rect()
 	dc := pile_discard_rect()
 	hd := rl.CheckCollisionPointRec(mp, dr)
@@ -1982,8 +2166,8 @@ draw_pile_readout :: proc(b: ^Battle) {
 // The pile viewer overlay: the draw and discard piles for the active monster.
 draw_piles :: proc(b: ^Battle) {
 	c := b.party[b.active]
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 215})
 
 	p := rl.Rectangle{sw / 2 - 500, 40, 1000, sh - 80}
@@ -2003,7 +2187,7 @@ draw_piles :: proc(b: ^Battle) {
 
 draw_pile_list :: proc(cards: []Move_Id, x, y, w: f32) {
 	row_h := f32(22)
-	max_rows := int((f32(rl.GetScreenHeight()) - y - 50) / row_h)
+	max_rows := int((f32(screen_h()) - y - 50) / row_h)
 	for id, i in cards {
 		if i >= max_rows {
 			rl.DrawText(fmt.ctprintf("+%d more", len(cards) - i), i32(x), i32(y + f32(i) * row_h), 14, rl.Color{140, 140, 160, 255})
@@ -2025,8 +2209,8 @@ draw_battle_log :: proc(b: ^Battle) {
 }
 
 draw_center_overlay :: proc(title, sub: cstring, color: rl.Color, timer: f32) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 150})
 
 	tw := rl.MeasureText(title, 62)

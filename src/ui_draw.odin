@@ -64,7 +64,7 @@ draw_button :: proc(
 	font := i32(16),
 	segments := i32(6),
 ) {
-	hover := enabled && rl.CheckCollisionPointRec(rl.GetMousePosition(), rec)
+	hover := enabled && rl.CheckCollisionPointRec(mouse_pos(), rec)
 	if hover {
 		ui_want_hand()
 	}
@@ -124,7 +124,7 @@ list_navigate :: proc(v: ^List_View, n: int) {
 		changed = true
 	}
 	if rl.IsMouseButtonPressed(.LEFT) {
-		mp := rl.GetMousePosition()
+		mp := mouse_pos()
 		for row in 0 ..< v.rows {
 			i := v.first + row
 			if i >= n {
@@ -152,8 +152,8 @@ list_navigate :: proc(v: ^List_View, n: int) {
 
 // The full-screen backdrop + title + subtitle used by the list screens.
 draw_list_screen_header :: proc(title, subtitle: cstring) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 245})
 	rl.DrawText(title, 40, 38, 32, rl.Color{225, 225, 240, 255})
 	rl.DrawText(subtitle, 40, 80, 16, rl.Color{140, 140, 160, 255})
@@ -301,11 +301,11 @@ tooltip_draw :: proc() {
 	box_w := f32(max_line_w) + pad * 2
 	box_h := f32(nl) * line_h + pad * 2 - 3
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	x := mp.x + 16
 	y := mp.y + 18
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	if x + box_w > sw - 8 {
 		x = mp.x - box_w - 12
 	}

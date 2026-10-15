@@ -184,6 +184,8 @@ spawn_wild_at :: proc(c: ^Colony, hex: Hex, species: Species_Id, level: int, rol
 		wild     = true,
 		role     = role,
 		pack     = pack,
+		home     = hex,
+		home_set = species_territorial(species),
 	}
 	c.next_id += 1
 	// Wilds use a level-appropriate deck (see `enrich_wild_deck`).
@@ -539,36 +541,274 @@ colony_despawn_wilds :: proc(c: ^Colony) {
 	}
 }
 
-// Too many wilds on one tile: they turn on each other and one dies.
-colony_crowd_fights :: proc(c: ^Colony) {
-	i := 0
-	for i < len(c.roster) {
-		if !c.roster[i].wild {
-			i += 1
+// ----------------------------------------------------------------------------
+// ECOLOGY
+//
+// Wilds aren't static scenery: they toughen over time, hunt each other, leave
+// carrion, and scavengers drift toward the remains. All chance-driven per turn.
+// ----------------------------------------------------------------------------
+
+WILD_GROW_CHANCE :: f32(0.045)
+PREDATION_CHANCE :: f32(0.05)
+PREDATION_LEVEL_GAP :: 2
+CARRION_LIFE     :: 6
+CARRION_ATTRACT  :: 7
+TERRITORY_RADIUS :: 4
+
+// Wilds slowly gain levels so an ignored corner of the map isn't free forever.
+// Capped a little above your best monster so it never runs away from you.
+colony_grow_wilds :: proc(c: ^Colony) {
+	cap := player_top_level(c) + 4
+	bump := WILD_GROW_CHANCE + f32(colony_escalation(c)) * 0.012
+	for i in 0..<len(c.roster) {
+		m := &c.roster[i]
+		if !m.wild || m.role == .BOSS || m.role == .CRONY {
 			continue
 		}
-		hex := c.roster[i].pos
-		if monsters_on_tile(c, hex, true) <= CROWD_LIMIT {
-			i += 1
+		if m.creature.level >= cap || rng_f32(&c.rng) >= bump {
 			continue
 		}
-		if rng_f32(&c.rng) < CROWD_FIGHT_CHANCE {
-			t := tile_at(c, hex)
-			revealed := t != nil && t.revealed
-			if t != nil {
-				t.scuffle = 3
+		m.creature.level += 1
+		creature_recompute_stats(&m.creature)
+		m.creature.hp = m.creature.max_hp
+		if t := tile_at(c, m.pos); t != nil && t.revealed {
+			colony_notify(c, "%s grows tougher.", m.creature.name)
+			colony_add_float(c, m.pos, .GROW, 1)
+		}
+	}
+}
+
+// A wild that spots a weak neighbour — lower level, or badly hurt — moves in for
+// the kill. The fight is a *real* headless battle; the loser is dragged down.
+colony_predation :: proc(c: ^Colony) {
+	// Plan the duels first (removals reshuffle the roster), then resolve them.
+	pred_ids := make([dynamic]int, 0)
+	prey_ids := make([dynamic]int, 0)
+	claimed := make(map[int]bool)
+	defer {
+		delete(pred_ids)
+		delete(prey_ids)
+		delete(claimed)
+	}
+
+	for i in 0..<len(c.roster) {
+		m := &c.roster[i]
+		if !m.wild || m.role == .BOSS || m.role == .CRONY {
+			continue
+		}
+		if rng_f32(&c.rng) >= PREDATION_CHANCE {
+			continue
+		}
+		// Pick the weakest adjacent wild that looks like easy prey.
+		best := -1
+		best_hp := f32(2)
+		for j in 0..<len(c.roster) {
+			if j == i {
+				continue
 			}
-			dir := compass_dir(nearest_player_hex(c, hex), hex)
-			if revealed {
-				colony_notify(c, "A scuffle breaks out %s.", dir == "here" ? "right here" : fmt.ctprintf("to the %s", dir))
+			o := &c.roster[j]
+			if !o.wild || claimed[o.id] {
+				continue
+			}
+			if hex_distance(o.pos, m.pos) > 1 {
+				continue
+			}
+			weak := o.creature.level + PREDATION_LEVEL_GAP <= m.creature.level ||
+				f32(o.creature.hp) < 0.5 * f32(o.creature.max_hp)
+			if !weak {
+				continue
+			}
+			frac := f32(o.creature.hp) / f32(max(o.creature.max_hp, 1))
+			if best < 0 || frac < best_hp {
+				best, best_hp = j, frac
+			}
+		}
+		if best < 0 {
+			continue
+		}
+		append(&pred_ids, m.id)
+		append(&prey_ids, c.roster[best].id)
+		claimed[c.roster[best].id] = true
+	}
+
+	for k in 0..<len(pred_ids) {
+		pi := monster_by_id(c, pred_ids[k])
+		qi := monster_by_id(c, prey_ids[k])
+		if pi < 0 || qi < 0 {
+			continue // one of them already died in an earlier duel
+		}
+		pred := &c.roster[pi]
+		prey := &c.roster[qi]
+		hex := prey.pos
+		pred_name := pred.creature.name
+		prey_name := prey.creature.name
+
+		won, rounds := resolve_duel(c, pred, prey)
+
+		loser_id := won ? prey.id : pred.id
+		winner := won ? pred : prey
+		// The winner recovers a little from the kill.
+		winner.creature.hp = min(winner.creature.max_hp, winner.creature.hp + winner.creature.max_hp / 4)
+
+		if t := tile_at(c, hex); t != nil {
+			t.scuffle = 3
+			t.carrion = CARRION_LIFE
+			if t.revealed {
+				if won {
+					colony_notify(c, "%s drags down %s (%d rounds).", pred_name, prey_name, rounds)
+				} else {
+					colony_notify(c, "%s fights off %s (%d rounds).", prey_name, pred_name, rounds)
+				}
+				colony_add_float(c, hex, .DAMAGE, 1)
 			} else {
-				colony_notify(c, "Snarling in the fog %s.", fmt.ctprintf("to the %s", dir))
+				dir := compass_dir(nearest_player_hex(c, hex), hex)
+				colony_notify(c, "Snarling in the dark %s.", dir == "here" ? "close by" : fmt.ctprintf("to the %s", dir))
 			}
-			// One wild on this tile loses the scrap.
-			remove_monster_at(c, i, false)
+		}
+		if idx := monster_by_id(c, loser_id); idx >= 0 {
+			c.roster[idx].creature.hp = 0
+			remove_monster_at(c, idx, false)
+		}
+	}
+}
+
+// Scavengers: wilds within reach step toward carrion, and one standing on it
+// eats and heals. Carrion also ages out.
+colony_carrion :: proc(c: ^Colony) {
+	carrion := make([dynamic]Hex, 0)
+	defer delete(carrion)
+	for i in 0..<len(c.tiles) {
+		if c.tiles[i].carrion > 0 {
+			append(&carrion, c.tiles[i].hex)
+		}
+	}
+	if len(carrion) == 0 {
+		return
+	}
+	for i in 0..<len(c.roster) {
+		m := &c.roster[i]
+		if !m.wild || m.role != .WILD {
 			continue
 		}
-		i += 1
+		if t := tile_at(c, m.pos); t != nil && t.carrion > 0 {
+			t.carrion = 0
+			m.creature.hp = min(m.creature.max_hp, m.creature.hp + m.creature.max_hp / 4)
+			if t.revealed {
+				colony_notify(c, "%s scavenges the remains.", m.creature.name)
+				colony_add_float(c, m.pos, .HEAL, 1)
+			}
+			continue
+		}
+		best := CARRION_ATTRACT + 1
+		target := m.pos
+		for ch in carrion {
+			if d := hex_distance(ch, m.pos); d < best {
+				best = d
+				target = ch
+			}
+		}
+		if best <= CARRION_ATTRACT {
+			step_hunt(c, m, target)
+		}
+	}
+	// Age the remains.
+	for i in 0..<len(c.tiles) {
+		if c.tiles[i].carrion > 0 {
+			c.tiles[i].carrion -= 1
+		}
+	}
+}
+
+// Too many wilds on one tile: they split into two sides and brawl. The whole
+// tile is one real battle (not a dozen duels), so a pile-up stays cheap.
+colony_crowd_fights :: proc(c: ^Colony) {
+	// One fight per overcrowded tile per turn.
+	tiles := make([dynamic]Hex, 0)
+	seen := make(map[u64]bool)
+	defer {
+		delete(tiles)
+		delete(seen)
+	}
+	for m in c.roster {
+		if !m.wild {
+			continue
+		}
+		if monsters_on_tile(c, m.pos, true) <= CROWD_LIMIT {
+			continue
+		}
+		k := hex_key(m.pos)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		append(&tiles, m.pos)
+	}
+
+	for hex in tiles {
+		if rng_f32(&c.rng) >= CROWD_FIGHT_CHANCE {
+			continue
+		}
+		ids := make([dynamic]int, 0)
+		for m in c.roster {
+			if m.wild && hex_equal(m.pos, hex) {
+				append(&ids, m.id)
+			}
+		}
+		if len(ids) < 2 {
+			delete(ids)
+			continue
+		}
+
+		// Split the brawlers into two sides.
+		a_side := make([dynamic]^Creature, 0)
+		b_side := make([dynamic]^Creature, 0)
+		for id, k in ids {
+			idx := monster_by_id(c, id)
+			if idx < 0 {
+				continue
+			}
+			if k % 2 == 0 {
+				append(&a_side, &c.roster[idx].creature)
+			} else {
+				append(&b_side, &c.roster[idx].creature)
+			}
+		}
+
+		_, rounds := resolve_team(c, a_side[:], b_side[:])
+
+		// Anyone left at 0 HP fell in the brawl.
+		fell := 0
+		for id in ids {
+			idx := monster_by_id(c, id)
+			if idx >= 0 && c.roster[idx].creature.hp <= 0 {
+				remove_monster_at(c, idx, false)
+				fell += 1
+			}
+		}
+
+		t := tile_at(c, hex)
+		revealed := t != nil && t.revealed
+		if t != nil {
+			t.scuffle = 3
+			if fell > 0 {
+				t.carrion = CARRION_LIFE
+			}
+		}
+		dir := compass_dir(nearest_player_hex(c, hex), hex)
+		loc := dir == "here" ? cstring("right here") : fmt.ctprintf("to the %s", dir)
+		if revealed {
+			if fell > 0 {
+				colony_notify(c, "A brawl %s: %d wild%s fell (%d rounds).", loc, fell, fell == 1 ? "" : "s", rounds)
+			} else {
+				colony_notify(c, "A brawl breaks out %s — nobody falls.", loc)
+			}
+		} else {
+			colony_notify(c, "Snarling in the fog %s.", loc)
+		}
+
+		delete(ids)
+		delete(a_side)
+		delete(b_side)
 	}
 }
 
@@ -597,7 +837,12 @@ colony_roam_wilds :: proc(c: ^Colony) {
 			}
 			continue
 		}
-		// Plain wilds always wander (no staying put).
+		// Plain wilds always wander (no staying put), but a wild that has strayed
+		// far from its lair heads back rather than diffusing across the map.
+		if m.home_set && hex_distance(m.pos, m.home) > TERRITORY_RADIUS && rng_f32(&c.rng) < 0.6 {
+			step_hunt(c, m, m.home)
+			continue
+		}
 		ns := hex_neighbors(m.pos)
 		start := rng_below(&c.rng, 6)
 		for k in 0..<6 {
@@ -621,6 +866,30 @@ colony_roam_wilds :: proc(c: ^Colony) {
 	}
 }
 
+// 0..1 proximity of the nearest wild to any of your monsters (drives the
+// heartbeat). 0 = nothing within range.
+nearest_threat :: proc(c: ^Colony) -> f32 {
+	best := 1 << 30
+	for m in c.roster {
+		if m.wild {
+			continue
+		}
+		for o in c.roster {
+			if !o.wild {
+				continue
+			}
+			d := hex_distance(m.pos, o.pos)
+			if d < best {
+				best = d
+			}
+		}
+	}
+	if best == 1 << 30 {
+		return 0
+	}
+	return clamp(1.0 - f32(best) / 10.0, 0, 1)
+}
+
 // Damage a wild deals to an improvement — whether it battered a blocker on its
 // way past or is wrecking one it's standing on. Sieges hit buildings twice as
 // hard.
@@ -632,7 +901,7 @@ wild_improvement_damage :: proc(m: ^Monster) -> int {
 	return d
 }
 
-damage_improvement :: proc(c: ^Colony, t: ^Tile, dmg: int) {
+damage_improvement :: proc(c: ^Colony, t: ^Tile, dmg: int, cause: cstring = "Wilds") {
 	// The building takes the hit first; once it's rubble the overlay is next.
 	if t.improvement != .NONE {
 		t.improvement_hp -= dmg
@@ -641,7 +910,7 @@ damage_improvement :: proc(c: ^Colony, t: ^Tile, dmg: int) {
 		if t.improvement_hp <= 0 {
 			// Destroyed: contents are lost. Den/Nursery occupants are pushed
 			// back onto the map (or lost if there is nowhere to stand).
-			colony_notify(c, "Wilds destroyed your %s!", improvement_name(t.improvement))
+			colony_notify(c, "%s destroyed your %s!", cause, improvement_name(t.improvement))
 			if t.improvement == .DEN || t.improvement == .NURSERY {
 				colony_evacuate_storage(c, t.hex)
 			}
@@ -657,7 +926,7 @@ damage_improvement :: proc(c: ^Colony, t: ^Tile, dmg: int) {
 		t.hit_t0 = f32(rl.GetTime())
 		colony_add_float(c, t.hex, .DAMAGE, dmg)
 		if t.overlay_hp <= 0 {
-			colony_notify(c, "Wilds tore up your %s!", improvement_name(t.overlay))
+			colony_notify(c, "%s wrecked your %s!", cause, improvement_name(t.overlay))
 			t.overlay = .NONE
 			t.overlay_hp = 0
 		}

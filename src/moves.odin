@@ -203,17 +203,37 @@ Move_Id :: enum {
 	Rejuvenate,
 	Bramble_Armor,
 	Spike_Shell,
+
+	// Teamwork (support / energy)
+	Channel,
+	Shared_Ward,
+	Field_Mend,
+	Siphon,
+	Cull,
+	Coordinated_Strike,
+	Overexert,
+	Kindle,
+	Conduit,
+	Ward,
 }
 
 // Card rarity drives how often a reward pick offers it (see `Rarity` in
 // creature.odin). Premium cards are always RARE, so they show up as the rare
 // third option.
+// Who a card acts on. `ENEMY` is the default (and the zero value, so existing
+// offensive cards need no annotation); `SELF` and `ALLY` cards are support. The
+// player picks the enemy or ally target the same way (click the creature), and
+// `SELF` needs no target.
+Move_Target :: enum { ENEMY, SELF, ALLY }
+
 Move :: struct {
 	name:       string,
 	desc:       string,
 	cost:       f32,
 	element:    Element,
 	rarity:     Rarity,
+	target:     Move_Target,          // the card's primary target (zero value = ENEMY)
+	targets:    bit_set[Move_Target], // extra kinds it may also be played on (empty = just {target})
 	damage:     int,
 	block:      int,
 	hits:       int,
@@ -239,6 +259,18 @@ Move :: struct {
 	vuln_bonus:  int, // extra damage if the target is Vulnerable
 	block_bonus: int, // extra damage if the attacker has Block
 	combo_bonus: int, // extra damage if the attacker already played a card this turn
+
+	// Teamwork & energy
+	energy_give:  int, // give energy to the beneficiary
+	energy_drain: int, // drain energy from the victim (the caster gains it)
+	execute_bonus: int, // extra damage when the victim is low
+	execute_pct:   f32, // the "low" threshold, as a fraction of max HP
+	ally_bonus:    int, // extra damage per other living ally
+
+	// Self-costs (paid by the caster whatever the target)
+	self_strength_down: int,
+	self_defense_down:  f32,
+	self_damage:        int,
 }
 
 MOVE_DATA := [Move_Id]Move{
@@ -335,6 +367,47 @@ MOVE_DATA := [Move_Id]Move{
 	.Rejuvenate   = {name = "Rejuvenate",   desc = "regen 2, 5 block",          cost = 1.5, element = .FLORA, rarity = .RARE, block = 5, regen = 2},
 	.Bramble_Armor = {name = "Bramble Armor", desc = "thorns 3",                cost = 1.0, element = .FLORA, rarity = .UNCOMMON, thorns = 3},
 	.Spike_Shell  = {name = "Spike Shell",  desc = "thorns 2, 6 block",         cost = 1.5, element = .NEUTRAL, rarity = .RARE, block = 6, thorns = 2},
+
+	// Teamwork: cards that act on an ally, on yourself, or punish a weakened foe.
+	.Channel      = {name = "Channel",      desc = "ally +3 energy",            cost = 0.5, element = .NEUTRAL, target = .ALLY,  rarity = .COMMON, energy_give = 3},
+	.Shared_Ward  = {name = "Shared Ward",  desc = "ally +9 block",             cost = 1.0, element = .NEUTRAL, target = .ALLY,  rarity = .COMMON, block = 9},
+	.Field_Mend   = {name = "Field Mend",   desc = "ally heal 22%",             cost = 1.0, element = .NEUTRAL, target = .ALLY,  rarity = .UNCOMMON, heal_pct = 0.22},
+	.Siphon       = {name = "Siphon",       desc = "3 dmg, steal 3 en",        cost = 1.0, element = .NEUTRAL, rarity = .UNCOMMON, damage = 3, hits = 1, energy_drain = 3},
+	.Cull         = {name = "Cull",         desc = "6 dmg, +10 low hp",         cost = 1.5, element = .NEUTRAL, rarity = .UNCOMMON, damage = 6, hits = 1, execute_bonus = 10, execute_pct = 0.4},
+	.Coordinated_Strike = {name = "Coordinated Strike", desc = "4 dmg, +2 per ally", cost = 1.0, element = .NEUTRAL, rarity = .UNCOMMON, damage = 4, hits = 1, ally_bonus = 2},
+	.Overexert    = {name = "Overexert",    desc = "+5 str, -2 def",             cost = 0.5, element = .NEUTRAL, target = .SELF,  rarity = .COMMON, strength = 5, self_defense_down = 2},
+	// Flexible targets: the same card reads differently depending on what it hits.
+	.Kindle       = {name = "Kindle",       desc = "6 dmg / +3 str",             cost = 1.0, element = .EMBER, rarity = .UNCOMMON, target = .ENEMY, targets = {.SELF, .ALLY}, damage = 6, hits = 1, strength = 3},
+	.Conduit      = {name = "Conduit",      desc = "give 3 en / steal 3",        cost = 1.0, element = .NEUTRAL, target = .ALLY, targets = {.ENEMY}, rarity = .UNCOMMON, energy_give = 3, energy_drain = 3},
+	.Ward         = {name = "Ward",         desc = "8 block to a friend",        cost = 1.0, element = .NEUTRAL, target = .ALLY, targets = {.SELF}, rarity = .COMMON, block = 8},
+}
+
+// The full set of kinds a card can be played on: its primary target plus any
+// extras it allows.
+move_targets :: proc(m: Move) -> bit_set[Move_Target] {
+	s := m.targets
+	s += {m.target}
+	return s
+}
+
+// Short label for the kinds a card can be played on (shown in the tooltip).
+move_target_label :: proc(m: Move) -> string {
+	t := move_targets(m)
+	switch {
+	case t == {.ENEMY}:
+		return "enemy"
+	case t == {.SELF}:
+		return "self"
+	case t == {.ALLY}:
+		return "ally"
+	case .ENEMY in t && .ALLY in t && .SELF in t:
+		return "any target"
+	case .ALLY in t && .SELF in t:
+		return "self or ally"
+	case .ENEMY in t && .ALLY in t:
+		return "enemy or ally"
+	}
+	return "target"
 }
 
 move_data :: proc(id: Move_Id) -> Move {
@@ -347,7 +420,10 @@ move_value :: proc(id: Move_Id) -> int {
 	return m.damage * max(m.hits, 1) * 2 + m.block + int(m.heal_pct * 140) + int(m.leech_pct * 40) + m.strength * 4 + m.vulnerable * 3 + int(m.defense) * 4 + m.draw * 2 +
 		m.strength_down * 4 + int(m.defense_down) * 4 +
 		m.poison * 3 + m.burn * 3 + m.stun * 8 + m.regen * 3 + m.thorns * 2 +
-		(m.vuln_bonus + m.block_bonus + m.combo_bonus) / 2
+		(m.vuln_bonus + m.block_bonus + m.combo_bonus) / 2 +
+		m.energy_give * 5 + m.energy_drain * 5 +
+		(m.execute_bonus + m.ally_bonus) / 2 -
+		m.self_strength_down * 4 - int(m.self_defense_down) * 4 - m.self_damage * 2
 }
 
 // Relative likelihood of a card appearing in a reward offer. Only COMMON,

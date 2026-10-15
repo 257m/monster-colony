@@ -19,6 +19,10 @@ Hex_Renderer :: struct {
 	camera_x: f32,
 	camera_y: f32,
 	zoom:     f32,
+
+	// Transient screen shake (tremors), in screen pixels.
+	shake_x: f32,
+	shake_y: f32,
 }
 
 hex_renderer_init :: proc(r: ^Hex_Renderer, hex_size: f32, screen_w, screen_h: int) {
@@ -41,14 +45,19 @@ hex_world :: proc(r: ^Hex_Renderer, hex: Hex) -> (f32, f32) {
 
 hex_to_screen :: proc(r: ^Hex_Renderer, hex: Hex) -> (f32, f32) {
 	wx, wy := hex_world(r, hex)
-	x := (wx - r.camera_x) * r.zoom + r.origin_x
-	y := (wy - r.camera_y) * r.zoom + r.origin_y
+	return world_to_screen(r, wx, wy)
+}
+
+// Screen position of a world-space point (used to tween monsters between tiles).
+world_to_screen :: proc(r: ^Hex_Renderer, wx, wy: f32) -> (f32, f32) {
+	x := (wx - r.camera_x) * r.zoom + r.origin_x + r.shake_x
+	y := (wy - r.camera_y) * r.zoom + r.origin_y + r.shake_y
 	return x, y
 }
 
 screen_to_hex :: proc(r: ^Hex_Renderer, sx, sy: f32) -> Hex {
-	x := (sx - r.origin_x) / r.zoom + r.camera_x
-	y := (sy - r.origin_y) / r.zoom + r.camera_y
+	x := (sx - r.origin_x - r.shake_x) / r.zoom + r.camera_x
+	y := (sy - r.origin_y - r.shake_y) / r.zoom + r.camera_y
 
 	q_f := (2.0 / 3.0 * x) / r.hex_size
 	r_f := (-1.0 / 3.0 * x + math.sqrt(f32(3.0)) / 3.0 * y) / r.hex_size
@@ -59,8 +68,8 @@ screen_to_hex :: proc(r: ^Hex_Renderer, sx, sy: f32) -> Hex {
 // this to visit only visible tiles, so an infinite, heavily-explored map doesn't
 // force a scan of every materialized tile each frame.
 visible_hex_bounds :: proc(r: ^Hex_Renderer, margin_hexes := 2) -> (min_q, max_q, min_r, max_r: int) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	corners := [4][2]f32{{0, 0}, {sw, 0}, {0, sh}, {sw, sh}}
 	min_q, max_q = max(int), min(int)
 	min_r, max_r = max(int), min(int)
@@ -101,7 +110,7 @@ draw_hex :: proc(r: ^Hex_Renderer, hex: Hex, fill: rl.Color, outline: rl.Color, 
 // CAMERA INPUT
 // ============================================================================
 
-hex_renderer_update_camera :: proc(r: ^Hex_Renderer, dt: f32) {
+hex_renderer_update_camera :: proc(r: ^Hex_Renderer, dt: f32, allow_zoom := true) {
 	speed := 600.0 / r.zoom
 
 	if rl.IsKeyDown(.RIGHT) || rl.IsKeyDown(.D) { r.camera_x += speed * dt }
@@ -109,10 +118,10 @@ hex_renderer_update_camera :: proc(r: ^Hex_Renderer, dt: f32) {
 	if rl.IsKeyDown(.DOWN)  || rl.IsKeyDown(.S) { r.camera_y += speed * dt }
 	if rl.IsKeyDown(.UP)    || rl.IsKeyDown(.W) { r.camera_y -= speed * dt }
 
-	wheel := rl.GetMouseWheelMove()
+	wheel := allow_zoom ? rl.GetMouseWheelMove() : 0
 	if wheel != 0 {
-		mx := f32(rl.GetMouseX())
-		my := f32(rl.GetMouseY())
+		mx := f32(mouse_x())
+		my := f32(mouse_y())
 
 		world_x := (mx - r.origin_x) / r.zoom + r.camera_x
 		world_y := (my - r.origin_y) / r.zoom + r.camera_y
@@ -125,7 +134,7 @@ hex_renderer_update_camera :: proc(r: ^Hex_Renderer, dt: f32) {
 }
 
 hex_renderer_hovered :: proc(r: ^Hex_Renderer) -> Hex {
-	return screen_to_hex(r, f32(rl.GetMouseX()), f32(rl.GetMouseY()))
+	return screen_to_hex(r, f32(mouse_x()), f32(mouse_y()))
 }
 
 // One border colour for every hex so that shared edges (drawn by both

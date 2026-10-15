@@ -49,9 +49,11 @@ when ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32 {
 		web_game.show_minimap = true
 		web_game.tooltips_on = true
 		web_game.autosave_on = true
+		web_game.show_terrain_legend = true
+		web_game.show_key_hints = true
 		web_game.ring_total = make(map[u64]int)
 		web_game.ring_seen = make(map[u64]int)
-		hex_renderer_init(&web_game.renderer, 46.0, int(rl.GetScreenWidth()), int(rl.GetScreenHeight()))
+		hex_renderer_init(&web_game.renderer, 46.0, int(screen_w()), int(screen_h()))
 		goto_title(&web_game)
 		web_ready = true
 	}
@@ -64,15 +66,15 @@ when ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32 {
 			return false
 		}
 		dt := rl.GetFrameTime()
-		web_game.renderer.origin_x = f32(rl.GetScreenWidth()) / 2
-		web_game.renderer.origin_y = f32(rl.GetScreenHeight()) / 2
+		web_game.renderer.origin_x = f32(screen_w()) / 2
+		web_game.renderer.origin_y = f32(screen_h()) / 2
 
 		audio_update()
 		game_update(&web_game, dt)
 
-		rl.BeginDrawing()
+		screen_begin()
 		game_draw(&web_game)
-		rl.EndDrawing()
+		screen_end()
 		return true
 	}
 

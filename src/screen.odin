@@ -3,81 +3,80 @@ package main
 import rl "vendor:raylib"
 
 // ============================================================================
-// VIRTUAL RESOLUTION
+// UI SCALING
 //
-// The whole UI is laid out for a fixed 1280x720 space. Rather than scale every
-// coordinate, the game renders into a 1280x720 render texture and blits that to
-// the window (letterboxed), so text and panels keep their proportions at any
-// window size. `screen_w`/`screen_h` report the virtual size and `mouse_pos`
-// maps the real cursor into that space — callers use these instead of raylib's
-// window-space functions.
+// The whole UI is laid out in a fixed 1280x720 "design space". Instead of
+// touching every coordinate, the frame is drawn through a 2D camera whose zoom
+// scales that design space to fill the window (letterboxed, aspect preserved).
+// Because raylib draws shapes as geometry and the default font is a
+// point-filtered bitmap, this keeps panels and text crisp rather than
+// resampling a low-res buffer.
+//
+// `screen_w`/`screen_h` report the design size and the `mouse_*` helpers map
+// the real cursor back into it, so callers keep using design coordinates.
 // ============================================================================
 
-VIRTUAL_W :: 1280
-VIRTUAL_H :: 720
+DESIGN_W :: 1280
+DESIGN_H :: 720
 
-SCREEN_RT:    rl.RenderTexture2D
-SCREEN_RT_OK: bool
+screen_w :: proc() -> i32 { return DESIGN_W }
+screen_h :: proc() -> i32 { return DESIGN_H }
 
-screen_init :: proc() {
-	SCREEN_RT = rl.LoadRenderTexture(VIRTUAL_W, VIRTUAL_H)
-	SCREEN_RT_OK = SCREEN_RT.id != 0
-	if SCREEN_RT_OK {
-		rl.SetTextureFilter(SCREEN_RT.texture, .BILINEAR)
-	}
-}
-
-screen_shutdown :: proc() {
-	if SCREEN_RT_OK {
-		rl.UnloadRenderTexture(SCREEN_RT)
-	}
-}
-
+// Scale + letterbox offset from design space to the window.
 screen_transform :: proc() -> (scale, ox, oy: f32) {
 	ww := f32(rl.GetScreenWidth())
 	wh := f32(rl.GetScreenHeight())
-	scale = min(ww / f32(VIRTUAL_W), wh / f32(VIRTUAL_H))
-	ox = (ww - f32(VIRTUAL_W) * scale) / 2
-	oy = (wh - f32(VIRTUAL_H) * scale) / 2
+	scale = min(ww / f32(DESIGN_W), wh / f32(DESIGN_H))
+	ox = (ww - f32(DESIGN_W) * scale) / 2
+	oy = (wh - f32(DESIGN_H) * scale) / 2
 	return
 }
 
-// Start a frame: draw the game into the virtual buffer (or the window directly
-// if the buffer couldn't be created).
+// The camera used for a frame (optionally shifted by a screen shake, in design
+// units). Callers that need to re-enter 2D mode (e.g. the battle shake) must
+// use this so they don't drop the UI scale.
+ui_camera :: proc(shake_x := f32(0), shake_y := f32(0)) -> rl.Camera2D {
+	scale, ox, oy := screen_transform()
+	return rl.Camera2D {
+		offset = rl.Vector2{ox + shake_x * scale, oy + shake_y * scale},
+		target = rl.Vector2{0, 0},
+		rotation = 0,
+		zoom = scale,
+	}
+}
+
+// Start a frame: clear, then enter the scaled design space.
 screen_begin :: proc() {
-	if SCREEN_RT_OK {
-		rl.BeginTextureMode(SCREEN_RT)
-	} else {
-		rl.BeginDrawing()
-	}
-	rl.ClearBackground(rl.Color{8, 9, 12, 255})
+	rl.BeginDrawing()
+	rl.ClearBackground(rl.BLACK)
+	rl.BeginMode2D(ui_camera())
 }
 
-// Finish the frame: blit the virtual buffer to the window, letterboxed.
+// Finish a frame.
 screen_end :: proc() {
-	if SCREEN_RT_OK {
-		rl.EndTextureMode()
-		rl.BeginDrawing()
-		rl.ClearBackground(rl.BLACK)
-		scale, ox, oy := screen_transform()
-		src := rl.Rectangle{0, 0, f32(VIRTUAL_W), -f32(VIRTUAL_H)} // render textures are flipped
-		dst := rl.Rectangle{ox, oy, f32(VIRTUAL_W) * scale, f32(VIRTUAL_H) * scale}
-		rl.DrawTexturePro(SCREEN_RT.texture, src, dst, rl.Vector2{0, 0}, 0, rl.WHITE)
-		rl.EndDrawing()
-	} else {
-		rl.EndDrawing()
-	}
+	rl.EndMode2D()
+	rl.EndDrawing()
 }
 
-screen_w :: proc() -> i32 { return VIRTUAL_W }
-screen_h :: proc() -> i32 { return VIRTUAL_H }
+// Scissor rectangles are in framebuffer pixels, not design space, so they need
+// mapping through the same transform.
+scissor_begin :: proc(rec: rl.Rectangle) {
+	scale, ox, oy := screen_transform()
+	rl.BeginScissorMode(
+		i32(rec.x * scale + ox),
+		i32(rec.y * scale + oy),
+		i32(rec.width * scale),
+		i32(rec.height * scale),
+	)
+}
 
-// The cursor in virtual space.
+scissor_end :: proc() {
+	rl.EndScissorMode()
+}
+
+// The cursor in design space.
 mouse_pos :: proc() -> rl.Vector2 {
 	mp := rl.GetMousePosition()
-	if !SCREEN_RT_OK {
-		return mp
-	}
 	scale, ox, oy := screen_transform()
 	return rl.Vector2{(mp.x - ox) / scale, (mp.y - oy) / scale}
 }
@@ -85,12 +84,8 @@ mouse_pos :: proc() -> rl.Vector2 {
 mouse_x :: proc() -> i32 { return i32(mouse_pos().x) }
 mouse_y :: proc() -> i32 { return i32(mouse_pos().y) }
 
-// The cursor delta in virtual space (window deltas are scaled by the transform).
 mouse_delta :: proc() -> rl.Vector2 {
 	d := rl.GetMouseDelta()
-	if !SCREEN_RT_OK {
-		return d
-	}
 	scale, _, _ := screen_transform()
 	return rl.Vector2{d.x / scale, d.y / scale}
 }

@@ -364,6 +364,16 @@ Monster :: struct {
 	role:     Wild_Role, // wilds only: raider/alpha hunt the colony (Phase D)
 	pack:     int, // boss-pack id (0 = not in a pack); pack members move together
 	acted:    bool, // player monsters: already moved/fought this turn
+	// Map move animation: the drawn world-space position eases toward `pos`.
+	anim_x, anim_y: f32,
+	anim_fx:        f32,
+	anim_fy:        f32,
+	anim_target:    Hex,
+	anim_t:         f32,
+	anim_ok:        bool,
+	home:           Hex, // wilds: the lair they wander around
+	home_set:       bool,
+	spawn_t0:       f32, // when the monster first appeared (arrival burst)
 	stored:     Stored_In, // Phase 10: where it lives (MAP, a Den, or a Nursery)
 	stored_hex: Hex,       // the building holding it when stored
 }
@@ -390,6 +400,43 @@ wild_role_tag :: proc(r: Wild_Role) -> cstring {
 	return ""
 }
 
+// Seconds for a monster to slide from its old tile to its new one.
+MOVE_ANIM_DUR :: f32(0.22)
+// Duration of the arrival burst when a monster first appears.
+SPAWN_BURST :: f32(0.6)
+
+// Ease the drawn position of every map monster toward its logical hex. Detects
+// the change itself (comparing against `anim_target`) so any code that assigns
+// `m.pos` gets the tween for free.
+colony_update_move_anims :: proc(g: ^Game, dt: f32) {
+	for i in 0..<len(g.colony.roster) {
+		m := &g.colony.roster[i]
+		tx, ty := hex_world(&g.renderer, m.pos)
+		if !m.anim_ok {
+			m.anim_x, m.anim_y = tx, ty
+			m.anim_fx, m.anim_fy = tx, ty
+			m.anim_target = m.pos
+			m.anim_ok = true
+			m.spawn_t0 = f32(rl.GetTime())
+			continue
+		}
+		if !hex_equal(m.anim_target, m.pos) {
+			m.anim_fx, m.anim_fy = m.anim_x, m.anim_y
+			m.anim_target = m.pos
+			m.anim_t = 0
+		}
+		if m.anim_t < MOVE_ANIM_DUR {
+			m.anim_t += dt
+			p := clamp(m.anim_t / MOVE_ANIM_DUR, 0, 1)
+			e := 1.0 - (1.0 - p) * (1.0 - p) // ease-out quad
+			m.anim_x = m.anim_fx + (tx - m.anim_fx) * e
+			m.anim_y = m.anim_fy + (ty - m.anim_fy) * e
+		} else {
+			m.anim_x, m.anim_y = tx, ty
+		}
+	}
+}
+
 // A pending "pick one of these moves" prompt — raised when a monster levels into
 // several learnset moves at once, or when a battle reward offers a choice.
 MAX_CHOICE_OPTIONS :: 3
@@ -405,7 +452,7 @@ Move_Choice :: struct {
 
 // A short-lived floating "+N gold/food" marker at a tile, spawned by the turn
 // loop when a producer works. Drawn by draw_tile_floats; ages via rl.GetTime().
-Float_Kind :: enum { GOLD, FOOD, FOOD_IN, FOOD_OUT, DAMAGE, CRYSTAL, FLEE, ENERGY, HEAL }
+Float_Kind :: enum { GOLD, FOOD, FOOD_IN, FOOD_OUT, DAMAGE, CRYSTAL, FLEE, ENERGY, HEAL, GROW }
 FLOAT_LIFE :: f32(1.6)
 HIT_LIFE   :: f32(0.4) // improvement damage shake/flash duration
 
@@ -465,6 +512,11 @@ Colony :: struct {
 
 	// Colony-wide boss relics (Phase 25), stackable.
 	relics: [Relic]int,
+
+	// World event state (Phase: ecology/events).
+	tremor: f32, // seconds of screen shake remaining
+	// Headless skirmish budget for the current turn.
+	battles_this_turn: int,
 }
 
 // ----------------------------------------------------------------------------
@@ -508,11 +560,18 @@ materialize_around :: proc(c: ^Colony, center: Hex, radius: int) {
 }
 
 colony_reveal_around :: proc(c: ^Colony, hex: Hex) {
+	fresh := false
 	if t := ensure_tile(c, hex); t != nil {
+		if !t.revealed {
+			fresh = true
+		}
 		t.revealed = true
 	}
 	for n in hex_neighbors(hex) {
 		if t := ensure_tile(c, n); t != nil {
+			if !t.revealed {
+				fresh = true
+			}
 			t.revealed = true
 		}
 	}
@@ -521,6 +580,9 @@ colony_reveal_around :: proc(c: ^Colony, hex: Hex) {
 		for nn in hex_neighbors(n) {
 			_ = ensure_tile(c, nn)
 		}
+	}
+	if fresh {
+		audio_play(.DISCOVER, 0.55)
 	}
 }
 
@@ -1528,6 +1590,9 @@ colony_add_float :: proc(c: ^Colony, hex: Hex, kind: Float_Kind, amount: int) {
 }
 
 colony_end_turn :: proc(c: ^Colony) {
+	// Reset the headless-battle budget for this turn.
+	c.battles_this_turn = 0
+
 	// Drop production popups left over from previous turns.
 	{
 		now := f32(rl.GetTime())
@@ -1729,16 +1794,20 @@ colony_end_turn :: proc(c: ^Colony) {
 	colony_raids(c)
 
 	colony_spawn_wilds(c)
+	colony_grow_wilds(c)
 	colony_spawn_boss_packs(c)
 	colony_roam_wilds(c)
 	colony_roam_boss_packs(c)
 	colony_despawn_wilds(c)
 	colony_crowd_fights(c)
+	colony_predation(c)
+	colony_carrion(c)
 	colony_fountains(c)
 	colony_menders(c)
 	colony_turrets(c)
 	colony_apply_traps(c)
 	colony_resolve_wild_actions(c)
+	colony_world_events(c)
 
 	// Gold Finder items trickle a little gold each turn.
 	for m in c.roster {

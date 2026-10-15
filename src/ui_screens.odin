@@ -15,8 +15,8 @@ TITLE_BUTTON_H :: f32(58)
 TITLE_BUTTON_GAP :: f32(16)
 
 title_button_rect :: proc(i: int) -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	y := sh * 0.54 + f32(i) * (TITLE_BUTTON_H + TITLE_BUTTON_GAP)
 	return rl.Rectangle{sw / 2 - TITLE_BUTTON_W / 2, y, TITLE_BUTTON_W, TITLE_BUTTON_H}
 }
@@ -33,7 +33,7 @@ update_title :: proc(g: ^Game) {
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	if rl.CheckCollisionPointRec(mp, title_button_rect(0)) {
 		reset_to_starter(g)
 		return
@@ -49,8 +49,8 @@ update_title :: proc(g: ^Game) {
 }
 
 draw_title :: proc(g: ^Game) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.ClearBackground(rl.Color{9, 10, 16, 255})
 
 	cx := sw / 2
@@ -89,8 +89,8 @@ draw_title :: proc(g: ^Game) {
 // ----------------------------------------------------------------------------
 
 starter_rect :: proc(i: int) -> rl.Rectangle {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	w := f32(280)
 	h := f32(470)
 	gap := f32(34)
@@ -100,8 +100,8 @@ starter_rect :: proc(i: int) -> rl.Rectangle {
 }
 
 draw_starter :: proc() {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 	rl.ClearBackground(rl.Color{12, 12, 20, 255})
 
 	title := cstring("CHOOSE YOUR STARTER")
@@ -111,7 +111,7 @@ draw_starter :: proc() {
 	sw2 := rl.MeasureText(sub, 16)
 	rl.DrawText(sub, i32(sw) / 2 - sw2 / 2, 82, 16, rl.Color{140, 140, 160, 255})
 
-	mp := rl.GetMousePosition()
+	mp := mouse_pos()
 	for idx in 0..<len(STARTER_SPECIES) {
 		sp := SPECIES[STARTER_SPECIES[idx]]
 		rec := starter_rect(idx)
@@ -198,8 +198,8 @@ draw_starter :: proc() {
 // ----------------------------------------------------------------------------
 
 draw_colony_game_over :: proc(turns: int) {
-	sw := f32(rl.GetScreenWidth())
-	sh := f32(rl.GetScreenHeight())
+	sw := f32(screen_w())
+	sh := f32(screen_h())
 
 	rl.ClearBackground(rl.Color{28, 8, 12, 255})
 

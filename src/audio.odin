@@ -21,6 +21,7 @@ Synth_Kind :: enum { SINE, SQUARE, SAW, TRIANGLE, NOISE }
 Sfx :: enum {
 	CLICK, CONFIRM, CANCEL, BUILD, ERROR, COIN, FOOD, CRYSTAL,
 	HIT, HEAL, LEVELUP, VICTORY, DEFEAT, NOTIFY, TURN, RAID,
+	DISCOVER, ROAR, DRIP, WIND, CHIRP, HEARTBEAT,
 }
 
 Audio :: struct {
@@ -33,6 +34,9 @@ Audio :: struct {
 	pcm:       [dynamic][]i16, // keeps the sample buffers alive while raylib owns copies
 	wav:       [dynamic]u8,    // the music track encoded as a WAV, kept alive for the stream
 	rng:       Rng,
+	amb_t:     f32, // countdown to the next random ambient cue
+	beat_t:    f32, // countdown to the next threat heartbeat
+	threat:    f32, // 0..1, how close the nearest wild is (drives the heartbeat)
 }
 
 audio: Audio
@@ -207,6 +211,36 @@ audio_make_sfx :: proc(kind: Sfx) -> []i16 {
 		audio_note(b, 0.00, 220, 210, 0.22, 0.40, .SQUARE, 5.0, 0.004, &audio.rng)
 		audio_note(b, 0.24, 165, 158, 0.30, 0.40, .SQUARE, 4.0, 0.004, &audio.rng)
 		return b
+	case .DISCOVER:
+		b := audio_buf(0.5)
+		freqs := [?]f32{784, 1046, 1318}
+		for f, i in freqs {
+			audio_note(b, f32(i) * 0.07, f, f * 1.02, 0.16, 0.24, .SINE, 9.0, 0.004, &audio.rng)
+		}
+		return b
+	case .ROAR:
+		b := audio_buf(0.75)
+		audio_note(b, 0.00, 150, 88, 0.55, 0.32, .SAW, 4.0, 0.02, &audio.rng)
+		audio_note(b, 0.00, 0, 0, 0.30, 0.10, .NOISE, 6.0, 0.02, &audio.rng)
+		return b
+	case .DRIP:
+		b := audio_buf(0.25)
+		audio_note(b, 0.00, 1600, 640, 0.10, 0.20, .SINE, 20.0, 0.002, &audio.rng)
+		return b
+	case .WIND:
+		b := audio_buf(1.1)
+		audio_note(b, 0.00, 0, 0, 1.0, 0.14, .NOISE, 2.0, 0.35, &audio.rng)
+		return b
+	case .CHIRP:
+		b := audio_buf(0.32)
+		audio_note(b, 0.00, 2200, 2600, 0.08, 0.14, .SINE, 24.0, 0.003, &audio.rng)
+		audio_note(b, 0.09, 2600, 2200, 0.10, 0.12, .SINE, 20.0, 0.003, &audio.rng)
+		return b
+	case .HEARTBEAT:
+		b := audio_buf(0.5)
+		audio_note(b, 0.00, 72, 54, 0.12, 0.50, .SINE, 5.0, 0.004, &audio.rng)
+		audio_note(b, 0.17, 62, 46, 0.15, 0.38, .SINE, 5.0, 0.004, &audio.rng)
+		return b
 	}
 	return audio_buf(0.01)
 }
@@ -344,6 +378,35 @@ audio_update :: proc() {
 	if audio.ready && audio.has_music {
 		rl.UpdateMusicStream(audio.music)
 	}
+	if !audio.ready || audio.muted {
+		return
+	}
+	dt := rl.GetFrameTime()
+
+	// Occasional ambient cue so the cavern isn't silent between actions.
+	audio.amb_t -= dt
+	if audio.amb_t <= 0 {
+		audio.amb_t = 6.0 + rng_f32(&audio.rng) * 9.0
+		cues := [?]Sfx{.DRIP, .WIND, .CHIRP, .ROAR}
+		cue := cues[rng_below(&audio.rng, len(cues))]
+		audio_play(cue, cue == .ROAR ? 0.26 : 0.14)
+	}
+
+	// A heartbeat that quickens as a wild closes in.
+	if audio.threat > 0.05 {
+		audio.beat_t -= dt
+		if audio.beat_t <= 0 {
+			audio.beat_t = 1.1 - audio.threat * 0.55
+			audio_play(.HEARTBEAT, 0.12 + audio.threat * 0.33)
+		}
+	} else {
+		audio.beat_t = 0
+	}
+}
+
+// 0 = nothing near, 1 = something is right on top of you.
+audio_set_threat :: proc(v: f32) {
+	audio.threat = clamp(v, 0, 1)
 }
 
 audio_shutdown :: proc() {
