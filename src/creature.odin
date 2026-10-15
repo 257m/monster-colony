@@ -498,7 +498,6 @@ Creature :: struct {
 	regen:      int,
 	thorns:     int,
 	stun:       int,
-	stun_round: int, // transient: round in which Stun was last consumed
 	power:        f32, // permanent bonus damage from leveling
 	defense:      f32, // permanent damage reduction from leveling
 	defense_buff: f32, // temporary, from moves (resets each battle)
@@ -1002,7 +1001,6 @@ creature_reset_battle_state :: proc(c: ^Creature) {
 	c.regen = 0
 	c.thorns = 0
 	c.stun = 0
-	c.stun_round = 0
 	c.shake = 0
 	c.flash = 0
 	c.fx_t = 0

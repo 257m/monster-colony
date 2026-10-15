@@ -450,10 +450,16 @@ set_actor :: proc(b: ^Battle, a: Actor) {
 		b.active = a.index
 		b.phase = .PLAYER_ACTION
 		b.timer = b.auto_play ? 0.55 : 0
+		if a.index >= 0 && a.index < len(b.party) {
+			daze(b, b.party[a.index])
+		}
 	} else {
 		b.enemy_acting = a.index
 		b.phase = .ENEMY_ACTION
 		b.timer = 0.6
+		if a.index >= 0 && a.index < len(b.enemies) {
+			daze(b, b.enemies[a.index])
+		}
 	}
 }
 
@@ -471,11 +477,25 @@ actor_creature :: proc(b: ^Battle, a: Actor) -> ^Creature {
 	return nil
 }
 
-// A stunned creature skips the whole round: Stun is consumed the first time the
-// queue reaches it, and `stun_round` keeps it out for the rest of that round.
-actor_is_stunned :: proc(b: ^Battle, a: Actor) -> bool {
-	c := actor_creature(b, a)
-	return c != nil && (c.stun > 0 || c.stun_round == b.round)
+// A stunned creature loses card plays, not its whole turn: when its turn starts
+// it fumbles `stun` cards from its hand (discarded, no energy spent) and the
+// stun is consumed. So Stun 2 costs it two cards, not the entire round.
+daze :: proc(b: ^Battle, c: ^Creature) {
+	if c == nil || c.stun <= 0 {
+		return
+	}
+	n := min(c.stun, len(c.hand))
+	for _ in 0..<n {
+		i := rng_below(&b.rng, len(c.hand))
+		append(&c.discard, c.hand[i])
+		ordered_remove(&c.hand, i)
+	}
+	c.stun = 0
+	if n > 0 {
+		battle_log(b, "%s is dazed — fumbles %d card%s.", c.name, n, n == 1 ? "" : "s")
+		creature_burst(c, popup_color(.STUN), 0.5)
+		spawn_popup(b, side_of(b, c), .STUN, n)
+	}
 }
 
 // Hand control to the next monster in the queue that can act, cycling. If a
@@ -491,15 +511,6 @@ advance :: proc(b: ^Battle) {
 		}
 		a := b.order[b.order_pos]
 		b.order_pos = (b.order_pos + 1) % n
-		if actor_is_stunned(b, a) {
-			c := actor_creature(b, a)
-			if c.stun_round != b.round {
-				c.stun = max(c.stun - 1, 0)
-				c.stun_round = b.round
-				battle_log(b, "%s is stunned!", c.name)
-			}
-			continue
-		}
 		if actor_can_act(b, a) {
 			set_actor(b, a)
 			return
