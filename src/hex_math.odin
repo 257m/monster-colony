@@ -67,8 +67,7 @@ hex_range :: proc(center: Hex, radius: int, out: ^[dynamic]Hex) {
 }
 
 // Cube coordinates: x = q, z = r, y = -x - z
-hex_to_cube :: proc(h: Hex) -> (x, y, z: int) {
-	x = h.q
+hex_to_cube :: proc(h: Hex) -> (x, y, z: int) {	x = h.q
 	z = h.r
 	y = -x - z
 	return

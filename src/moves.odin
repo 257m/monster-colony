@@ -108,7 +108,6 @@ Move_Id :: enum {
 	Jab,
 	Brace,
 	Body_Slam,
-	Body_Press,
 	Guard,
 	Fortify,
 	Hone,
@@ -216,12 +215,6 @@ Move_Id :: enum {
 	Kindle,
 	Conduit,
 	Ward,
-	Shield_Bash,
-	Iron_Slam,
-	Vital_Strike,
-	Last_Stand,
-	Reckoning,
-	Haze,
 }
 
 // Card rarity drives how often a reward pick offers it (see `Rarity` in
@@ -233,39 +226,14 @@ Move_Id :: enum {
 // `SELF` needs no target.
 Move_Target :: enum { ENEMY, SELF, ALLY }
 
-// ----------------------------------------------------------------------------
-// MOVES
-//
-// Vocabulary used throughout the battle code:
-//
-//   creature stat  - a live number on a `Creature`: power, strength, defense,
-//                    block, hp, max_hp, speed, energy.
-//   move data      - the card's own numbers, on `Move`: cost, damage, hits,
-//                    plus effect payloads named after the creature stat they
-//                    touch (`strength` grants Strength, `strength_down` strips
-//                    it, `self_defense_down` costs the caster Defense).
-//   multiplier     - a computed factor in the damage formula. Always ends in
-//                    `_mult`: offense_mult, type_mult, stab_mult, vuln_mult,
-//                    defense_mult.
-//
-// Damage scaling on a move comes in two forms: `scale_<stat>` is additive
-// (adds to the hit's base), `mult_<stat>` is multiplicative.
-// ----------------------------------------------------------------------------
-
-// Which creature stat a card attacks with. POWER (the default) = the caster's
-// power, with the strength bonus; DEFENSE = Body Press, which uses the caster's
-// defense for both the stat and the bonus.
-Offense_Stat :: enum { POWER, DEFENSE }
-
 Move :: struct {
 	name:       string,
 	desc:       string,
 	cost:       f32,
 	element:    Element,
 	rarity:     Rarity,
-	// The kinds this card can be played on. Empty = enemy-only (the default),
-	// so plain attack cards don't have to annotate anything.
-	targets: bit_set[Move_Target],
+	target:     Move_Target,          // the card's primary target (zero value = ENEMY)
+	targets:    bit_set[Move_Target], // extra kinds it may also be played on (empty = just {target})
 	damage:     int,
 	block:      int,
 	hits:       int,
@@ -299,18 +267,6 @@ Move :: struct {
 	execute_pct:   f32, // the "low" threshold, as a fraction of max HP
 	ally_bonus:    int, // extra damage per other living ally
 
-	// Damage scaling (see the header): scale_* adds, mult_* multiplies.
-	scale_block:      f32, // + caster's block x this
-	scale_defense:    f32, // + caster's defense x this
-	scale_max_hp:     f32, // + caster's max HP x this
-	scale_missing_hp: f32, // + the HP the caster has lost x this
-	mult_missing_hp:  f32, // x (1 + this x the fraction of HP the caster has lost)
-	// Offense: which creature stat it attacks with.
-	offense_stat: Offense_Stat,
-
-	// Utility
-	clear_boosts: bool, // wipe every battle modifier on the target (Haze)
-
 	// Self-costs (paid by the caster whatever the target)
 	self_strength_down: int,
 	self_defense_down:  f32,
@@ -319,10 +275,9 @@ Move :: struct {
 
 MOVE_DATA := [Move_Id]Move{
 	.Tackle       = {name = "Tackle",       desc = "5 dmg",                     cost = 1.0, element = .NEUTRAL, damage = 5, hits = 1},
-	.Jab          = {name = "Jab",          desc = "2 dmg",                     cost = 0.1, element = .NEUTRAL, damage = 2, hits = 1},
+	.Jab          = {name = "Jab",          desc = "2 dmg",                     cost = 0.5, element = .NEUTRAL, damage = 2, hits = 1},
 	.Brace        = {name = "Brace",        desc = "3 block",                   cost = 0.5, element = .NEUTRAL, block = 3},
 	.Body_Slam    = {name = "Body Slam",    desc = "9 dmg",                     cost = 1.5, element = .NEUTRAL, damage = 9, hits = 1},
-	.Body_Press   = {name = "Body Press",   desc = "6 dmg, uses def",           cost = 1.5, element = .NEUTRAL, rarity = .UNCOMMON, damage = 6, hits = 1, offense_stat = .DEFENSE},
 	.Guard        = {name = "Guard",        desc = "5 block",                   cost = 1.0, element = .NEUTRAL, block = 5},
 	.Fortify      = {name = "Fortify",      desc = "12 block",                  cost = 1.5, element = .NEUTRAL, block = 12},
 	.Hone         = {name = "Hone",         desc = "+5 str",                    cost = 1.0, element = .NEUTRAL, strength = 5},
@@ -414,40 +369,25 @@ MOVE_DATA := [Move_Id]Move{
 	.Spike_Shell  = {name = "Spike Shell",  desc = "thorns 2, 6 block",         cost = 1.5, element = .NEUTRAL, rarity = .RARE, block = 6, thorns = 2},
 
 	// Teamwork: cards that act on an ally, on yourself, or punish a weakened foe.
-	.Channel      = {name = "Channel",      desc = "ally +3 energy",            cost = 0.5, element = .NEUTRAL, targets = {.ALLY},  rarity = .COMMON, energy_give = 3},
-	.Shared_Ward  = {name = "Shared Ward",  desc = "ally +9 block",             cost = 1.0, element = .NEUTRAL, targets = {.ALLY},  rarity = .COMMON, block = 9},
-	.Field_Mend   = {name = "Field Mend",   desc = "ally heal 22%",             cost = 1.0, element = .NEUTRAL, targets = {.ALLY},  rarity = .UNCOMMON, heal_pct = 0.22},
+	.Channel      = {name = "Channel",      desc = "ally +3 energy",            cost = 0.5, element = .NEUTRAL, target = .ALLY,  rarity = .COMMON, energy_give = 3},
+	.Shared_Ward  = {name = "Shared Ward",  desc = "ally +9 block",             cost = 1.0, element = .NEUTRAL, target = .ALLY,  rarity = .COMMON, block = 9},
+	.Field_Mend   = {name = "Field Mend",   desc = "ally heal 22%",             cost = 1.0, element = .NEUTRAL, target = .ALLY,  rarity = .UNCOMMON, heal_pct = 0.22},
 	.Siphon       = {name = "Siphon",       desc = "3 dmg, steal 3 en",        cost = 1.0, element = .NEUTRAL, rarity = .UNCOMMON, damage = 3, hits = 1, energy_drain = 3},
 	.Cull         = {name = "Cull",         desc = "6 dmg, +10 low hp",         cost = 1.5, element = .NEUTRAL, rarity = .UNCOMMON, damage = 6, hits = 1, execute_bonus = 10, execute_pct = 0.4},
 	.Coordinated_Strike = {name = "Coordinated Strike", desc = "4 dmg, +2 per ally", cost = 1.0, element = .NEUTRAL, rarity = .UNCOMMON, damage = 4, hits = 1, ally_bonus = 2},
-	.Overexert    = {name = "Overexert",    desc = "+5 str, -2 def",             cost = 0.5, element = .NEUTRAL, targets = {.SELF},  rarity = .COMMON, strength = 5, self_defense_down = 2},
+	.Overexert    = {name = "Overexert",    desc = "+5 str, -2 def",             cost = 0.5, element = .NEUTRAL, target = .SELF,  rarity = .COMMON, strength = 5, self_defense_down = 2},
 	// Flexible targets: the same card reads differently depending on what it hits.
-	.Kindle       = {name = "Kindle",       desc = "6 dmg / +3 str",             cost = 1.0, element = .EMBER, rarity = .UNCOMMON, targets = {.ENEMY, .SELF, .ALLY}, damage = 6, hits = 1, strength = 3},
-	.Conduit      = {name = "Conduit",      desc = "give 3 en / steal 3",        cost = 1.0, element = .NEUTRAL, targets = {.ALLY, .ENEMY}, rarity = .UNCOMMON, energy_give = 3, energy_drain = 3},
-	.Ward         = {name = "Ward",         desc = "8 block to a friend",        cost = 1.0, element = .NEUTRAL, targets = {.ALLY, .SELF}, rarity = .COMMON, block = 8},
-	// Stat-scaling attacks: the caster's own block / defense feeds the damage.
-	.Shield_Bash  = {name = "Shield Bash",  desc = "dmg = your block",           cost = 1.0, element = .NEUTRAL, rarity = .UNCOMMON, damage = 0, hits = 1, scale_block = 1.0},
-	.Iron_Slam    = {name = "Iron Slam",    desc = "3 dmg + 2x def",             cost = 1.5, element = .NEUTRAL, rarity = .UNCOMMON, damage = 3, hits = 1, scale_defense = 2.0},
-	.Vital_Strike = {name = "Vital Strike", desc = "4 dmg +10% max hp",          cost = 1.5, element = .NEUTRAL, rarity = .UNCOMMON, damage = 4, hits = 1, scale_max_hp = 0.10},
-	.Last_Stand   = {name = "Last Stand",   desc = "2 dmg, more if hurt",        cost = 1.0, element = .NEUTRAL, rarity = .UNCOMMON, damage = 2, hits = 1, scale_missing_hp = 0.20},
-	// Multiplier form: the whole hit is scaled by how hurt the caster is.
-	.Reckoning    = {name = "Reckoning",    desc = "6 dmg, up to x2",            cost = 1.5, element = .NEUTRAL, rarity = .UNCOMMON, damage = 6, hits = 1, mult_missing_hp = 1.0},
-	// Haze: wipe every battle modifier off a creature (any target).
-	.Haze         = {name = "Haze",         desc = "clear all boosts",           cost = 1.0, element = .ICE, rarity = .UNCOMMON, targets = {.ENEMY, .SELF, .ALLY}, clear_boosts = true},
+	.Kindle       = {name = "Kindle",       desc = "6 dmg / +3 str",             cost = 1.0, element = .EMBER, rarity = .UNCOMMON, target = .ENEMY, targets = {.SELF, .ALLY}, damage = 6, hits = 1, strength = 3},
+	.Conduit      = {name = "Conduit",      desc = "give 3 en / steal 3",        cost = 1.0, element = .NEUTRAL, target = .ALLY, targets = {.ENEMY}, rarity = .UNCOMMON, energy_give = 3, energy_drain = 3},
+	.Ward         = {name = "Ward",         desc = "8 block to a friend",        cost = 1.0, element = .NEUTRAL, target = .ALLY, targets = {.SELF}, rarity = .COMMON, block = 8},
 }
 
-// The kinds a card can be played on. An empty set means enemy-only (the
-// default), so `targets = {.ENEMY}` is the same as leaving it blank.
+// The full set of kinds a card can be played on: its primary target plus any
+// extras it allows.
 move_targets :: proc(m: Move) -> bit_set[Move_Target] {
-	if card(m.targets) == 0 {
-		return {.ENEMY}
-	}
-	return m.targets
-}
-
-// Does this card deal damage (flat, or scaled off a stat)?
-move_has_damage :: proc(m: Move) -> bool {
-	return m.damage > 0 || m.scale_block > 0 || m.scale_defense > 0 || m.scale_max_hp > 0 || m.scale_missing_hp > 0
+	s := m.targets
+	s += {m.target}
+	return s
 }
 
 // Short label for the kinds a card can be played on (shown in the tooltip).
@@ -482,9 +422,7 @@ move_value :: proc(id: Move_Id) -> int {
 		m.poison * 3 + m.burn * 3 + m.stun * 8 + m.regen * 3 + m.thorns * 2 +
 		(m.vuln_bonus + m.block_bonus + m.combo_bonus) / 2 +
 		m.energy_give * 5 + m.energy_drain * 5 +
-		(m.execute_bonus + m.ally_bonus) / 2 +
-		int((m.scale_block + m.scale_defense) * 6) + int((m.scale_max_hp + m.scale_missing_hp) * 60) + int(m.mult_missing_hp * 8) +
-		(m.offense_stat == .DEFENSE ? 6 : 0) + (m.clear_boosts ? 8 : 0) -
+		(m.execute_bonus + m.ally_bonus) / 2 -
 		m.self_strength_down * 4 - int(m.self_defense_down) * 4 - m.self_damage * 2
 }
 
