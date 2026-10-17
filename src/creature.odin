@@ -85,7 +85,7 @@ Species :: struct {
 
 // Neutral moves any creature can pick up as a reward but that no learnset
 // grants — i.e. reward-only options.
-COMMON_MOVES := []Move_Id{.Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin, .Fang, .Exploit, .Payback, .Followup, .Second_Wind, .Gnaw, .Warcry, .Twin_Fangs, .Feint, .Weaken, .Disarm, .Sunder, .Corrode, .Channel, .Shared_Ward, .Field_Mend, .Siphon, .Cull, .Coordinated_Strike, .Overexert, .Kindle, .Conduit, .Ward}
+COMMON_MOVES := []Move_Id{.Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin, .Fang, .Exploit, .Payback, .Followup, .Second_Wind, .Gnaw, .Warcry, .Twin_Fangs, .Feint, .Weaken, .Disarm, .Sunder, .Corrode, .Channel, .Shared_Ward, .Field_Mend, .Siphon, .Cull, .Coordinated_Strike, .Overexert, .Kindle, .Conduit, .Ward, .Shield_Bash, .Iron_Slam, .Vital_Strike, .Last_Stand, .Reckoning, .Body_Press, .Haze}
 
 // Premium reward-only cards: expensive, high-impact energy sinks. Choosing one
 // commits a large chunk of a monster's energy, so it is a real trade-off.

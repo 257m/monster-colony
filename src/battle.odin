@@ -24,7 +24,10 @@ MAX_ROUNDS        :: 30        // stalemate cap
 POISON_PCT         :: f32(0.02) // poison damage per stack, of the victim's max HP
 BURN_PCT           :: f32(0.03) // burn damage per stack, of the victim's max HP
 REGEN_PCT          :: f32(0.03) // regen heal per stack, of the owner's max HP
-THORNS_REFLECT_PCT :: f32(0.10) // thorns damage per stack, of the hit taken
+// Thorns: each stack reflects a slice of the *attacker's* max HP, not of the
+// hit. Stacks compound with diminishing returns (`thorns_fraction`), so the
+// total can never reach 100%. A stack is spent on each hit.
+THORNS_HP_PCT :: f32(0.0625)
 
 hp_fraction :: proc(list: []^Creature) -> f32 {
 	hp := 0
@@ -602,31 +605,55 @@ begin_round :: proc(b: ^Battle) {
 // Card resolution
 // ----------------------------------------------------------------------------
 
-// Damage = base card damage x power x strength bonus, then type effectiveness,
-// STAB and vulnerability, then a multiplicative defense reduction.
-//   - power is the creature's power stat (a multiplier, ~1.0 at level 1).
-//   - each point of Strength adds +10% damage.
-//   - defense scales the hit down proportionally (defense 10 = half damage),
-//     so it stays relevant as attacks grow.
-apply_damage :: proc(attacker: ^Creature, target: ^Creature, base: int, elem: Element) -> int {
-	str_mult := max(1.0 + 0.1 * f32(attacker.strength), 0.1)
-	dmg := f32(base) * attacker.power * str_mult
-	// Type effectiveness against every type the defender has.
-	for de in creature_elements(target) {
-		dmg *= element_multiplier(elem, de)
+// ----------------------------------------------------------------------------
+// Damage
+//
+//   damage = move.damage x offense x type_mult x stab_mult x vuln_mult
+//                              x defense_mult
+//
+//   move.damage   - the card's own damage (Move data)
+//   offense       - the attacker's attacking stat and its multiplier (see Offense)
+//   type_mult     - element effectiveness against the target's types
+//   stab_mult     - same-type attack bonus (1.5 when the element matches)
+//   vuln_mult     - the target's Vulnerable stacks
+//   defense_mult  - the target's defense reduction, 10 / (10 + defense)
+// ----------------------------------------------------------------------------
+
+// An attack's offense: the creature stat it attacks with, and the multiplier
+// applied to that stat. Normal attacks use power + the strength bonus; a Body
+// Press uses defense for both.
+Offense :: struct {
+	stat: f32,
+	mult: f32,
+}
+
+move_offense :: proc(m: Move, c: ^Creature) -> Offense {
+	if m.offense_stat == .DEFENSE {
+		d := creature_defense(c)
+		return {stat = d, mult = max(1.0 + 0.1 * d, 0.1)}
 	}
-	// Same-type attack bonus: a move matching one of the attacker's types.
+	return {stat = c.power, mult = max(1.0 + 0.1 * f32(c.strength), 0.1)}
+}
+
+apply_damage :: proc(attacker: ^Creature, target: ^Creature, base: int, elem: Element, offense: Offense) -> int {
+	type_mult := f32(1)
+	for de in creature_elements(target) {
+		type_mult *= element_multiplier(elem, de)
+	}
+	stab_mult := f32(1)
 	for ae in creature_elements(attacker) {
 		if ae == elem {
-			dmg *= 1.5
+			stab_mult = 1.5
 			break
 		}
 	}
+	vuln_mult := f32(1)
 	if target.vulnerable > 0 {
-		dmg *= 1.0 + 0.5 * f32(target.vulnerable)
+		vuln_mult = 1.0 + 0.5 * f32(target.vulnerable)
 	}
-	dmg *= 10.0 / (10.0 + creature_defense(target))
-	d := int(dmg)
+	defense_mult := 10.0 / (10.0 + creature_defense(target))
+
+	d := int(f32(base) * offense.stat * offense.mult * type_mult * stab_mult * vuln_mult * defense_mult)
 	absorbed := min(target.block, d)
 	target.block -= absorbed
 	d -= absorbed
@@ -641,15 +668,57 @@ apply_damage :: proc(attacker: ^Creature, target: ^Creature, base: int, elem: El
 	return d
 }
 
-// Damage a card would deal to a target right now, without mutating anything.
-// Mirrors apply_damage (including synergy bonuses) and also returns the type
+// Fraction of the attacker's max HP that `stacks` thorns reflect. Each stack
+// multiplies the remaining fraction, so it rises fast at first and then flattens
+// — 6.25% at one stack, ~40% at eight, and never 100%.
+thorns_fraction :: proc(stacks: int) -> f32 {
+	remain := f32(1)
+	for _ in 0..<clamp(stacks, 0, 64) {
+		remain *= 1.0 - THORNS_HP_PCT
+	}
+	return 1.0 - remain
+}
+
+// Clear every battle modifier (boosts and debuffs) on a creature — Haze.
+creature_clear_boosts :: proc(c: ^Creature) {
+	c.strength = 0
+	c.defense_buff = 0
+	c.defense_debuff = 0
+	c.vulnerable = 0
+	c.regen = 0
+	c.thorns = 0
+}
+
+// Extra base damage a card gains from the caster's creature stats (block,
+// defense, max HP, or the HP it has lost). Additive scaling. Shared by the live
+// hit and the tooltip.
+move_scaled_damage :: proc(m: Move, c: ^Creature) -> int {
+	return int(f32(c.block) * m.scale_block) +
+		int(creature_defense(c) * m.scale_defense) +
+		int(f32(c.max_hp) * m.scale_max_hp) +
+		int(f32(max(c.max_hp - c.hp, 0)) * m.scale_missing_hp)
+}
+
+// Damage multiplier from the caster's health: 1.0 at full HP, rising toward
+// 1 + mult_missing_hp as it nears death. Shared by the live hit and the tooltip.
+move_damage_mult :: proc(m: Move, c: ^Creature) -> f32 {
+	if m.mult_missing_hp == 0 {
+		return 1
+	}
+	missing := 1.0 - f32(c.hp) / f32(max(c.max_hp, 1))
+	return 1.0 + m.mult_missing_hp * clamp(missing, 0, 1)
+}
+
+// Damage a card would deal right now, without mutating anything. Mirrors
+// apply_damage (including the synergy bonuses) and also returns the type
 // multiplier so the UI can flag super-effective / resisted hits.
 estimate_damage :: proc(attacker, target: ^Creature, id: Move_Id, allies := 0) -> (total: int, type_mult: f32) {
 	m := MOVE_DATA[id]
 	type_mult = 1
-	if m.damage <= 0 || target == nil {
+	if !move_has_damage(m) || target == nil {
 		return 0, type_mult
 	}
+	// Flat damage bonuses from the move's synergies.
 	bonus := 0
 	if m.vuln_bonus > 0 && target.vulnerable > 0 {
 		bonus += m.vuln_bonus
@@ -666,25 +735,29 @@ estimate_damage :: proc(attacker, target: ^Creature, id: Move_Id, allies := 0) -
 	if m.ally_bonus > 0 {
 		bonus += m.ally_bonus * allies
 	}
+	// Multipliers, matching apply_damage.
 	for de in creature_elements(target) {
 		type_mult *= element_multiplier(m.element, de)
 	}
-	f := type_mult
+	stab_mult := f32(1)
 	for ae in creature_elements(attacker) {
 		if ae == m.element {
-			f *= 1.5
+			stab_mult = 1.5
 			break
 		}
 	}
+	vuln_mult := f32(1)
 	if target.vulnerable > 0 {
-		f *= 1.0 + 0.5 * f32(target.vulnerable)
+		vuln_mult = 1.0 + 0.5 * f32(target.vulnerable)
 	}
-	str_mult := max(1.0 + 0.1 * f32(attacker.strength), 0.1)
-	def_mult := 10.0 / (10.0 + creature_defense(target))
+	defense_mult := 10.0 / (10.0 + creature_defense(target))
+	offense := move_offense(m, attacker)
+	scaled := move_scaled_damage(m, attacker)
+	mult := move_damage_mult(m, attacker)
 	total = 0
 	for h in 0..<max(m.hits, 1) {
-		d := m.damage + (h == 0 ? bonus : 0)
-		total += int(f32(d) * attacker.power * str_mult * f * def_mult)
+		base := int(f32(m.damage + scaled) * mult) + (h == 0 ? bonus : 0)
+		total += int(f32(base) * offense.stat * offense.mult * type_mult * stab_mult * vuln_mult * defense_mult)
 	}
 	return total, type_mult
 }
@@ -792,7 +865,7 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 	}
 	benef_side := side_of(b, benef)
 
-	if m.damage > 0 && victim != nil {
+	if (m.damage > 0 || m.scale_block > 0 || m.scale_defense > 0) && victim != nil {
 		bonus := 0
 		if m.vuln_bonus > 0 && victim.vulnerable > 0 {
 			bonus += m.vuln_bonus
@@ -811,40 +884,49 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 		if m.ally_bonus > 0 {
 			bonus += m.ally_bonus * other_allies_alive(b, c)
 		}
+		// On-hit effects resolve per hit, which is what gives multi-hit moves an
+		// identity: lifesteal drains in several bites, and thorns bite back once
+		// per hit, so many small hits heal more but hurt more too.
+		leech := m.leech_pct
+		if c.ability == .Vampiric {
+			leech += ABILITY_VAMPIRIC_PCT
+		}
+		leech += ITEM_DATA[c.item].on_hit_leech_pct
+
 		total := 0
+		scaled := move_scaled_damage(m, c)
+		mult := move_damage_mult(m, c)
+		offense := move_offense(m, c)
 		for hit in 0..<max(m.hits, 1) {
-			d := m.damage + (hit == 0 ? bonus : 0)
-			total += apply_damage(c, victim, d, m.element)
+			base := int(f32(m.damage + scaled) * mult) + (hit == 0 ? bonus : 0)
+			hit_dmg := apply_damage(c, victim, base, m.element, offense)
+			total += hit_dmg
+			if hit_dmg <= 0 {
+				continue
+			}
+			if leech > 0 {
+				heal := max(int(f32(hit_dmg) * leech), 1)
+				before := c.hp
+				c.hp = min(c.hp + heal, c.max_hp)
+				if c.hp > before {
+					creature_burst(c, popup_color(.HEAL), 0.5)
+					spawn_popup(b, self_side, .HEAL, c.hp - before)
+				}
+			}
+			if victim.thorns > 0 {
+				back := max(int(f32(c.max_hp) * thorns_fraction(victim.thorns)), 1)
+				c.hp -= back
+				victim.thorns -= 1 // a stack is spent on each hit
+				spawn_popup(b, self_side, .DAMAGE, back)
+				creature_burst(c, popup_color(.DAMAGE), 0.4)
+				battle_log(b, "%s's thorns bite %s for %d.", victim.name, c.name, back)
+			}
 		}
 		if total > 0 {
 			spawn_popup(b, victim_side, .DAMAGE, total)
 			creature_burst(victim, popup_color(.DAMAGE), 0.4)
 			b.shake = SHAKE_DUR
 			b.shake_mag = clamp(3.0 + f32(total) * 0.4, 3.0, 10.0)
-		}
-		// Lifesteal: the card's own drain, plus Vampiric / Vampire Fang, as a
-		// fraction of the damage dealt (so it scales with the hit).
-		leech := m.leech_pct
-		if c.ability == .Vampiric {
-			leech += ABILITY_VAMPIRIC_PCT
-		}
-		leech += ITEM_DATA[c.item].on_hit_leech_pct
-		if leech > 0 && total > 0 {
-			heal := max(int(f32(total) * leech), 1)
-			before := c.hp
-			c.hp = min(c.hp + heal, c.max_hp)
-			if c.hp > before {
-				creature_burst(c, popup_color(.HEAL), 0.5)
-				spawn_popup(b, self_side, .HEAL, c.hp - before)
-			}
-		}
-		// Thorns: a thorny target reflects a fraction of the hit back.
-		if total > 0 && victim.thorns > 0 {
-			back := max(int(f32(total) * THORNS_REFLECT_PCT * f32(victim.thorns)), 1)
-			c.hp -= back
-			spawn_popup(b, self_side, .DAMAGE, back)
-			creature_burst(c, popup_color(.DAMAGE), 0.4)
-			battle_log(b, "%s's thorns bite %s for %d.", victim.name, c.name, back)
 		}
 		c.shake = CREATURE_SHAKE_DUR * 0.4
 	}
@@ -950,6 +1032,12 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 	}
 	if m.draw > 0 {
 		creature_draw(c, m.draw, rng)
+	}
+	// Haze: wipe the target's modifiers, whichever side it's on.
+	if m.clear_boosts {
+		creature_clear_boosts(target)
+		creature_burst(target, popup_color(.DEBUFF), 0.6)
+		battle_log(b, "%s's boosts are wiped away.", target.name)
 	}
 
 	ordered_remove(&c.hand, index)
@@ -2029,7 +2117,7 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 
 draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rectangle, allies := 0) {
 	m := MOVE_DATA[id]
-	if m.damage <= 0 {
+	if !move_has_damage(m) {
 		return
 	}
 	total, type_mult := estimate_damage(attacker, target, id, allies)
