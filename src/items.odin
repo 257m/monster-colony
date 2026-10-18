@@ -102,10 +102,30 @@ item_color :: proc(it: Item) -> rl.Color {
 }
 
 // Battle-start buffs an item grants. Called from `battle_start`.
-item_battle_start :: proc(self: ^Creature) {
+item_battle_start :: proc(b: ^Battle, self: ^Creature) {
 	it := ITEM_DATA[self.item]
-	if it.strength != 0 { self.strength += it.strength }
-	if it.defense > 0 { self.defense_buff += it.defense }
-	if it.speed > 0 { self.speed_buff += it.speed }
-	if it.block > 0 { self.block += it.block }
+	side := side_of(b, self)
+	if it.strength != 0 {
+		self.strength += it.strength
+		spawn_popup(b, side, .BUFF, it.strength)
+		creature_burst(self, popup_color(.BUFF), 0.6)
+	}
+	if it.defense > 0 {
+		self.defense_buff += it.defense
+		spawn_popup(b, side, .DEFEND, int(it.defense))
+		creature_burst(self, popup_color(.DEFEND), 0.6)
+	}
+	if it.speed > 0 {
+		self.speed_buff += it.speed
+		spawn_popup(b, side, .BUFF, int(it.speed))
+		creature_burst(self, popup_color(.BUFF), 0.6)
+	}
+	if it.block > 0 {
+		self.block += it.block
+		spawn_popup(b, side, .BLOCK, it.block)
+		creature_burst(self, popup_color(.BLOCK), 0.6)
+	}
+	if it.strength != 0 || it.defense > 0 || it.speed > 0 || it.block > 0 {
+		battle_sfx(.BUFF, 0.5)
+	}
 }

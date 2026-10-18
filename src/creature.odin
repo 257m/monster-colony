@@ -30,42 +30,67 @@ Learn_Entry :: struct {
 }
 
 Species_Id :: enum {
-	Emberling,     // 0
-	Tidepup,       // 1
-	Sproutle,      // 2
-	Cave_Bat,      // 3
-	Magmite,       // 4
-	Bubblet,       // 5
-	Thornkit,      // 6
-	Elite_Sentinel, // 7
-	Deep_One,      // 8
-	Gloomling,     // 9
-	Pyrelord,      // 10
-	Krakling,      // 11
-	Swampbeast,    // 12
-	Wispling,      // 13
-	Cindermaw,     // 14
-	Rimescale,     // 15
-	Mosshide,      // 16
-	Emberbloom,    // 17
-	Bogfang,       // 18
-	Cinderwing,    // 19
-	Frostmoss,     // 20
-	Frostfang,     // 21
-	Stonepaw,      // 22
-	Sparkit,       // 23
-	Galebeast,     // 24
-	Venomtail,     // 25
-	Blizzard,      // 26
-	// Bosses (Phase 25): unique, very powerful, with synergy movesets.
-	Boss_Leviathan, // 27
-	Boss_Infernal,  // 28
-	Boss_Titan,     // 29
-	Boss_Sovereign, // 30
+	// Starter lines: stage 1 -> 2 -> 3 (stage 3 gains a secondary type).
+	Emberling,
+	Cinderscale,
+	Magmalisk,
+	Tidepup,
+	Ripfin,
+	Tidewyrm,
+	Sproutle,
+	Thornbud,
+	Blightbloom,
+	Grubling,
+	Vesperling,
+	Rockmite,
+	Dustwing,
+	Thornkit,
+	Mossling,
+	Bloomcap,
+	Barkhound,
+	Bubblet,
+	Ripjaw,
+	Tidecaller,
+	Abyssal_Fry,
+	Gloomling,
+	Crypt_Rat,
+	Wispling,
+	Sporeling,
+	Capmaw,
+	Sentinel,
+	Relic_Hound,
+	Hexling,
+	Snowpup,
+	Frostmaw,
+	Glacierling,
+	Vinecat,
+	Venomtail,
+	Pouncer,
+	Magmite,
+	Cinderwing,
+	Slagbeast,
+	Sandfang,
+	Sparkit,
+	Crystalfin,
+	Rotshell,
+	Nightwing,
+	Thornmaw,
+	Bubblord,
+	Frostfang,
+	Magmaw,
+	Sporelord,
+	Voltail,
+	// Bosses.
+	Deep_One,
+	Boss_Leviathan,
+	Boss_Infernal,
+	Boss_Titan,
+	Boss_Sovereign,
 }
 
 Species :: struct {
 	name:         string,
+	desc:         string, // one-line encyclopedia blurb
 	elements:     []Element, // 1 or 2 types, primary first
 	base_hp:      int,
 	base_energy:  int, // energy generated per turn
@@ -78,399 +103,674 @@ Species :: struct {
 	color:        rl.Color,
 	role:         Species_Role,
 	rarity:       Rarity,
+	// Evolution: at `evolve_level`, the creature becomes `evolves_to` (0 = none).
+	evolves_to:   Species_Id,
+	evolve_level: int,
 	starter:      []Move_Id,
 	learnset:     []Learn_Entry,
 	move_pool:    []Move_Id,
 }
 
-// Neutral moves any creature can pick up as a reward but that no learnset
-// grants — i.e. reward-only options.
-COMMON_MOVES := []Move_Id{.Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin, .Fang, .Exploit, .Payback, .Followup, .Second_Wind, .Gnaw, .Warcry, .Twin_Fangs, .Feint, .Weaken, .Disarm, .Sunder, .Corrode, .Channel, .Shared_Ward, .Field_Mend, .Siphon, .Cull, .Coordinated_Strike, .Overexert, .Kindle, .Conduit, .Ward, .Shield_Bash, .Iron_Slam, .Vital_Strike, .Last_Stand, .Reckoning, .Body_Press, .Haze}
-
-// Premium reward-only cards: expensive, high-impact energy sinks. Choosing one
-// commits a large chunk of a monster's energy, so it is a real trade-off.
-PREMIUM_MOVES := []Move_Id{.Meteor, .Tsunami, .Maelstrom, .Cataclysm, .Aegis, .Phoenix}
-
-// Status-effect reward-only cards (Phase 21): poison/burn DoT, stun, regen and
-// thorns. Like COMMON_MOVES these are never in a learnset.
-STATUS_MOVES := []Move_Id{.Toxic_Cloud, .Envenom, .Plague, .Ember_Coil, .Immolate, .Wildfire, .Concuss, .Static_Shock, .Paralyze, .Photosynth, .Rejuvenate, .Bramble_Armor, .Spike_Shell}
-
 SPECIES := [Species_Id]Species{
-	// Emberling
 	.Emberling = {
-		name = "Emberling", elements = []Element{.EMBER}, base_hp = 60, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 9.0, base_satiety = 100, base_upkeep = 3,
-		color = rl.Color{226, 110, 72, 255}, role = .STARTER, rarity = .COMMON,
-		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flame_Burst, .Hone, .Screech},
+		name = "Emberling", desc = "A coal-skinned lizard hatchling. Its tail-flame dims when it is scared.", elements = []Element{.EMBER}, base_hp = 60, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 9.0, base_satiety = 100, base_upkeep = 3,
+		color = rl.Color{226, 96, 62, 255}, role = .STARTER, rarity = .COMMON,
+		evolves_to = .Cinderscale, evolve_level = 12,
+		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Hone, .Mark, .Flame_Burst},
 		learnset = []Learn_Entry{
-			{.Ember_Strike, 1}, {.Guard, 1}, {.Hone, 1}, {.Screech, 1},
-			{.Flame_Burst, 2}, {.Cinder, 3}, {.Iron_Skin, 4}, {.Inferno, 5},
-			{.Flurry, 6}, {.Insight, 6}, {.Mend, 7}, {.Fortify, 8}, {.Blaze, 9},
+			{.Warcry, 2}, {.Ember_Coil, 2}, {.Blood_Pact, 2},
+			{.Followup, 4}, {.Mark, 4}, {.Reckoning, 4},
+			{.Bash, 6}, {.Expose, 6}, {.Cull, 6},
+			{.Cleave, 8}, {.Sunder, 8}, {.Fuse, 8},
+			{.Hone, 10}, {.Haze, 10}, {.Overclock, 10},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Cinder, .Inferno, .Blaze, .Ash_Screen, .Guard, .Hone, .Screech, .Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Warcry, .Followup, .Cleave, .Bash, .Sunder, .Mark, .Expose, .Blood_Pact, .Reckoning, .Cull, .Fuse, .Guard, .Hone, .Mark, .Iron_Skin, .Slash},
 	},
-	// Tidepup
+	.Cinderscale = {
+		name = "Cinderscale", desc = "A scaled lizard that basks in lava. Its hide cracks into cooling plates.", elements = []Element{.EMBER, .GROUND}, base_hp = 88, base_energy = 3, base_energy_max = 9, base_power = 1.2, base_defense = 1.2, base_speed = 11.0, base_satiety = 135, base_upkeep = 4,
+		color = rl.Color{238, 120, 60, 255}, role = .STARTER, rarity = .COMMON,
+		evolves_to = .Magmalisk, evolve_level = 28,
+		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Flame_Burst, .Flame_Burst, .Guard, .Guard, .Hone, .Cleave, .Warcry},
+		learnset = []Learn_Entry{
+			{.Dragon_Dance, 13}, {.Concuss, 13}, {.Combustion, 13},
+			{.Rage, 15}, {.Depower, 15}, {.All_In, 15},
+			{.Amplify, 17}, {.Haze, 17}, {.Finale, 17},
+			{.Meteor, 19}, {.Overwhelm, 19}, {.Cull, 19},
+		},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Cleave, .Sunder, .Bash, .Overwhelm, .Warcry, .Followup, .Dragon_Dance, .Amplify, .All_In, .Meteor, .Concuss, .Blood_Pact, .Reckoning, .Cull, .Finale, .Overclock, .Fuse, .Guard, .Hone},
+	},
+	.Magmalisk = {
+		name = "Magmalisk", desc = "A magma-lizard the size of a cart. It swims through molten rock.", elements = []Element{.EMBER, .GROUND}, base_hp = 120, base_energy = 3, base_energy_max = 10, base_power = 1.45, base_defense = 1.5, base_speed = 12.0, base_satiety = 175, base_upkeep = 6,
+		color = rl.Color{252, 140, 64, 255}, role = .STARTER, rarity = .COMMON,
+		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Flame_Burst, .Flame_Burst, .Cleave, .Cleave, .Guard, .Guard, .Hone},
+		learnset = []Learn_Entry{
+			{.Demon_Form, 28}, {.Combustion, 28}, {.All_In, 28},
+			{.Meteor, 32}, {.Rage, 32}, {.Amplify, 32},
+			{.Dragon_Dance, 36}, {.Overwhelm, 36}, {.Finale, 36},
+		},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Cleave, .Sunder, .Overwhelm, .Bash, .All_In, .Meteor, .Concuss, .Amplify, .Dragon_Dance, .Rage, .Combustion, .Demon_Form, .Finale, .Cull, .Guard, .Hone},
+	},
 	.Tidepup = {
-		name = "Tidepup", elements = []Element{.AQUA}, base_hp = 62, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 8.0, base_satiety = 105, base_upkeep = 3,
-		color = rl.Color{86, 150, 226, 255}, role = .STARTER, rarity = .COMMON,
-		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Tidal_Slam, .Hone, .Undertow},
+		name = "Tidepup", desc = "A playful water-pup. It naps in shallow tidepools and wakes to the tide.", elements = []Element{.AQUA}, base_hp = 62, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 8.0, base_satiety = 105, base_upkeep = 3,
+		color = rl.Color{74, 146, 226, 255}, role = .STARTER, rarity = .COMMON,
+		evolves_to = .Ripfin, evolve_level = 12,
+		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Fortify, .Insight, .Leech},
 		learnset = []Learn_Entry{
-			{.Aqua_Jet, 1}, {.Guard, 1}, {.Hone, 1}, {.Undertow, 1},
-			{.Tidal_Slam, 2}, {.Bubble_Shield, 3}, {.Heal_Spring, 4}, {.Iron_Skin, 5},
-			{.Torrent, 5}, {.Insight, 6}, {.Mend, 7}, {.Fortify, 8},
+			{.Footwork, 2}, {.Fang_Flurry, 2}, {.Adrenaline, 2},
+			{.Iron_Skin, 4}, {.Overwhelm, 4}, {.Study, 4},
+			{.Shield_Bash, 6}, {.Cyclone, 6}, {.Meditate, 6},
+			{.Rampart, 8}, {.Body_Press, 8}, {.Gambit, 8},
+			{.Fortify, 10}, {.Leech, 10}, {.Siphon, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Tidal_Slam, .Undertow, .Bubble_Shield, .Torrent, .Heal_Spring, .Guard, .Hone, .Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Leech, .Fang_Flurry, .Cyclone, .Overwhelm, .Footwork, .Iron_Skin, .Shield_Bash, .Body_Press, .Rampart, .Guard, .Fortify, .Insight, .Study, .Meditate, .Adrenaline, .Gambit, .Hold_the_Line},
 	},
-	// Sproutle
+	.Ripfin = {
+		name = "Ripfin", desc = "A sleek riptide-hunter. It rides its own current and never stops moving.", elements = []Element{.AQUA, .ICE}, base_hp = 92, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.45, base_speed = 8.0, base_satiety = 145, base_upkeep = 4,
+		color = rl.Color{86, 160, 232, 255}, role = .STARTER, rarity = .COMMON,
+		evolves_to = .Tidewyrm, evolve_level = 28,
+		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Cutter, .Aqua_Cutter, .Guard, .Guard, .Fortify, .Shield_Bash, .Adrenaline},
+		learnset = []Learn_Entry{
+			{.Hold_the_Line, 13}, {.Siphon, 13}, {.Overclock, 13},
+			{.Entrench, 15}, {.Fang_Flurry, 15}, {.Blackout, 15},
+			{.Barrier, 17}, {.Cyclone, 17}, {.Channel, 17},
+			{.Bulwark, 19}, {.Leech, 19}, {.Flow, 19},
+		},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Leech, .Fang_Flurry, .Cyclone, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Bulwark, .Rampart, .Hold_the_Line, .Fortify, .Iron_Skin, .Footwork, .Insight, .Study, .Meditate, .Siphon, .Blackout, .Overclock, .Maelstrom, .Channel, .Guard},
+	},
+	.Tidewyrm = {
+		name = "Tidewyrm", desc = "A serpent of the deep current. Its coils freeze the water around it.", elements = []Element{.AQUA, .ICE}, base_hp = 145, base_energy = 3, base_energy_max = 10, base_power = 1.25, base_defense = 1.9, base_speed = 7.0, base_satiety = 195, base_upkeep = 6,
+		color = rl.Color{120, 190, 240, 255}, role = .STARTER, rarity = .COMMON,
+		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Cutter, .Aqua_Cutter, .Barrier, .Barrier, .Guard, .Guard, .Fortify},
+		learnset = []Learn_Entry{
+			{.Bastion, 28}, {.Flow, 28}, {.Barricade, 28},
+			{.Maelstrom, 32}, {.Bulwark, 32}, {.Channel, 32},
+			{.Barrier, 36}, {.Entrench, 36}, {.Bastion, 36},
+		},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Maelstrom, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Bulwark, .Rampart, .Hold_the_Line, .Bastion, .Flow, .Barricade, .Fortify, .Iron_Skin, .Footwork, .Insight, .Study, .Siphon, .Blackout, .Channel, .Guard},
+	},
 	.Sproutle = {
-		name = "Sproutle", elements = []Element{.FLORA}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 7.0, base_satiety = 95, base_upkeep = 3,
+		name = "Sproutle", desc = "A seedling with legs. It photosynthesises while it sleeps.", elements = []Element{.FLORA}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 7.0, base_satiety = 95, base_upkeep = 3,
 		color = rl.Color{102, 188, 112, 255}, role = .STARTER, rarity = .COMMON,
-		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Thorn_Crash, .Hone, .Screech},
+		evolves_to = .Thornbud, evolve_level = 12,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Bramble_Armor, .Venom, .Overwhelm},
 		learnset = []Learn_Entry{
-			{.Vine_Whip, 1}, {.Guard, 1}, {.Hone, 1}, {.Screech, 1},
-			{.Thorn_Crash, 2}, {.Leech, 3}, {.Bark_Skin, 4}, {.Bloom, 5},
-			{.Iron_Skin, 5}, {.Flurry, 6}, {.Overgrowth, 6}, {.Mend, 7}, {.Fortify, 8},
+			{.Envenom, 2}, {.Spike_Shell, 2}, {.Footwork, 2},
+			{.Mark, 4}, {.Iron_Skin, 4}, {.Body_Press, 4},
+			{.Catalyst, 6}, {.Rampart, 6}, {.Haze, 6},
+			{.Expose, 8}, {.Hold_the_Line, 8}, {.Purify, 8},
+			{.Venom, 10}, {.Bramble_Armor, 10}, {.Entrench, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Thorn_Crash, .Leech, .Bloom, .Overgrowth, .Bark_Skin, .Guard, .Hone, .Screech, .Jab, .Brace, .Body_Slam, .Fortify, .Flurry, .Mend, .Insight, .Crush, .Iron_Skin},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Bramble_Armor, .Spike_Shell, .Overwhelm, .Body_Press, .Footwork, .Iron_Skin, .Rampart, .Mark, .Expose, .Haze, .Purify, .Guard, .Fortify, .Hold_the_Line},
 	},
-	// Cave Bat
-	.Cave_Bat = {
-		name = "Cave Bat", elements = []Element{.NEUTRAL}, base_hp = 36, base_energy = 3, base_energy_max = 8, base_power = 0.75, base_defense = 0.0, base_speed = 13.0, base_satiety = 70, base_upkeep = 2,
-		color = rl.Color{158, 146, 178, 255}, role = .WILD, rarity = .COMMON,
-		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Tackle, .Guard, .Guard, .Guard, .Flurry, .Screech, .Hone},
+	.Thornbud = {
+		name = "Thornbud", desc = "A thorny thicket that walks. Its barbs catch anything that comes close.", elements = []Element{.FLORA, .POISON}, base_hp = 86, base_energy = 3, base_energy_max = 9, base_power = 1.2, base_defense = 1.25, base_speed = 8.0, base_satiety = 130, base_upkeep = 4,
+		color = rl.Color{96, 190, 110, 255}, role = .STARTER, rarity = .COMMON,
+		evolves_to = .Blightbloom, evolve_level = 28,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Venom, .Venom, .Guard, .Guard, .Bramble_Armor, .Footwork, .Body_Press},
 		learnset = []Learn_Entry{
-			{.Tackle, 1}, {.Guard, 1}, {.Hone, 1}, {.Screech, 1},
-			{.Flurry, 2}, {.Crush, 3}, {.Insight, 4}, {.Mend, 4},
-			{.Iron_Skin, 5}, {.Body_Slam, 5}, {.Fortify, 6},
+			{.Sunder, 13}, {.Entrench, 13}, {.Reckoning, 13},
+			{.Depower, 15}, {.Barrier, 15}, {.All_In, 15},
+			{.Toxic, 17}, {.Barricade, 17}, {.Combustion, 17},
+			{.Catalyst, 19}, {.Bramble_Armor, 19}, {.Cull, 19},
 		},
-		move_pool = []Move_Id{.Tackle, .Flurry, .Crush, .Body_Slam, .Guard, .Fortify, .Hone, .Screech, .Iron_Skin, .Mend, .Insight, .Jab, .Brace},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Toxic, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Barricade, .Footwork, .Iron_Skin, .Rampart, .Sunder, .Depower, .Mark, .Expose, .Haze, .Purify, .Reckoning, .Cull, .All_In, .Guard},
 	},
-	// Magmite
-	.Magmite = {
-		name = "Magmite", elements = []Element{.EMBER}, base_hp = 42, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.0, base_speed = 6.0, base_satiety = 90, base_upkeep = 3,
-		color = rl.Color{214, 92, 62, 255}, role = .WILD, rarity = .COMMON,
-		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Cinder, .Flame_Burst, .Screech},
+	.Blightbloom = {
+		name = "Blightbloom", desc = "A flower that burns instead of wilting. Its pollen is a slow poison.", elements = []Element{.FLORA, .POISON}, base_hp = 122, base_energy = 3, base_energy_max = 10, base_power = 1.4, base_defense = 1.55, base_speed = 8.0, base_satiety = 170, base_upkeep = 6,
+		color = rl.Color{110, 200, 120, 255}, role = .STARTER, rarity = .COMMON,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Venom, .Venom, .Catalyst, .Spike_Shell, .Spike_Shell, .Guard, .Guard},
 		learnset = []Learn_Entry{
-			{.Ember_Strike, 1}, {.Guard, 1}, {.Screech, 1}, {.Cinder, 1},
-			{.Flame_Burst, 2}, {.Ash_Screen, 2}, {.Inferno, 4}, {.Iron_Skin, 5},
-			{.Mend, 5}, {.Fortify, 6}, {.Blaze, 7},
+			{.Combustion, 28}, {.Bastion, 28}, {.Amplify, 28},
+			{.Toxic, 32}, {.Barricade, 32}, {.All_In, 32},
+			{.Catalyst, 36}, {.Barrier, 36}, {.Sunder, 36},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Cinder, .Flame_Burst, .Inferno, .Ash_Screen, .Blaze, .Tackle, .Body_Slam, .Guard, .Fortify, .Flurry, .Iron_Skin, .Mend, .Crush, .Jab, .Brace},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Toxic, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Barricade, .Combustion, .Bastion, .Amplify, .Sunder, .Depower, .Haze, .Purify, .Mark, .Expose, .Guard},
 	},
-	// Bubblet
-	.Bubblet = {
-		name = "Bubblet", elements = []Element{.AQUA}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.0, base_speed = 8.0, base_satiety = 95, base_upkeep = 2,
-		color = rl.Color{72, 134, 214, 255}, role = .WILD, rarity = .COMMON,
-		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Bubble_Shield, .Tidal_Slam, .Undertow},
+	.Grubling = {
+		name = "Grubling", desc = "A pale grub that burrows through the dark. It panics when cornered.", elements = []Element{.NEUTRAL}, base_hp = 34, base_energy = 3, base_energy_max = 8, base_power = 0.8, base_defense = 0.4, base_speed = 7.0, base_satiety = 60, base_upkeep = 2,
+		color = rl.Color{150, 140, 120, 255}, role = .WILD, rarity = .COMMON,
+		evolves_to = .Rotshell, evolve_level = 16,
+		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Guard, .Guard, .Blood_Pact, .Reckoning, .Cull, .Overclock, .Shiv},
 		learnset = []Learn_Entry{
-			{.Aqua_Jet, 1}, {.Guard, 1}, {.Undertow, 1}, {.Bubble_Shield, 1},
-			{.Tidal_Slam, 2}, {.Heal_Spring, 3}, {.Iron_Skin, 4}, {.Insight, 5},
-			{.Torrent, 5}, {.Mend, 6}, {.Fortify, 7},
+			{.Blood_Pact, 2}, {.Reckoning, 2}, {.Cull, 2},
+			{.Overclock, 6}, {.Shiv, 6}, {.Finale, 6},
+			{.All_In, 10}, {.Purge, 10}, {.Blade_Dance, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Undertow, .Tidal_Slam, .Bubble_Shield, .Heal_Spring, .Torrent, .Tackle, .Guard, .Fortify, .Flurry, .Iron_Skin, .Insight, .Mend, .Jab, .Brace},
+		move_pool = []Move_Id{.Tackle, .Slash, .Guard, .Blood_Pact, .Reckoning, .Cull, .Overclock, .Shiv, .Finale, .All_In, .Purge, .Blade_Dance},
 	},
-	// Thornkit
+	.Vesperling = {
+		name = "Vesperling", desc = "A cave bat that hunts by sound. Paper wings, needle teeth.", elements = []Element{.AIR, .NEUTRAL}, base_hp = 40, base_energy = 3, base_energy_max = 9, base_power = 0.95, base_defense = 0.6, base_speed = 14.0, base_satiety = 75, base_upkeep = 2,
+		color = rl.Color{112, 106, 132, 255}, role = .WILD, rarity = .COMMON,
+		evolves_to = .Nightwing, evolve_level = 16,
+		starter = []Move_Id{.Gust, .Gust, .Gust, .Guard, .Guard, .Fang_Flurry, .Leech, .Agility, .Cyclone, .Siphon},
+		learnset = []Learn_Entry{
+			{.Fang_Flurry, 2}, {.Leech, 2}, {.Gust, 2},
+			{.Cyclone, 6}, {.Sanguine, 6}, {.Agility, 6},
+			{.Blade_Dance, 10}, {.Overwhelm, 10}, {.Adrenaline, 10},
+		},
+		move_pool = []Move_Id{.Gust, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Agility, .Blade_Dance, .Overwhelm, .Adrenaline, .Siphon, .Guard, .Slash},
+	},
+	.Rockmite = {
+		name = "Rockmite", desc = "A scuttling boulder. Its shell is thicker than its temper.", elements = []Element{.GROUND}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.4, base_speed = 5.0, base_satiety = 85, base_upkeep = 3,
+		color = rl.Color{140, 124, 100, 255}, role = .WILD, rarity = .COMMON,
+		starter = []Move_Id{.Rock_Throw, .Rock_Throw, .Rock_Throw, .Guard, .Guard, .Shield_Bash, .Footwork, .Body_Press, .Iron_Skin, .Fortify},
+		learnset = []Learn_Entry{
+			{.Shield_Bash, 2}, {.Footwork, 2}, {.Rock_Throw, 2},
+			{.Entrench, 6}, {.Body_Press, 6}, {.Iron_Skin, 6},
+			{.Rampart, 10}, {.Barrier, 10}, {.Bulwark, 10},
+		},
+		move_pool = []Move_Id{.Rock_Throw, .Guard, .Shield_Bash, .Footwork, .Body_Press, .Iron_Skin, .Fortify, .Entrench, .Rampart, .Barrier, .Bulwark, .Slash, .Juggernaut},
+	},
+	.Dustwing = {
+		name = "Dustwing", desc = "A moth of grey dust. It moves in fits and starts.", elements = []Element{.AIR}, base_hp = 36, base_energy = 3, base_energy_max = 9, base_power = 0.8, base_defense = 0.3, base_speed = 13.0, base_satiety = 65, base_upkeep = 2,
+		color = rl.Color{180, 176, 190, 255}, role = .WILD, rarity = .COMMON,
+		starter = []Move_Id{.Gust, .Gust, .Gust, .Guard, .Guard, .Insight, .Study, .Cyclone, .Meditate, .Adrenaline},
+		learnset = []Learn_Entry{
+			{.Insight, 2}, {.Study, 2}, {.Gust, 2},
+			{.Meditate, 6}, {.Adrenaline, 6}, {.Cyclone, 6},
+			{.Overclock, 10}, {.Siphon, 10}, {.Blackout, 10},
+		},
+		move_pool = []Move_Id{.Gust, .Insight, .Study, .Cyclone, .Meditate, .Adrenaline, .Overclock, .Siphon, .Blackout, .Guard, .Slash, .Agility, .Rally},
+	},
 	.Thornkit = {
-		name = "Thornkit", elements = []Element{.FLORA}, base_hp = 40, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.0, base_speed = 9.0, base_satiety = 85, base_upkeep = 2,
-		color = rl.Color{88, 172, 98, 255}, role = .WILD, rarity = .COMMON,
-		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Leech, .Thorn_Crash, .Screech},
+		name = "Thornkit", desc = "A prickly sprout. Its barbs catch anything that comes close.", elements = []Element{.FLORA}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.1, base_speed = 9.0, base_satiety = 85, base_upkeep = 2,
+		color = rl.Color{96, 180, 104, 255}, role = .WILD, rarity = .COMMON,
+		evolves_to = .Thornmaw, evolve_level = 16,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Bramble_Armor, .Spike_Shell, .Iron_Skin, .Entrench, .Body_Press},
 		learnset = []Learn_Entry{
-			{.Vine_Whip, 1}, {.Guard, 1}, {.Screech, 1}, {.Leech, 1},
-			{.Thorn_Crash, 2}, {.Bark_Skin, 2}, {.Bloom, 4}, {.Iron_Skin, 5},
-			{.Overgrowth, 5}, {.Mend, 6}, {.Fortify, 7},
+			{.Bramble_Armor, 2}, {.Spike_Shell, 2}, {.Iron_Skin, 2},
+			{.Entrench, 6}, {.Body_Press, 6}, {.Shield_Bash, 6},
+			{.Barricade, 10}, {.Rampart, 10}, {.Bulwark, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Leech, .Thorn_Crash, .Bark_Skin, .Bloom, .Overgrowth, .Tackle, .Guard, .Fortify, .Screech, .Iron_Skin, .Mend, .Crush, .Jab, .Brace},
+		move_pool = []Move_Id{.Vine_Whip, .Bramble_Armor, .Spike_Shell, .Iron_Skin, .Entrench, .Body_Press, .Shield_Bash, .Barricade, .Rampart, .Bulwark, .Guard, .Fortify},
 	},
-	// Elite Sentinel
-	.Elite_Sentinel = {
-		name = "Elite Sentinel", elements = []Element{.NEUTRAL}, base_hp = 66, base_energy = 4, base_energy_max = 10, base_power = 1.3, base_defense = 2.0, base_speed = 6.0, base_satiety = 140, base_upkeep = 5,
-		color = rl.Color{206, 122, 62, 255}, role = .ELITE, rarity = .RARE,
-		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Tackle, .Body_Slam, .Body_Slam, .Guard, .Guard, .Fortify, .Crush},
+	.Mossling = {
+		name = "Mossling", desc = "A soft mound of moss. It sleeps through most fights.", elements = []Element{.FLORA}, base_hp = 52, base_energy = 3, base_energy_max = 8, base_power = 0.8, base_defense = 1.2, base_speed = 6.0, base_satiety = 95, base_upkeep = 3,
+		color = rl.Color{110, 170, 110, 255}, role = .WILD, rarity = .COMMON,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Meditate, .Purify, .Antidote, .Footwork, .Rampart},
 		learnset = []Learn_Entry{
-			{.Tackle, 1}, {.Guard, 1}, {.Crush, 1}, {.Body_Slam, 1},
-			{.Fortify, 2}, {.Iron_Skin, 3}, {.Screech, 3}, {.Flurry, 4},
-			{.Hone, 4}, {.Mend, 5}, {.Insight, 5}, {.Blaze, 8},
+			{.Meditate, 2}, {.Purify, 2}, {.Antidote, 2},
+			{.Footwork, 6}, {.Rampart, 6}, {.Barrier, 6},
+			{.Bastion, 10}, {.Flow, 10}, {.Bulwark, 10},
 		},
-		move_pool = []Move_Id{.Tackle, .Body_Slam, .Crush, .Guard, .Fortify, .Iron_Skin, .Screech, .Flurry, .Hone, .Mend, .Insight, .Blaze, .Jab, .Brace},
+		move_pool = []Move_Id{.Vine_Whip, .Guard, .Fortify, .Meditate, .Purify, .Antidote, .Footwork, .Rampart, .Barrier, .Bastion, .Flow, .Bulwark, .Rally},
 	},
-	// The Deep One
-	.Deep_One = {
-		name = "The Deep One", elements = []Element{.NEUTRAL}, base_hp = 120, base_energy = 4, base_energy_max = 10, base_power = 1.6, base_defense = 3.0, base_speed = 5.0, base_satiety = 220, base_upkeep = 8,
-		color = rl.Color{150, 42, 62, 255}, role = .BOSS, rarity = .LEGENDARY,
-		starter = []Move_Id{.Body_Slam, .Body_Slam, .Body_Slam, .Body_Slam, .Fortify, .Fortify, .Fortify, .Crush, .Iron_Skin, .Hone},
+	.Bloomcap = {
+		name = "Bloomcap", desc = "A cap of bright spores. Breathe deep and you will not wake.", elements = []Element{.FLORA, .POISON}, base_hp = 46, base_energy = 3, base_energy_max = 8, base_power = 0.9, base_defense = 1.0, base_speed = 8.0, base_satiety = 90, base_upkeep = 3,
+		color = rl.Color{120, 190, 110, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Venom, .Venom, .Guard, .Guard, .Envenom, .Catalyst, .Bramble_Armor},
 		learnset = []Learn_Entry{
-			{.Body_Slam, 1}, {.Fortify, 1}, {.Crush, 1}, {.Iron_Skin, 1}, {.Hone, 1},
-			{.Blaze, 2}, {.Screech, 2}, {.Torrent, 4}, {.Inferno, 4},
-			{.Overgrowth, 5}, {.Insight, 6}, {.Mend, 7},
+			{.Venom, 2}, {.Envenom, 2}, {.Catalyst, 2},
+			{.Toxic, 6}, {.Haze, 6}, {.Bramble_Armor, 6},
+			{.Combustion, 10}, {.Spike_Shell, 10}, {.Purify, 10},
 		},
-		move_pool = []Move_Id{.Body_Slam, .Fortify, .Crush, .Iron_Skin, .Hone, .Blaze, .Screech, .Torrent, .Inferno, .Overgrowth, .Insight, .Mend, .Guard, .Jab, .Brace},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Toxic, .Haze, .Bramble_Armor, .Combustion, .Spike_Shell, .Purify, .Guard, .Spike_Shell},
 	},
-	// Gloomling (content)
+	.Barkhound = {
+		name = "Barkhound", desc = "A hound of living bark. It headbutts with a trunk.", elements = []Element{.FLORA, .GROUND}, base_hp = 56, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.4, base_speed = 8.0, base_satiety = 100, base_upkeep = 3,
+		color = rl.Color{126, 150, 90, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Body_Press, .Iron_Skin, .Rock_Throw, .Shield_Bash, .Fortify},
+		learnset = []Learn_Entry{
+			{.Body_Press, 2}, {.Iron_Skin, 2}, {.Rock_Throw, 2},
+			{.Shield_Bash, 6}, {.Fortify, 6}, {.Entrench, 6},
+			{.Rampart, 10}, {.Bulwark, 10}, {.All_In, 10},
+		},
+		move_pool = []Move_Id{.Vine_Whip, .Rock_Throw, .Body_Press, .Iron_Skin, .Shield_Bash, .Fortify, .Entrench, .Rampart, .Bulwark, .All_In, .Guard, .Bash, .Juggernaut},
+	},
+	.Bubblet = {
+		name = "Bubblet", desc = "A round drifter that floats on its own bubbles.", elements = []Element{.AQUA}, base_hp = 48, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.2, base_speed = 8.0, base_satiety = 95, base_upkeep = 2,
+		color = rl.Color{72, 140, 214, 255}, role = .WILD, rarity = .COMMON,
+		evolves_to = .Bubblord, evolve_level = 16,
+		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Shield_Bash, .Footwork, .Fortify, .Body_Press, .Rampart},
+		learnset = []Learn_Entry{
+			{.Guard, 2}, {.Shield_Bash, 2}, {.Footwork, 2},
+			{.Fortify, 6}, {.Body_Press, 6}, {.Rampart, 6},
+			{.Barrier, 10}, {.Bulwark, 10}, {.Bastion, 10},
+		},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Guard, .Shield_Bash, .Footwork, .Fortify, .Body_Press, .Rampart, .Barrier, .Bulwark, .Bastion, .Meditate},
+	},
+	.Ripjaw = {
+		name = "Ripjaw", desc = "A lean hunter with too many teeth. It never stops biting.", elements = []Element{.AQUA}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 0.9, base_speed = 10.0, base_satiety = 95, base_upkeep = 3,
+		color = rl.Color{60, 128, 200, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Overwhelm},
+		learnset = []Learn_Entry{
+			{.Fang_Flurry, 2}, {.Leech, 2}, {.Aqua_Jet, 2},
+			{.Cyclone, 6}, {.Sanguine, 6}, {.Overwhelm, 6},
+			{.Blade_Dance, 10}, {.Shiv, 10}, {.Adrenaline, 10},
+		},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Overwhelm, .Blade_Dance, .Shiv, .Adrenaline, .Guard, .Slash},
+	},
+	.Tidecaller = {
+		name = "Tidecaller", desc = "It hums the tide into a lullaby. Prey stands still to listen.", elements = []Element{.AQUA, .ICE}, base_hp = 54, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 1.3, base_speed = 8.0, base_satiety = 110, base_upkeep = 3,
+		color = rl.Color{96, 168, 220, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Frost_Bite, .Concuss, .Snowball, .Meditate, .Mark},
+		learnset = []Learn_Entry{
+			{.Frost_Bite, 2}, {.Concuss, 2}, {.Snowball, 2},
+			{.Mark, 6}, {.Depower, 6}, {.Meditate, 6},
+			{.Barrier, 10}, {.Haze, 10}, {.Hold_the_Line, 10},
+		},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Frost_Bite, .Concuss, .Snowball, .Mark, .Depower, .Meditate, .Barrier, .Haze, .Hold_the_Line, .Guard},
+	},
+	.Abyssal_Fry = {
+		name = "Abyssal Fry", desc = "A deep-sea hatchling with venom in its fins.", elements = []Element{.AQUA, .POISON}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.9, base_defense = 0.8, base_speed = 9.0, base_satiety = 85, base_upkeep = 3,
+		color = rl.Color{70, 110, 170, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Venom, .Venom, .Guard, .Guard, .Envenom, .Leech, .Catalyst},
+		learnset = []Learn_Entry{
+			{.Venom, 2}, {.Envenom, 2}, {.Leech, 2},
+			{.Catalyst, 6}, {.Toxic, 6}, {.Fang_Flurry, 6},
+			{.Combustion, 10}, {.Siphon, 10}, {.Overwhelm, 10},
+		},
+		move_pool = []Move_Id{.Aqua_Jet, .Venom, .Envenom, .Leech, .Catalyst, .Toxic, .Fang_Flurry, .Combustion, .Siphon, .Overwhelm, .Guard, .Haze},
+	},
 	.Gloomling = {
-		name = "Gloomling", elements = []Element{.NEUTRAL, .FLORA}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 2.0, base_speed = 5.0, base_satiety = 110, base_upkeep = 3,
-		color = rl.Color{120, 118, 140, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Tackle, .Guard, .Guard, .Weaken, .Body_Slam, .Fortify, .Exploit},
+		name = "Gloomling", desc = "A shadow that clings to cave ceilings and watches.", elements = []Element{.NEUTRAL}, base_hp = 42, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 0.5, base_speed = 10.0, base_satiety = 80, base_upkeep = 2,
+		color = rl.Color{96, 88, 120, 255}, role = .WILD, rarity = .COMMON,
+		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Guard, .Guard, .Blood_Pact, .Reckoning, .Mark, .Cull, .Expose},
 		learnset = []Learn_Entry{
-			{.Tackle, 1}, {.Guard, 1}, {.Fortify, 1}, {.Exploit, 1},
-			{.Crush, 2}, {.Body_Slam, 3}, {.Iron_Skin, 3}, {.Payback, 4}, {.Screech, 4},
-			{.Mend, 5}, {.Followup, 6},
+			{.Blood_Pact, 2}, {.Reckoning, 2}, {.Mark, 2},
+			{.Cull, 6}, {.Expose, 6}, {.Overclock, 6},
+			{.All_In, 10}, {.Finale, 10}, {.Sunder, 10},
 		},
-		move_pool = []Move_Id{.Tackle, .Body_Slam, .Crush, .Guard, .Fortify, .Iron_Skin, .Screech, .Payback, .Exploit, .Followup, .Mend, .Insight, .Fang, .Brace, .Jab},
+		move_pool = []Move_Id{.Tackle, .Slash, .Blood_Pact, .Reckoning, .Mark, .Cull, .Expose, .Overclock, .All_In, .Finale, .Sunder, .Guard, .Disarm},
 	},
-	// Pyrelord (content)
-	.Pyrelord = {
-		name = "Pyrelord", elements = []Element{.EMBER}, base_hp = 54, base_energy = 3, base_energy_max = 8, base_power = 1.1, base_defense = 1.0, base_speed = 7.0, base_satiety = 110, base_upkeep = 4,
-		color = rl.Color{232, 84, 48, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flame_Burst, .Combust, .Rampage},
+	.Crypt_Rat = {
+		name = "Crypt Rat", desc = "A rat that nests in old bones. Its bite festers.", elements = []Element{.NEUTRAL, .POISON}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 0.7, base_speed = 11.0, base_satiety = 80, base_upkeep = 2,
+		color = rl.Color{120, 110, 100, 255}, role = .WILD, rarity = .COMMON,
+		starter = []Move_Id{.Tackle, .Tackle, .Tackle, .Venom, .Venom, .Guard, .Guard, .Fang_Flurry, .Envenom, .Catalyst},
 		learnset = []Learn_Entry{
-			{.Ember_Strike, 1}, {.Guard, 1}, {.Combust, 1},
-			{.Flame_Burst, 2}, {.Cinder, 2}, {.Rampage, 3}, {.Inferno, 4}, {.Iron_Skin, 4},
-			{.Screech, 5}, {.Followup, 5}, {.Blaze, 6}, {.Mend, 6},
+			{.Venom, 2}, {.Fang_Flurry, 2}, {.Envenom, 2},
+			{.Catalyst, 6}, {.Cyclone, 6}, {.Leech, 6},
+			{.Sabotage, 10}, {.Toxic, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Cinder, .Combust, .Flame_Burst, .Rampage, .Inferno, .Blaze, .Ash_Screen, .Guard, .Fortify, .Followup, .Exploit, .Iron_Skin, .Mend},
+		move_pool = []Move_Id{.Tackle, .Venom, .Fang_Flurry, .Envenom, .Catalyst, .Cyclone, .Leech, .Sabotage, .Toxic, .Overwhelm, .Guard, .Haze},
 	},
-	// Krakling (content)
-	.Krakling = {
-		name = "Krakling", elements = []Element{.AQUA, .EMBER}, base_hp = 56, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.0, base_speed = 8.0, base_satiety = 110, base_upkeep = 3,
-		color = rl.Color{60, 120, 210, 255}, role = .WILD, rarity = .RARE,
-		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Tidal_Slam, .Frost_Bite, .Bubble_Shield},
-		learnset = []Learn_Entry{
-			{.Aqua_Jet, 1}, {.Guard, 1}, {.Frost_Bite, 1},
-			{.Bubble_Shield, 2}, {.Tidal_Slam, 2}, {.Undertow, 3}, {.Iron_Skin, 4}, {.Heal_Spring, 4},
-			{.Torrent, 5}, {.Followup, 5}, {.Mend, 6}, {.Fortify, 6},
-		},
-		move_pool = []Move_Id{.Aqua_Jet, .Undertow, .Frost_Bite, .Bubble_Shield, .Tidal_Slam, .Heal_Spring, .Torrent, .Guard, .Fortify, .Followup, .Insight, .Iron_Skin, .Mend},
-	},
-	// Swampbeast (content)
-	.Swampbeast = {
-		name = "Swampbeast", elements = []Element{.FLORA, .AQUA}, base_hp = 60, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 2.0, base_speed = 5.0, base_satiety = 120, base_upkeep = 4,
-		color = rl.Color{74, 158, 84, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Thorn_Crash, .Lash, .Bloom},
-		learnset = []Learn_Entry{
-			{.Vine_Whip, 1}, {.Guard, 1}, {.Lash, 1},
-			{.Bloom, 2}, {.Thorn_Crash, 2}, {.Leech, 3}, {.Bark_Skin, 3}, {.Iron_Skin, 4},
-			{.Overgrowth, 5}, {.Followup, 5}, {.Mend, 6}, {.Fortify, 6},
-		},
-		move_pool = []Move_Id{.Vine_Whip, .Lash, .Leech, .Thorn_Crash, .Bloom, .Overgrowth, .Bark_Skin, .Guard, .Fortify, .Followup, .Screech, .Iron_Skin, .Mend, .Crush},
-	},
-	// Wispling (content): fast support, fragile
 	.Wispling = {
-		name = "Wispling", elements = []Element{.NEUTRAL}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 0.5, base_speed = 11.5, base_satiety = 90, base_upkeep = 2,
-		color = rl.Color{150, 170, 200, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Jab, .Jab, .Jab, .Jab, .Guard, .Guard, .Disarm, .Flurry, .Feint, .Warcry},
+		name = "Wispling", desc = "A flickering spirit that leads travellers astray.", elements = []Element{.AIR, .ELECTRIC}, base_hp = 40, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 0.5, base_speed = 14.0, base_satiety = 75, base_upkeep = 2,
+		color = rl.Color{160, 180, 220, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Gust, .Gust, .Gust, .Zap, .Zap, .Guard, .Guard, .Agility, .Insight, .Study},
 		learnset = []Learn_Entry{
-			{.Jab, 1}, {.Guard, 1}, {.Feint, 1}, {.Warcry, 1},
-			{.Flurry, 2}, {.Followup, 2}, {.Insight, 3}, {.Gnaw, 4},
-			{.Twin_Fangs, 5}, {.Exploit, 5}, {.Mend, 6}, {.Second_Wind, 6},
+			{.Zap, 2}, {.Gust, 2}, {.Insight, 2},
+			{.Agility, 6}, {.Study, 6}, {.Concuss, 6},
+			{.Thunderbolt, 10}, {.Overclock, 10}, {.Adrenaline, 10},
 		},
-		move_pool = []Move_Id{.Jab, .Feint, .Warcry, .Flurry, .Followup, .Gnaw, .Twin_Fangs, .Exploit, .Payback, .Second_Wind, .Insight, .Mend, .Brace, .Guard, .Fang},
+		move_pool = []Move_Id{.Gust, .Zap, .Agility, .Insight, .Study, .Concuss, .Thunderbolt, .Overclock, .Adrenaline, .Guard, .Slash, .Cyclone, .Disarm},
 	},
-	// Cindermaw (content): glass cannon
-	.Cindermaw = {
-		name = "Cindermaw", elements = []Element{.EMBER}, base_hp = 48, base_energy = 3, base_energy_max = 8, base_power = 1.25, base_defense = 0.5, base_speed = 6.5, base_satiety = 100, base_upkeep = 4,
-		color = rl.Color{240, 70, 40, 255}, role = .WILD, rarity = .RARE,
-		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flare, .Combust, .Rampage},
+	.Sporeling = {
+		name = "Sporeling", desc = "A drifting spore-cloud with a grudge.", elements = []Element{.POISON}, base_hp = 40, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 0.7, base_speed = 9.0, base_satiety = 80, base_upkeep = 2,
+		color = rl.Color{150, 110, 170, 255}, role = .WILD, rarity = .COMMON,
+		evolves_to = .Sporelord, evolve_level = 16,
+		starter = []Move_Id{.Sting, .Sting, .Sting, .Guard, .Guard, .Venom, .Envenom, .Haze, .Catalyst, .Purify},
 		learnset = []Learn_Entry{
-			{.Ember_Strike, 1}, {.Guard, 1}, {.Flare, 1},
-			{.Combust, 2}, {.Cinder, 2}, {.Rampage, 3}, {.Inferno, 4}, {.Twin_Fangs, 5},
-			{.Exploit, 5}, {.Blaze, 6}, {.Mend, 6},
+			{.Venom, 2}, {.Envenom, 2}, {.Haze, 2},
+			{.Catalyst, 6}, {.Toxic, 6}, {.Purify, 6},
+			{.Combustion, 10}, {.Spike_Shell, 10}, {.Bramble_Armor, 10},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Flare, .Cinder, .Combust, .Rampage, .Inferno, .Blaze, .Ash_Screen, .Twin_Fangs, .Exploit, .Followup, .Guard, .Mend},
+		move_pool = []Move_Id{.Sting, .Venom, .Envenom, .Haze, .Catalyst, .Toxic, .Purify, .Combustion, .Spike_Shell, .Bramble_Armor, .Guard, .Slash},
 	},
-	// Rimescale (content): tanky water
-	.Rimescale = {
-		name = "Rimescale", elements = []Element{.AQUA}, base_hp = 64, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 2.5, base_speed = 5.5, base_satiety = 130, base_upkeep = 4,
-		color = rl.Color{70, 150, 220, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Frost_Bite, .Bubble_Shield, .Tidecall},
+	.Capmaw = {
+		name = "Capmaw", desc = "A mushroom with a mouth. It feeds on what the spores drop.", elements = []Element{.FLORA, .POISON}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.2, base_speed = 7.0, base_satiety = 105, base_upkeep = 3,
+		color = rl.Color{140, 180, 120, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Venom, .Venom, .Guard, .Guard, .Envenom, .Leech, .Catalyst},
 		learnset = []Learn_Entry{
-			{.Aqua_Jet, 1}, {.Guard, 1}, {.Frost_Bite, 1}, {.Bubble_Shield, 1},
-			{.Tidecall, 2}, {.Tidal_Slam, 2}, {.Undertow, 3}, {.Iron_Skin, 4},
-			{.Heal_Spring, 4}, {.Torrent, 5}, {.Regrowth, 6}, {.Mend, 6},
+			{.Venom, 2}, {.Leech, 2}, {.Envenom, 2},
+			{.Catalyst, 6}, {.Fang_Flurry, 6}, {.Toxic, 6},
+			{.Combustion, 10}, {.Sanguine, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Frost_Bite, .Bubble_Shield, .Tidecall, .Undertow, .Tidal_Slam, .Heal_Spring, .Torrent, .Guard, .Fortify, .Iron_Skin, .Regrowth, .Mend, .Second_Wind},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Leech, .Envenom, .Catalyst, .Fang_Flurry, .Toxic, .Combustion, .Sanguine, .Overwhelm, .Guard, .Haze},
 	},
-	// Mosshide (content): balanced flora
-	.Mosshide = {
-		name = "Mosshide", elements = []Element{.FLORA}, base_hp = 62, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.5, base_speed = 7.5, base_satiety = 125, base_upkeep = 4,
-		color = rl.Color{96, 170, 88, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Bramble, .Lash, .Bloom},
+	.Sentinel = {
+		name = "Sentinel", desc = "An ancient guardian that never abandons its post.", elements = []Element{.NEUTRAL}, base_hp = 66, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 1.8, base_speed = 6.0, base_satiety = 120, base_upkeep = 4,
+		color = rl.Color{150, 150, 164, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Slash, .Slash, .Slash, .Guard, .Guard, .Shield_Bash, .Fortify, .Barrier, .Entrench, .Footwork},
 		learnset = []Learn_Entry{
-			{.Vine_Whip, 1}, {.Guard, 1}, {.Bramble, 1}, {.Lash, 1},
-			{.Bloom, 2}, {.Leech, 2}, {.Thorn_Crash, 3}, {.Bark_Skin, 4},
-			{.Iron_Skin, 4}, {.Overgrowth, 5}, {.Regrowth, 5}, {.Mend, 6},
+			{.Guard, 2}, {.Shield_Bash, 2}, {.Fortify, 2},
+			{.Barrier, 6}, {.Entrench, 6}, {.Footwork, 6},
+			{.Rampart, 10}, {.Bulwark, 10}, {.Barricade, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Bramble, .Lash, .Leech, .Bloom, .Thorn_Crash, .Overgrowth, .Bark_Skin, .Guard, .Fortify, .Regrowth, .Iron_Skin, .Mend, .Screech},
+		move_pool = []Move_Id{.Slash, .Guard, .Shield_Bash, .Fortify, .Barrier, .Entrench, .Footwork, .Rampart, .Bulwark, .Barricade, .Body_Press, .Iron_Skin, .Disarm, .Juggernaut, .Rally},
 	},
-	// Emberbloom (dual Ember/Flora)
-	.Emberbloom = {
-		name = "Emberbloom", elements = []Element{.EMBER, .FLORA}, base_hp = 56, base_energy = 3, base_energy_max = 8, base_power = 1.15, base_defense = 1.0, base_speed = 6.0, base_satiety = 115, base_upkeep = 4,
-		color = rl.Color{206, 120, 92, 255}, role = .WILD, rarity = .RARE,
-		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flame_Burst, .Vine_Whip, .Bramble},
+	.Relic_Hound = {
+		name = "Relic Hound", desc = "A stone hound that guards buried vaults.", elements = []Element{.GROUND}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.5, base_speed = 8.0, base_satiety = 105, base_upkeep = 3,
+		color = rl.Color{150, 130, 100, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Rock_Throw, .Rock_Throw, .Rock_Throw, .Guard, .Guard, .Body_Press, .Iron_Skin, .Shield_Bash, .Entrench, .Bash},
 		learnset = []Learn_Entry{
-			{.Ember_Strike, 1}, {.Guard, 1}, {.Bramble, 1},
-			{.Flame_Burst, 2}, {.Cinder, 2}, {.Vine_Whip, 3}, {.Combust, 4},
-			{.Inferno, 5}, {.Overgrowth, 5}, {.Rampage, 6}, {.Mend, 6},
+			{.Body_Press, 2}, {.Iron_Skin, 2}, {.Rock_Throw, 2},
+			{.Shield_Bash, 6}, {.Entrench, 6}, {.Bash, 6},
+			{.Rampart, 10}, {.All_In, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Cinder, .Combust, .Flame_Burst, .Rampage, .Inferno, .Vine_Whip, .Bramble, .Leech, .Overgrowth, .Guard, .Fortify, .Exploit, .Mend},
+		move_pool = []Move_Id{.Rock_Throw, .Body_Press, .Iron_Skin, .Shield_Bash, .Entrench, .Bash, .Rampart, .All_In, .Overwhelm, .Fortify, .Guard, .Cleave, .Juggernaut},
 	},
-	// Bogfang (dual Aqua/Neutral)
-	.Bogfang = {
-		name = "Bogfang", elements = []Element{.AQUA, .NEUTRAL}, base_hp = 60, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 2.0, base_speed = 6.0, base_satiety = 120, base_upkeep = 4,
-		color = rl.Color{78, 124, 124, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Weaken, .Undertow, .Fang, .Fortify},
+	.Hexling = {
+		name = "Hexling", desc = "A knot of static that curses what it touches.", elements = []Element{.ELECTRIC}, base_hp = 46, base_energy = 3, base_energy_max = 9, base_power = 0.95, base_defense = 0.8, base_speed = 12.0, base_satiety = 85, base_upkeep = 2,
+		color = rl.Color{196, 190, 110, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Zap, .Zap, .Zap, .Guard, .Guard, .Concuss, .Agility, .Depower, .Thunderbolt, .Blackout},
 		learnset = []Learn_Entry{
-			{.Aqua_Jet, 1}, {.Guard, 1}, {.Undertow, 1}, {.Fang, 1},
-			{.Tidal_Slam, 2}, {.Fortify, 2}, {.Iron_Skin, 3}, {.Frost_Bite, 4},
-			{.Crush, 4}, {.Torrent, 5}, {.Mend, 5}, {.Payback, 6},
+			{.Zap, 2}, {.Concuss, 2}, {.Agility, 2},
+			{.Depower, 6}, {.Thunderbolt, 6}, {.Blackout, 6},
+			{.All_In, 10}, {.Overclock, 10}, {.Sabotage, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Undertow, .Frost_Bite, .Tidal_Slam, .Torrent, .Fang, .Crush, .Body_Slam, .Guard, .Fortify, .Iron_Skin, .Payback, .Mend, .Brace},
+		move_pool = []Move_Id{.Zap, .Thunderbolt, .Concuss, .Agility, .Depower, .Blackout, .All_In, .Overclock, .Sabotage, .Guard, .Slash, .Insight, .Disarm},
 	},
-	// Cinderwing (dual Ember/Neutral)
-	.Cinderwing = {
-		name = "Cinderwing", elements = []Element{.EMBER, .NEUTRAL}, base_hp = 46, base_energy = 3, base_energy_max = 8, base_power = 1.15, base_defense = 0.5, base_speed = 10.5, base_satiety = 95, base_upkeep = 3,
-		color = rl.Color{232, 116, 66, 255}, role = .WILD, rarity = .RARE,
-		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Flare, .Followup, .Feint},
+	.Snowpup = {
+		name = "Snowpup", desc = "A pup of packed snow. Its bark frosts the air.", elements = []Element{.ICE}, base_hp = 46, base_energy = 3, base_energy_max = 8, base_power = 0.9, base_defense = 0.9, base_speed = 10.0, base_satiety = 90, base_upkeep = 2,
+		color = rl.Color{190, 220, 240, 255}, role = .WILD, rarity = .COMMON,
+		evolves_to = .Frostfang, evolve_level = 16,
+		starter = []Move_Id{.Snowball, .Snowball, .Snowball, .Guard, .Guard, .Frost_Bite, .Mark, .Bash, .Expose, .Cleave},
 		learnset = []Learn_Entry{
-			{.Ember_Strike, 1}, {.Guard, 1}, {.Flare, 1}, {.Feint, 1},
-			{.Followup, 2}, {.Flurry, 2}, {.Cinder, 3}, {.Twin_Fangs, 4},
-			{.Rampage, 5}, {.Exploit, 5}, {.Blaze, 6}, {.Mend, 6},
+			{.Frost_Bite, 2}, {.Mark, 2}, {.Snowball, 2},
+			{.Bash, 6}, {.Expose, 6}, {.Cleave, 6},
+			{.Overwhelm, 10}, {.All_In, 10}, {.Sunder, 10},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Flare, .Cinder, .Combust, .Rampage, .Blaze, .Followup, .Feint, .Flurry, .Twin_Fangs, .Exploit, .Guard, .Mend, .Insight},
+		move_pool = []Move_Id{.Snowball, .Frost_Bite, .Mark, .Bash, .Expose, .Cleave, .Overwhelm, .All_In, .Sunder, .Guard, .Hone, .Slash},
 	},
-	// Frostmoss (dual Aqua/Flora)
-	.Frostmoss = {
-		name = "Frostmoss", elements = []Element{.AQUA, .FLORA}, base_hp = 66, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 2.5, base_speed = 5.0, base_satiety = 130, base_upkeep = 4,
-		color = rl.Color{96, 168, 168, 255}, role = .WILD, rarity = .RARE,
-		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Frost_Bite, .Bramble, .Bloom},
+	.Frostmaw = {
+		name = "Frostmaw", desc = "A maw of black ice. It bites and does not let go.", elements = []Element{.ICE, .GROUND}, base_hp = 62, base_energy = 3, base_energy_max = 9, base_power = 1.1, base_defense = 1.3, base_speed = 8.0, base_satiety = 115, base_upkeep = 4,
+		color = rl.Color{150, 190, 220, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Snowball, .Snowball, .Snowball, .Guard, .Guard, .Frost_Bite, .Body_Press, .Rock_Throw, .Shield_Bash, .Bash},
 		learnset = []Learn_Entry{
-			{.Aqua_Jet, 1}, {.Guard, 1}, {.Frost_Bite, 1}, {.Bramble, 1},
-			{.Bloom, 2}, {.Bubble_Shield, 2}, {.Leech, 3}, {.Undertow, 3},
-			{.Iron_Skin, 4}, {.Regrowth, 5}, {.Tidal_Slam, 5}, {.Mend, 6},
+			{.Frost_Bite, 2}, {.Body_Press, 2}, {.Rock_Throw, 2},
+			{.Shield_Bash, 6}, {.Bash, 6}, {.Entrench, 6},
+			{.All_In, 10}, {.Overwhelm, 10}, {.Rampart, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Frost_Bite, .Undertow, .Bubble_Shield, .Tidecall, .Bloom, .Bramble, .Leech, .Regrowth, .Heal_Spring, .Guard, .Fortify, .Iron_Skin, .Mend},
+		move_pool = []Move_Id{.Snowball, .Rock_Throw, .Frost_Bite, .Body_Press, .Shield_Bash, .Bash, .Entrench, .All_In, .Overwhelm, .Rampart, .Guard, .Iron_Skin, .Juggernaut},
 	},
-	// Frostfang (Ice)
-	.Frostfang = {
-		name = "Frostfang", elements = []Element{.ICE}, base_hp = 52, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.5, base_speed = 7.0, base_satiety = 110, base_upkeep = 3,
-		color = rl.Color{150, 216, 236, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Frost_Shard, .Frost_Shard, .Frost_Shard, .Frost_Shard, .Guard, .Guard, .Guard, .Glacier_Slam, .Iron_Skin, .Mend},
+	.Glacierling = {
+		name = "Glacierling", desc = "A slow wall of ice. It does not need to chase you.", elements = []Element{.ICE, .AQUA}, base_hp = 70, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 1.9, base_speed = 5.0, base_satiety = 130, base_upkeep = 4,
+		color = rl.Color{140, 200, 230, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Snowball, .Snowball, .Snowball, .Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Fortify, .Barrier, .Footwork},
 		learnset = []Learn_Entry{
-			{.Frost_Shard, 1}, {.Guard, 1}, {.Iron_Skin, 1}, {.Glacier_Slam, 2},
-			{.Fortify, 3}, {.Frost_Bite, 4}, {.Followup, 4}, {.Mend, 4},
-			{.Second_Wind, 5}, {.Insight, 5}, {.Regrowth, 6},
+			{.Snowball, 2}, {.Guard, 2}, {.Fortify, 2},
+			{.Barrier, 6}, {.Footwork, 6}, {.Entrench, 6},
+			{.Rampart, 10}, {.Bastion, 10}, {.Bulwark, 10},
 		},
-		move_pool = []Move_Id{.Frost_Shard, .Glacier_Slam, .Frost_Bite, .Guard, .Fortify, .Iron_Skin, .Followup, .Second_Wind, .Mend, .Insight, .Regrowth, .Brace, .Exploit},
+		move_pool = []Move_Id{.Snowball, .Aqua_Jet, .Guard, .Fortify, .Barrier, .Footwork, .Entrench, .Rampart, .Bastion, .Bulwark, .Body_Press, .Iron_Skin, .Juggernaut},
 	},
-	// Stonepaw (Ground)
-	.Stonepaw = {
-		name = "Stonepaw", elements = []Element{.GROUND}, base_hp = 62, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 2.5, base_speed = 4.5, base_satiety = 125, base_upkeep = 4,
-		color = rl.Color{160, 128, 84, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Rock_Toss, .Rock_Toss, .Rock_Toss, .Rock_Toss, .Guard, .Guard, .Sunder, .Quake, .Fortify, .Iron_Skin},
+	.Vinecat = {
+		name = "Vinecat", desc = "A cat made of vines. It pounces three times before you blink.", elements = []Element{.FLORA}, base_hp = 48, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 0.8, base_speed = 12.0, base_satiety = 90, base_upkeep = 3,
+		color = rl.Color{100, 180, 110, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Guard, .Guard, .Fang_Flurry, .Cyclone, .Agility, .Leech, .Blade_Dance},
 		learnset = []Learn_Entry{
-			{.Rock_Toss, 1}, {.Guard, 1}, {.Fortify, 1}, {.Quake, 2}, {.Iron_Skin, 2},
-			{.Crush, 3}, {.Body_Slam, 4}, {.Payback, 4}, {.Mend, 5}, {.Bramble, 5}, {.Second_Wind, 6},
+			{.Fang_Flurry, 2}, {.Vine_Whip, 2}, {.Cyclone, 2},
+			{.Agility, 6}, {.Leech, 6}, {.Blade_Dance, 6},
+			{.Overwhelm, 10}, {.Sanguine, 10}, {.Shiv, 10},
 		},
-		move_pool = []Move_Id{.Rock_Toss, .Quake, .Crush, .Body_Slam, .Guard, .Fortify, .Iron_Skin, .Payback, .Bramble, .Mend, .Second_Wind, .Brace, .Fang},
+		move_pool = []Move_Id{.Vine_Whip, .Fang_Flurry, .Cyclone, .Agility, .Leech, .Blade_Dance, .Overwhelm, .Sanguine, .Shiv, .Guard, .Slash, .Insight},
 	},
-	// Sparkit (Electric)
-	.Sparkit = {
-		name = "Sparkit", elements = []Element{.ELECTRIC}, base_hp = 46, base_energy = 3, base_energy_max = 8, base_power = 1.1, base_defense = 0.5, base_speed = 11.0, base_satiety = 95, base_upkeep = 3,
-		color = rl.Color{242, 214, 70, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Spark, .Spark, .Spark, .Spark, .Guard, .Guard, .Guard, .Thunderbolt, .Feint, .Followup},
-		learnset = []Learn_Entry{
-			{.Spark, 1}, {.Guard, 1}, {.Feint, 1}, {.Followup, 2}, {.Flurry, 2},
-			{.Hone, 3}, {.Thunderbolt, 4}, {.Twin_Fangs, 4}, {.Exploit, 5}, {.Insight, 5}, {.Mend, 6},
-		},
-		move_pool = []Move_Id{.Spark, .Thunderbolt, .Followup, .Flurry, .Twin_Fangs, .Exploit, .Feint, .Insight, .Hone, .Guard, .Mend, .Brace, .Fang},
-	},
-	// Galebeast (Air)
-	.Galebeast = {
-		name = "Galebeast", elements = []Element{.AIR}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 1.0, base_speed = 12.0, base_satiety = 100, base_upkeep = 3,
-		color = rl.Color{206, 214, 230, 255}, role = .WILD, rarity = .UNCOMMON,
-		starter = []Move_Id{.Gust, .Gust, .Gust, .Gust, .Guard, .Guard, .Guard, .Cyclone, .Feint, .Warcry},
-		learnset = []Learn_Entry{
-			{.Gust, 1}, {.Guard, 1}, {.Feint, 1}, {.Warcry, 1}, {.Followup, 2},
-			{.Cyclone, 4}, {.Twin_Fangs, 4}, {.Exploit, 5}, {.Insight, 5}, {.Second_Wind, 5}, {.Mend, 6},
-		},
-		move_pool = []Move_Id{.Gust, .Cyclone, .Followup, .Flurry, .Twin_Fangs, .Feint, .Warcry, .Second_Wind, .Insight, .Exploit, .Guard, .Mend, .Brace},
-	},
-	// Venomtail (Poison)
 	.Venomtail = {
-		name = "Venomtail", elements = []Element{.POISON}, base_hp = 54, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.0, base_speed = 8.0, base_satiety = 105, base_upkeep = 3,
-		color = rl.Color{170, 84, 186, 255}, role = .WILD, rarity = .RARE,
-		starter = []Move_Id{.Toxic_Bite, .Toxic_Bite, .Toxic_Bite, .Toxic_Bite, .Guard, .Guard, .Corrode, .Venom, .Screech, .Hone},
+		name = "Venomtail", desc = "A dripping stinger. Everything it touches goes numb.", elements = []Element{.POISON}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 1.0, base_speed = 10.0, base_satiety = 95, base_upkeep = 3,
+		color = rl.Color{150, 90, 170, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Sting, .Sting, .Sting, .Venom, .Venom, .Guard, .Guard, .Fang_Flurry, .Envenom, .Cyclone},
 		learnset = []Learn_Entry{
-			{.Toxic_Bite, 1}, {.Guard, 1}, {.Screech, 1}, {.Hone, 1}, {.Venom, 2},
-			{.Crush, 3}, {.Leech, 3}, {.Followup, 4}, {.Exploit, 5}, {.Mend, 5}, {.Second_Wind, 6},
+			{.Venom, 2}, {.Fang_Flurry, 2}, {.Envenom, 2},
+			{.Cyclone, 6}, {.Catalyst, 6}, {.Toxic, 6},
+			{.Combustion, 10}, {.Sabotage, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Toxic_Bite, .Venom, .Crush, .Leech, .Screech, .Hone, .Followup, .Exploit, .Payback, .Guard, .Fortify, .Mend, .Second_Wind},
+		move_pool = []Move_Id{.Sting, .Venom, .Fang_Flurry, .Envenom, .Cyclone, .Catalyst, .Toxic, .Combustion, .Sabotage, .Overwhelm, .Guard, .Haze},
 	},
-	// Blizzard (dual Ice/Air)
-	.Blizzard = {
-		name = "Blizzard", elements = []Element{.ICE, .AIR}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.1, base_defense = 1.5, base_speed = 9.0, base_satiety = 115, base_upkeep = 4,
-		color = rl.Color{176, 210, 240, 255}, role = .WILD, rarity = .EPIC,
-		starter = []Move_Id{.Frost_Shard, .Frost_Shard, .Frost_Shard, .Frost_Shard, .Guard, .Guard, .Guard, .Glacier_Slam, .Gust, .Cyclone},
+	.Pouncer = {
+		name = "Pouncer", desc = "A jungle stalker. It leaps before it lands.", elements = []Element{.FLORA, .AIR}, base_hp = 52, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 0.9, base_speed = 13.0, base_satiety = 95, base_upkeep = 3,
+		color = rl.Color{130, 200, 130, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Vine_Whip, .Gust, .Gust, .Guard, .Guard, .Frost_Bite, .Mark, .Cyclone},
 		learnset = []Learn_Entry{
-			{.Frost_Shard, 1}, {.Guard, 1}, {.Gust, 1}, {.Glacier_Slam, 2},
-			{.Cyclone, 3}, {.Followup, 3}, {.Iron_Skin, 4}, {.Second_Wind, 5},
-			{.Twin_Fangs, 5}, {.Mend, 6},
+			{.Frost_Bite, 2}, {.Mark, 2}, {.Vine_Whip, 2},
+			{.Cyclone, 6}, {.Fang_Flurry, 6}, {.Expose, 6},
+			{.All_In, 10}, {.Overwhelm, 10}, {.Sunder, 10},
 		},
-		move_pool = []Move_Id{.Frost_Shard, .Glacier_Slam, .Gust, .Cyclone, .Frost_Bite, .Followup, .Twin_Fangs, .Iron_Skin, .Second_Wind, .Guard, .Fortify, .Mend, .Insight},
+		move_pool = []Move_Id{.Vine_Whip, .Gust, .Frost_Bite, .Mark, .Cyclone, .Fang_Flurry, .Expose, .All_In, .Overwhelm, .Sunder, .Guard, .Agility},
 	},
-
-	// --- Bosses (Phase 25) ---------------------------------------------------
-	// Unique, very powerful, and built around a synergy combo. They spawn with
-	// a pack of cronies and roam as a unit of six.
+	.Magmite = {
+		name = "Magmite", desc = "A pebble of living magma. Warm to the touch, warmer when angry.", elements = []Element{.EMBER}, base_hp = 48, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 1.0, base_speed = 7.0, base_satiety = 90, base_upkeep = 3,
+		color = rl.Color{214, 92, 62, 255}, role = .WILD, rarity = .COMMON,
+		evolves_to = .Magmaw, evolve_level = 16,
+		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Guard, .Guard, .Ember_Coil, .Flame_Burst, .Mark, .Combustion, .Hone},
+		learnset = []Learn_Entry{
+			{.Ember_Coil, 2}, {.Flame_Burst, 2}, {.Ember_Strike, 2},
+			{.Mark, 6}, {.Combustion, 6}, {.Hone, 6},
+			{.Overwhelm, 10}, {.Fuse, 10}, {.All_In, 10},
+		},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Mark, .Combustion, .Hone, .Overwhelm, .Fuse, .All_In, .Guard, .Cleave, .Warcry},
+	},
+	.Cinderwing = {
+		name = "Cinderwing", desc = "A cinder-drake that rides the hot updrafts.", elements = []Element{.EMBER, .AIR}, base_hp = 50, base_energy = 3, base_energy_max = 9, base_power = 1.0, base_defense = 0.8, base_speed = 13.0, base_satiety = 95, base_upkeep = 3,
+		color = rl.Color{232, 120, 70, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Gust, .Gust, .Guard, .Guard, .Ember_Coil, .Flame_Burst, .Agility},
+		learnset = []Learn_Entry{
+			{.Ember_Coil, 2}, {.Gust, 2}, {.Flame_Burst, 2},
+			{.Cyclone, 6}, {.Combustion, 6}, {.Agility, 6},
+			{.Dragon_Dance, 10}, {.Overwhelm, 10}, {.All_In, 10},
+		},
+		move_pool = []Move_Id{.Ember_Strike, .Gust, .Flame_Burst, .Ember_Coil, .Cyclone, .Combustion, .Agility, .Dragon_Dance, .Overwhelm, .All_In, .Guard, .Fuse},
+	},
+	.Slagbeast = {
+		name = "Slagbeast", desc = "A heap of cooling slag that walks like a bear.", elements = []Element{.EMBER, .GROUND}, base_hp = 66, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.5, base_speed = 6.0, base_satiety = 120, base_upkeep = 4,
+		color = rl.Color{190, 100, 70, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Ember_Strike, .Rock_Throw, .Rock_Throw, .Guard, .Guard, .Hone, .Warcry, .Cleave},
+		learnset = []Learn_Entry{
+			{.Hone, 2}, {.Warcry, 2}, {.Cleave, 2},
+			{.Body_Press, 6}, {.Bash, 6}, {.Amplify, 6},
+			{.All_In, 10}, {.Rampart, 10}, {.Overwhelm, 10},
+		},
+		move_pool = []Move_Id{.Ember_Strike, .Rock_Throw, .Cleave, .Body_Press, .Hone, .Warcry, .Bash, .Amplify, .All_In, .Rampart, .Overwhelm, .Guard, .Juggernaut},
+	},
+	.Sandfang = {
+		name = "Sandfang", desc = "A desert lurker that swims through dunes.", elements = []Element{.GROUND}, base_hp = 56, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.1, base_speed = 10.0, base_satiety = 105, base_upkeep = 3,
+		color = rl.Color{196, 170, 110, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Sand_Attack, .Sand_Attack, .Sand_Attack, .Guard, .Guard, .Hone, .Bash, .Sunder, .Warcry, .Followup},
+		learnset = []Learn_Entry{
+			{.Hone, 2}, {.Bash, 2}, {.Sand_Attack, 2},
+			{.Warcry, 6}, {.Sunder, 6}, {.Followup, 6},
+			{.Amplify, 10}, {.All_In, 10}, {.Overwhelm, 10},
+		},
+		move_pool = []Move_Id{.Sand_Attack, .Hone, .Bash, .Sunder, .Warcry, .Followup, .Amplify, .All_In, .Overwhelm, .Cleave, .Guard, .Rock_Throw},
+	},
+	.Sparkit = {
+		name = "Sparkit", desc = "A crackling spark that cannot sit still.", elements = []Element{.ELECTRIC}, base_hp = 42, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 0.6, base_speed = 15.0, base_satiety = 80, base_upkeep = 2,
+		color = rl.Color{242, 214, 70, 255}, role = .WILD, rarity = .UNCOMMON,
+		evolves_to = .Voltail, evolve_level = 16,
+		starter = []Move_Id{.Zap, .Zap, .Zap, .Guard, .Guard, .Insight, .Agility, .Thunderbolt, .Study, .Concuss},
+		learnset = []Learn_Entry{
+			{.Zap, 2}, {.Insight, 2}, {.Agility, 2},
+			{.Thunderbolt, 6}, {.Study, 6}, {.Concuss, 6},
+			{.All_In, 10}, {.Overclock, 10}, {.Adrenaline, 10},
+		},
+		move_pool = []Move_Id{.Zap, .Thunderbolt, .Insight, .Agility, .Study, .Concuss, .All_In, .Overclock, .Adrenaline, .Guard, .Slash, .Siphon},
+	},
+	.Crystalfin = {
+		name = "Crystalfin", desc = "A fish of living crystal. Its scales hum with charge.", elements = []Element{.ICE, .ELECTRIC}, base_hp = 54, base_energy = 3, base_energy_max = 10, base_power = 1.0, base_defense = 1.1, base_speed = 11.0, base_satiety = 105, base_upkeep = 3,
+		color = rl.Color{150, 220, 235, 255}, role = .WILD, rarity = .RARE,
+		starter = []Move_Id{.Snowball, .Snowball, .Snowball, .Zap, .Zap, .Guard, .Guard, .Barrier, .Thunderbolt, .Footwork},
+		learnset = []Learn_Entry{
+			{.Snowball, 2}, {.Zap, 2}, {.Guard, 2},
+			{.Barrier, 6}, {.Thunderbolt, 6}, {.Footwork, 6},
+			{.Flow, 10}, {.All_In, 10}, {.Bulwark, 10},
+		},
+		move_pool = []Move_Id{.Snowball, .Zap, .Thunderbolt, .Barrier, .Footwork, .Flow, .All_In, .Bulwark, .Frost_Bite, .Concuss, .Guard, .Slash, .Rally},
+	},
+	.Rotshell = {
+		name = "Rotshell", desc = "A hulking rot-beetle. It eats what it kills, and it kills slowly.", elements = []Element{.NEUTRAL, .POISON}, base_hp = 74, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.4, base_speed = 7.0, base_satiety = 130, base_upkeep = 4,
+		color = rl.Color{140, 130, 110, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Slash, .Slash, .Guard, .Guard, .Guard, .Venom, .Envenom, .Blood_Pact, .Reckoning, .Catalyst},
+		learnset = []Learn_Entry{
+			{.Blood_Pact, 16}, {.Reckoning, 16}, {.Venom, 16},
+			{.All_In, 20}, {.Finale, 20}, {.Envenom, 20},
+			{.Overwhelm, 24}, {.Combustion, 24}, {.Cull, 24},
+		},
+		move_pool = []Move_Id{.Slash, .Venom, .Envenom, .Catalyst, .Blood_Pact, .Reckoning, .Cull, .All_In, .Finale, .Overwhelm, .Combustion, .Guard},
+	},
+	.Nightwing = {
+		name = "Nightwing", desc = "A bat grown huge on blood. It hunts by the sound of your heartbeat.", elements = []Element{.AIR, .NEUTRAL}, base_hp = 68, base_energy = 3, base_energy_max = 10, base_power = 1.15, base_defense = 0.9, base_speed = 16.0, base_satiety = 120, base_upkeep = 4,
+		color = rl.Color{90, 84, 116, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Gust, .Gust, .Guard, .Guard, .Guard, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Agility},
+		learnset = []Learn_Entry{
+			{.Fang_Flurry, 16}, {.Leech, 16}, {.Cyclone, 16},
+			{.Sanguine, 20}, {.Blade_Dance, 20}, {.Overwhelm, 20},
+			{.All_In, 24}, {.Shiv, 24}, {.Adrenaline, 24},
+		},
+		move_pool = []Move_Id{.Gust, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Blade_Dance, .Overwhelm, .All_In, .Shiv, .Adrenaline, .Guard, .Slash, .Disarm},
+	},
+	.Thornmaw = {
+		name = "Thornmaw", desc = "A wall of briars with a mouth somewhere in the middle.", elements = []Element{.FLORA, .GROUND}, base_hp = 78, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.8, base_speed = 7.0, base_satiety = 135, base_upkeep = 4,
+		color = rl.Color{88, 180, 98, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Vine_Whip, .Vine_Whip, .Guard, .Guard, .Guard, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench},
+		learnset = []Learn_Entry{
+			{.Bramble_Armor, 16}, {.Body_Press, 16}, {.Shield_Bash, 16},
+			{.Entrench, 20}, {.Rampart, 20}, {.Bulwark, 20},
+			{.All_In, 24}, {.Barricade, 24}, {.Overwhelm, 24},
+		},
+		move_pool = []Move_Id{.Vine_Whip, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench, .Rampart, .Bulwark, .All_In, .Barricade, .Overwhelm, .Guard},
+	},
+	.Bubblord = {
+		name = "Bubblord", desc = "A bloated orb of water. Everything it swallows comes back out blue.", elements = []Element{.AQUA}, base_hp = 84, base_energy = 3, base_energy_max = 10, base_power = 1.05, base_defense = 2.1, base_speed = 6.0, base_satiety = 145, base_upkeep = 4,
+		color = rl.Color{64, 132, 214, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Aqua_Jet, .Aqua_Jet, .Guard, .Guard, .Guard, .Barrier, .Body_Press, .Shield_Bash, .Footwork, .Rampart},
+		learnset = []Learn_Entry{
+			{.Barrier, 16}, {.Body_Press, 16}, {.Shield_Bash, 16},
+			{.Rampart, 20}, {.Bulwark, 20}, {.Flow, 20},
+			{.Bastion, 24}, {.Barricade, 24}, {.All_In, 24},
+		},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Barrier, .Body_Press, .Shield_Bash, .Footwork, .Rampart, .Bulwark, .Flow, .Bastion, .Barricade, .All_In, .Rally},
+	},
+	.Frostfang = {
+		name = "Frostfang", desc = "A wolf of black ice. It freezes you, then takes its time.", elements = []Element{.ICE, .GROUND}, base_hp = 72, base_energy = 3, base_energy_max = 9, base_power = 1.25, base_defense = 1.4, base_speed = 10.0, base_satiety = 125, base_upkeep = 4,
+		color = rl.Color{160, 196, 222, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Snowball, .Snowball, .Guard, .Guard, .Guard, .Frost_Bite, .Mark, .Bash, .Sunder, .Expose},
+		learnset = []Learn_Entry{
+			{.Frost_Bite, 16}, {.Mark, 16}, {.Bash, 16},
+			{.Sunder, 20}, {.Expose, 20}, {.Cleave, 20},
+			{.All_In, 24}, {.Overwhelm, 24}, {.Meteor, 24},
+		},
+		move_pool = []Move_Id{.Snowball, .Frost_Bite, .Mark, .Bash, .Sunder, .Expose, .Cleave, .All_In, .Overwhelm, .Meteor, .Guard, .Iron_Skin},
+	},
+	.Magmaw = {
+		name = "Magmaw", desc = "A furnace with legs. Its throat glows through the cracks in its hide.", elements = []Element{.EMBER, .GROUND}, base_hp = 76, base_energy = 3, base_energy_max = 10, base_power = 1.3, base_defense = 1.5, base_speed = 8.0, base_satiety = 130, base_upkeep = 4,
+		color = rl.Color{224, 88, 52, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Guard, .Guard, .Guard, .Ember_Coil, .Combustion, .Hone, .Mark, .Overwhelm},
+		learnset = []Learn_Entry{
+			{.Ember_Coil, 16}, {.Combustion, 16}, {.Hone, 16},
+			{.Mark, 20}, {.Overwhelm, 20}, {.Amplify, 20},
+			{.All_In, 24}, {.Fuse, 24}, {.Meteor, 24},
+		},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Combustion, .Hone, .Mark, .Overwhelm, .Amplify, .All_In, .Fuse, .Meteor, .Guard, .Juggernaut},
+	},
+	.Sporelord = {
+		name = "Sporelord", desc = "A crowned mushroom that farms the dead. Its spores sing.", elements = []Element{.POISON, .FLORA}, base_hp = 74, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.5, base_speed = 7.0, base_satiety = 130, base_upkeep = 4,
+		color = rl.Color{160, 110, 180, 255}, role = .WILD, rarity = .UNCOMMON,
+		starter = []Move_Id{.Sting, .Sting, .Guard, .Guard, .Guard, .Venom, .Envenom, .Catalyst, .Toxic, .Leech},
+		learnset = []Learn_Entry{
+			{.Venom, 16}, {.Catalyst, 16}, {.Envenom, 16},
+			{.Toxic, 20}, {.Combustion, 20}, {.Leech, 20},
+			{.Overwhelm, 24}, {.Sanguine, 24}, {.Bramble_Armor, 24},
+		},
+		move_pool = []Move_Id{.Sting, .Venom, .Envenom, .Catalyst, .Toxic, .Combustion, .Leech, .Overwhelm, .Sanguine, .Bramble_Armor, .Guard, .Purify},
+	},
+	.Voltail = {
+		name = "Voltail", desc = "A storm given a spine. It discharges when it is bored.", elements = []Element{.ELECTRIC}, base_hp = 70, base_energy = 3, base_energy_max = 11, base_power = 1.2, base_defense = 1.0, base_speed = 17.0, base_satiety = 125, base_upkeep = 4,
+		color = rl.Color{248, 214, 66, 255}, role = .WILD, rarity = .RARE,
+		starter = []Move_Id{.Zap, .Zap, .Guard, .Guard, .Guard, .Concuss, .Agility, .Thunderbolt, .Overclock, .All_In},
+		learnset = []Learn_Entry{
+			{.Zap, 16}, {.Concuss, 16}, {.Agility, 16},
+			{.Thunderbolt, 20}, {.Overclock, 20}, {.All_In, 20},
+			{.Meteor, 24}, {.Dragon_Dance, 24}, {.Adrenaline, 24},
+		},
+		move_pool = []Move_Id{.Zap, .Thunderbolt, .Concuss, .Agility, .Overclock, .All_In, .Meteor, .Dragon_Dance, .Adrenaline, .Guard, .Slash, .Blackout},
+	},
+	.Deep_One = {
+		name = "Deep One", desc = "A pale thing from the flooded depths. It hums to itself.", elements = []Element{.NEUTRAL}, base_hp = 120, base_energy = 3, base_energy_max = 10, base_power = 1.6, base_defense = 3.0, base_speed = 5.0, base_satiety = 220, base_upkeep = 8,
+		color = rl.Color{150, 42, 62, 255}, role = .BOSS, rarity = .LEGENDARY,
+		starter = []Move_Id{.Cleave, .Cleave, .Cleave, .Cleave, .Fortify, .Fortify, .Fortify, .Devour, .Iron_Skin, .Hone},
+		learnset = []Learn_Entry{
+			{.Bash, 2}, {.Haze, 2}, {.Mark, 2},
+			{.Depower, 4}, {.Body_Press, 4}, {.Sunder, 4},
+			{.Barrier, 6}, {.Entrench, 6}, {.Rampart, 6},
+			{.Overwhelm, 8}, {.All_In, 8}, {.Cleave, 8},
+		},
+		move_pool = []Move_Id{.Cleave, .Bash, .Bash, .Overwhelm, .Slash, .Fortify, .Barrier, .Rampart, .Iron_Skin, .Hone, .Haze, .Depower, .Devour},
+	},
 	.Boss_Leviathan = {
-		name = "The Leviathan", elements = []Element{.AQUA}, base_hp = 210, base_energy = 4, base_energy_max = 12, base_power = 1.8, base_defense = 3.6, base_speed = 6.0, base_satiety = 280, base_upkeep = 12,
+		name = "Boss Leviathan", desc = "The abyss given form. It has drowned fleets of monsters.", elements = []Element{.AQUA}, base_hp = 210, base_energy = 3, base_energy_max = 12, base_power = 1.8, base_defense = 3.6, base_speed = 6.0, base_satiety = 280, base_upkeep = 12,
 		color = rl.Color{38, 96, 168, 255}, role = .BOSS, rarity = .LEGENDARY,
-		// Combo: Undertow marks Vulnerable, then Torrent / Tsunami cash it in.
-		starter = []Move_Id{.Undertow, .Undertow, .Torrent, .Torrent, .Tidal_Slam, .Heal_Spring, .Bubble_Shield, .Rejuvenate, .Tsunami, .Torrent},
+		starter = []Move_Id{.Maelstrom, .Aqua_Jet, .Aqua_Jet, .Fortify, .Fortify, .Leech, .Leech, .Body_Press, .Fang_Flurry, .Sanguine},
 		learnset = []Learn_Entry{
-			{.Undertow, 1}, {.Torrent, 1}, {.Tidal_Slam, 1}, {.Heal_Spring, 1}, {.Bubble_Shield, 1},
-			{.Rejuvenate, 1}, {.Tsunami, 2}, {.Aqua_Jet, 2}, {.Sunder, 3}, {.Regrowth, 4}, {.Insight, 5},
+			{.Cyclone, 2}, {.Body_Press, 2}, {.Fang_Flurry, 2},
+			{.Barrier, 4}, {.Entrench, 4}, {.Leech, 4},
+			{.Sanguine, 6}, {.All_In, 6}, {.Maelstrom, 6},
 		},
-		move_pool = []Move_Id{.Undertow, .Torrent, .Tidal_Slam, .Heal_Spring, .Bubble_Shield, .Rejuvenate, .Tsunami, .Aqua_Jet, .Sunder, .Regrowth, .Insight, .Fortify, .Mend},
+		move_pool = []Move_Id{.Maelstrom, .Aqua_Jet, .Aqua_Cutter, .Leech, .Fang_Flurry, .Cyclone, .Body_Press, .Barrier, .Entrench, .Fortify, .Sanguine, .Guard, .Rally},
 	},
 	.Boss_Infernal = {
-		name = "The Infernal", elements = []Element{.EMBER}, base_hp = 170, base_energy = 4, base_energy_max = 12, base_power = 2.2, base_defense = 2.6, base_speed = 9.0, base_satiety = 240, base_upkeep = 11,
-		color = rl.Color{214, 74, 44, 255}, role = .BOSS, rarity = .LEGENDARY,
-		// Combo: Cinder marks Vulnerable, Hone buffs Strength, Rampage/Combust finish.
-		starter = []Move_Id{.Cinder, .Cinder, .Blaze, .Blaze, .Combust, .Combust, .Hone, .Immolate, .Wildfire, .Rampage},
+		name = "Boss Infernal", desc = "A lord of the deep fires. Its court is ash.", elements = []Element{.EMBER}, base_hp = 170, base_energy = 3, base_energy_max = 12, base_power = 2.2, base_defense = 2.6, base_speed = 9.0, base_satiety = 240, base_upkeep = 11,
+		color = rl.Color{208, 72, 44, 255}, role = .BOSS, rarity = .LEGENDARY,
+		starter = []Move_Id{.Hellfire, .Ember_Strike, .Ember_Strike, .Flame_Burst, .Flame_Burst, .Guard, .Guard, .Ember_Coil, .Combustion, .Warcry},
 		learnset = []Learn_Entry{
-			{.Cinder, 1}, {.Blaze, 1}, {.Combust, 1}, {.Hone, 1}, {.Immolate, 1}, {.Wildfire, 1},
-			{.Rampage, 2}, {.Inferno, 2}, {.Sunder, 3}, {.Warcry, 4}, {.Mend, 5},
+			{.Mark, 2}, {.Expose, 2}, {.Warcry, 2},
+			{.Overwhelm, 4}, {.Combustion, 4}, {.Hone, 4},
+			{.All_In, 6}, {.Meteor, 6}, {.Rage, 6},
 		},
-		move_pool = []Move_Id{.Cinder, .Blaze, .Combust, .Hone, .Immolate, .Wildfire, .Rampage, .Inferno, .Sunder, .Warcry, .Mend, .Fortify, .Ash_Screen},
+		move_pool = []Move_Id{.Hellfire, .Ember_Strike, .Flame_Burst, .Ember_Coil, .Combustion, .Overwhelm, .Mark, .Expose, .Warcry, .Guard, .Cleave},
 	},
 	.Boss_Titan = {
-		name = "The Titan", elements = []Element{.GROUND}, base_hp = 280, base_energy = 4, base_energy_max = 12, base_power = 1.7, base_defense = 5.2, base_speed = 4.0, base_satiety = 320, base_upkeep = 14,
-		color = rl.Color{146, 112, 66, 255}, role = .BOSS, rarity = .LEGENDARY,
-		// Combo: Crush marks Vulnerable, then Cataclysm / Quake land; thorns punish.
-		starter = []Move_Id{.Crush, .Crush, .Quake, .Quake, .Rock_Toss, .Fortify, .Iron_Skin, .Bramble_Armor, .Cataclysm, .Quake},
+		name = "Boss Titan", desc = "The first mountain, and it remembers being awake.", elements = []Element{.GROUND}, base_hp = 280, base_energy = 3, base_energy_max = 12, base_power = 1.7, base_defense = 5.2, base_speed = 4.0, base_satiety = 320, base_upkeep = 14,
+		color = rl.Color{168, 138, 92, 255}, role = .BOSS, rarity = .LEGENDARY,
+		starter = []Move_Id{.Cataclysm, .Cleave, .Cleave, .Fortify, .Fortify, .Shield_Bash, .Entrench, .Barricade, .Rampart, .Iron_Skin},
 		learnset = []Learn_Entry{
-			{.Crush, 1}, {.Quake, 1}, {.Rock_Toss, 1}, {.Fortify, 1}, {.Iron_Skin, 1}, {.Bramble_Armor, 1},
-			{.Cataclysm, 2}, {.Body_Slam, 2}, {.Sunder, 3}, {.Regrowth, 4}, {.Screech, 5},
+			{.Bash, 2}, {.Body_Press, 2}, {.Shield_Bash, 2},
+			{.Depower, 4}, {.Entrench, 4}, {.Rampart, 4},
+			{.Overwhelm, 6}, {.All_In, 6}, {.Cataclysm, 6},
 		},
-		move_pool = []Move_Id{.Crush, .Quake, .Rock_Toss, .Fortify, .Iron_Skin, .Bramble_Armor, .Cataclysm, .Body_Slam, .Sunder, .Regrowth, .Screech, .Mend, .Warcry},
+		move_pool = []Move_Id{.Cataclysm, .Cleave, .Bash, .Overwhelm, .Shield_Bash, .Body_Press, .Entrench, .Barricade, .Rampart, .Barrier, .Fortify, .Iron_Skin, .Depower, .Guard, .Juggernaut, .Rally},
 	},
 	.Boss_Sovereign = {
-		name = "The Sovereign", elements = []Element{.ELECTRIC, .AIR}, base_hp = 180, base_energy = 4, base_energy_max = 12, base_power = 1.9, base_defense = 3.0, base_speed = 13.0, base_satiety = 250, base_upkeep = 11,
-		color = rl.Color{226, 196, 70, 255}, role = .BOSS, rarity = .LEGENDARY,
-		// Combo: Static Shock / Paralyze lock you down, then Maelstrom / Thunderbolt.
-		starter = []Move_Id{.Static_Shock, .Static_Shock, .Thunderbolt, .Thunderbolt, .Paralyze, .Cyclone, .Maelstrom, .Hone, .Gust, .Thunderbolt},
+		name = "Boss Sovereign", desc = "The throne at the bottom of the world. It does not negotiate.", elements = []Element{.ELECTRIC, .AIR}, base_hp = 180, base_energy = 3, base_energy_max = 12, base_power = 1.9, base_defense = 3.0, base_speed = 13.0, base_satiety = 250, base_upkeep = 11,
+		color = rl.Color{196, 178, 96, 255}, role = .BOSS, rarity = .LEGENDARY,
+		starter = []Move_Id{.Decree, .Zap, .Zap, .Gust, .Gust, .Thunderbolt, .Cyclone, .Concuss, .Agility, .Dragon_Dance},
 		learnset = []Learn_Entry{
-			{.Static_Shock, 1}, {.Thunderbolt, 1}, {.Cyclone, 1}, {.Hone, 1}, {.Gust, 1}, {.Paralyze, 1},
-			{.Maelstrom, 2}, {.Spark, 2}, {.Sunder, 3}, {.Followup, 4}, {.Insight, 5},
+			{.Depower, 2}, {.Haze, 2}, {.Concuss, 2},
+			{.Overwhelm, 4}, {.Thunderbolt, 4}, {.Agility, 4},
+			{.All_In, 6}, {.Dragon_Dance, 6}, {.Decree, 6},
 		},
-		move_pool = []Move_Id{.Static_Shock, .Thunderbolt, .Cyclone, .Hone, .Gust, .Paralyze, .Maelstrom, .Spark, .Sunder, .Followup, .Insight, .Second_Wind, .Warcry},
+		move_pool = []Move_Id{.Decree, .Zap, .Gust, .Thunderbolt, .Cyclone, .Concuss, .Agility, .Dragon_Dance, .Overwhelm, .Depower, .Haze, .Guard, .Rally},
 	},
 }
 
 // Some wilds keep a lair; the rest are wanderers with no fixed home. Territorial
 // species drift back toward their lair instead of diffusing across the map.
+// Walk a species' family tree: back to its first stage, then forward along the
+// line. `levels[i]` is the level at which `chain[i]` is reached (0 = the root),
+// so the dex can show the whole chain and highlight where the player is.
+evolution_line :: proc(id: Species_Id) -> (chain: [4]Species_Id, levels: [4]int, count: int) {
+	root := id
+	for {
+		found := false
+		for p in Species_Id {
+			if SPECIES[p].evolve_level > 0 && SPECIES[p].evolves_to == root {
+				root = p
+				found = true
+				break
+			}
+		}
+		if !found {
+			break
+		}
+	}
+	cur := root
+	chain[0] = cur
+	count = 1
+	for count < len(chain) {
+		sp := SPECIES[cur]
+		if sp.evolve_level <= 0 {
+			break
+		}
+		levels[count] = sp.evolve_level
+		chain[count] = sp.evolves_to
+		cur = sp.evolves_to
+		count += 1
+	}
+	return
+}
+
 species_territorial :: proc(id: Species_Id) -> bool {
 	#partial switch id {
-	case .Cave_Bat, .Rimescale, .Pyrelord, .Stonepaw, .Deep_One, .Mosshide, .Bogfang, .Gloomling, .Cinderwing:
+	case .Deep_One, .Boss_Leviathan, .Boss_Infernal, .Boss_Titan, .Boss_Sovereign:
 		return true
 	case:
 		return false
@@ -490,6 +790,7 @@ Creature :: struct {
 	block:        int,
 	vulnerable:   int,
 	strength:     int,
+	dexterity:    int, // per-battle: adds to every Block gain (see Dexterity)
 
 	// Status effects (Phase 21). Damage/heal-over-time statuses tick once per
 	// round and decay by 1; Thorns persists; Stun skips the creature's actions.
@@ -511,13 +812,18 @@ Creature :: struct {
 	ability: Ability, // species ability, rolled at spawn (Phase C)
 	item:    Item,    // one item slot (Phase C)
 
+	powers: [Power]int, // per-battle effects granted by POWER cards (see powers.odin)
+
 	genes: [Gene]int, // per-stat genetic bonus 0-5 (Phase 8; see below)
 
 	deck:       [dynamic]Move_Id, // persistent, owned by this creature
 	draw_pile:  [dynamic]Move_Id, // per-battle
 	hand:       [dynamic]Move_Id, // per-battle
 	discard:    [dynamic]Move_Id, // per-battle
+	exhausted:  [dynamic]Move_Id, // per-battle: cards spent with `exhaust`
 	played:     int,              // cards played this turn (combo synergy)
+	attacked_this_turn: bool,     // Aftershock: has an Attack been played yet this turn
+	resilient_used:     bool,     // Resilient: the once-per-battle save is spent
 
 	// transient hit feedback (decays each frame, not saved)
 	shake: f32,
@@ -819,6 +1125,7 @@ creature_make_genes :: proc(species_idx: Species_Id, level: int, name: string, g
 		draw_pile = make([dynamic]Move_Id, 0),
 		hand      = make([dynamic]Move_Id, 0),
 		discard   = make([dynamic]Move_Id, 0),
+		exhausted = make([dynamic]Move_Id, 0),
 	}
 	creature_recompute_stats(&c)
 	c.hp = c.max_hp
@@ -839,10 +1146,10 @@ creature_make :: proc(species_idx: Species_Id, level: int, name: string, rng: ^R
 thematic_status_move :: proc(el: Element) -> (Move_Id, bool) {
 	switch el {
 	case .EMBER:    return .Ember_Coil, true
-	case .POISON:   return .Toxic_Cloud, true
+	case .POISON:   return .Venom, true
 	case .FLORA:    return .Bramble_Armor, true
-	case .ELECTRIC: return .Static_Shock, true
-	case .AQUA:     return .Rejuvenate, true
+	case .ELECTRIC: return .Agility, true
+	case .AQUA:     return .Meditate, true
 	case .NEUTRAL, .ICE, .GROUND, .AIR: return .Tackle, false
 	}
 	return .Tackle, false
@@ -943,9 +1250,11 @@ creature_free_piles :: proc(c: ^Creature) {
 	delete(c.draw_pile)
 	delete(c.hand)
 	delete(c.discard)
+	delete(c.exhausted)
 	c.draw_pile = make([dynamic]Move_Id, 0)
 	c.hand = make([dynamic]Move_Id, 0)
 	c.discard = make([dynamic]Move_Id, 0)
+	c.exhausted = make([dynamic]Move_Id, 0)
 }
 
 creature_free_all :: proc(c: ^Creature) {
@@ -959,9 +1268,18 @@ creature_free_all :: proc(c: ^Creature) {
 // Levels the creature up and returns the learnset moves newly available at this
 // level that it doesn't already know (up to MAX_CHOICE_OPTIONS). Learning is the
 // caller's job, so several options can become a player choice.
-creature_level_up :: proc(c: ^Creature) -> (opts: [MAX_CHOICE_OPTIONS]Move_Id, n: int) {
+creature_level_up :: proc(c: ^Creature) -> (opts: [MAX_CHOICE_OPTIONS]Move_Id, n: int, evolved: bool) {
 	old_max := c.max_hp
 	c.level += 1
+
+	// Evolution: at the species' evolve level, become the next form. Stats are
+	// recomputed from the new species at the current level; the deck is kept.
+	if sp := SPECIES[c.species]; sp.evolve_level > 0 && c.level >= sp.evolve_level && sp.evolves_to != c.species {
+		c.species = sp.evolves_to
+		c.name = SPECIES[c.species].name
+		evolved = true
+	}
+
 	creature_recompute_stats(c)
 	if c.hp > 0 {
 		// Leveling heals — but never revives a fainted monster.
@@ -992,6 +1310,7 @@ creature_level_up :: proc(c: ^Creature) -> (opts: [MAX_CHOICE_OPTIONS]Move_Id, n
 creature_reset_battle_state :: proc(c: ^Creature) {
 	c.block = 0
 	c.strength = 0
+	c.dexterity = 0
 	c.vulnerable = 0
 	c.defense_buff = 0
 	c.defense_debuff = 0
@@ -1001,6 +1320,9 @@ creature_reset_battle_state :: proc(c: ^Creature) {
 	c.regen = 0
 	c.thorns = 0
 	c.stun = 0
+	c.powers = {}
+	c.attacked_this_turn = false
+	c.resilient_used = false
 	c.shake = 0
 	c.flash = 0
 	c.fx_t = 0

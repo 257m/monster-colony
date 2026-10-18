@@ -50,92 +50,100 @@ spawn_pick :: proc(r: f32, entries: []Spawn_Entry) -> Species_Id {
 			return e.species
 		}
 	}
+	if len(entries) == 0 {
+		return .Emberling
+	}
 	return entries[len(entries) - 1].species
 }
 
+// ----------------------------------------------------------------------------
+// WILD SPAWNS
+//
+// One table per terrain. Entries are ordered by ascending cutoff and the last
+// cutoff must be 1.0, so `spawn_pick` can be a single roll and a linear scan.
+// Common species sit low, rare species sit at the top of the range.
+// ----------------------------------------------------------------------------
+
 SPAWN_CAVE := [?]Spawn_Entry {
-	{0.30, .Gloomling},
-	{0.50, .Wispling},
-	{1.0, .Cave_Bat},
+	{0.35, .Grubling},
+	{0.60, .Vesperling},
+	{0.85, .Rockmite},
+	{1.0, .Dustwing},
 }
 SPAWN_GROVE := [?]Spawn_Entry {
-	{0.30, .Swampbeast},
-	{0.50, .Mosshide},
-	{1.0, .Thornkit},
+	{0.30, .Thornkit},
+	{0.55, .Mossling},
+	{0.85, .Bloomcap},
+	{1.0, .Barkhound},
 }
 SPAWN_WATER := [?]Spawn_Entry {
-	{0.22, .Krakling},
-	{0.40, .Rimescale},
-	{0.58, .Bogfang},
-	{0.72, .Frostmoss},
-	{1.0, .Bubblet},
+	{0.30, .Bubblet},
+	{0.65, .Ripjaw},
+	{0.90, .Tidecaller},
+	{1.0, .Abyssal_Fry},
 }
 SPAWN_DUNGEON := [?]Spawn_Entry {
-	{0.12, .Elite_Sentinel},
-	{0.34, .Pyrelord},
-	{0.54, .Cindermaw},
-	{0.72, .Emberbloom},
-	{1.0, .Magmite},
+	{0.40, .Gloomling},
+	{0.75, .Crypt_Rat},
+	{1.0, .Wispling},
 }
 SPAWN_MUSHROOM := [?]Spawn_Entry {
-	{0.28, .Mosshide},
-	{0.52, .Swampbeast},
-	{0.72, .Frostmoss},
-	{1.0, .Thornkit},
+	{0.55, .Sporeling},
+	{1.0, .Capmaw},
 }
 SPAWN_RUINS := [?]Spawn_Entry {
-	{0.28, .Wispling},
-	{0.52, .Gloomling},
-	{0.72, .Cinderwing},
-	{1.0, .Magmite},
+	{0.40, .Sentinel},
+	{0.75, .Relic_Hound},
+	{1.0, .Hexling},
 }
 SPAWN_TUNDRA := [?]Spawn_Entry {
-	{0.35, .Frostfang},
-	{0.60, .Blizzard},
-	{0.80, .Galebeast},
-	{1.0, .Frostfang},
+	{0.35, .Snowpup},
+	{0.70, .Glacierling},
+	{1.0, .Frostmaw},
 }
 SPAWN_JUNGLE := [?]Spawn_Entry {
-	{0.35, .Venomtail},
-	{0.65, .Swampbeast},
-	{1.0, .Mosshide},
+	{0.35, .Vinecat},
+	{0.70, .Pouncer},
+	{1.0, .Venomtail},
 }
 SPAWN_LAVA := [?]Spawn_Entry {
-	{0.30, .Pyrelord},
-	{0.60, .Cindermaw},
-	{1.0, .Magmite},
+	{0.40, .Magmite},
+	{0.75, .Cinderwing},
+	{1.0, .Slagbeast},
 }
 SPAWN_DESERT := [?]Spawn_Entry {
-	{0.35, .Stonepaw},
-	{0.65, .Sparkit},
-	{1.0, .Magmite},
+	{0.45, .Sandfang},
+	{1.0, .Sparkit},
+}
+SPAWN_QUICKSAND := [?]Spawn_Entry {
+	{0.35, .Sandfang},
+	{0.70, .Rockmite},
+	{1.0, .Relic_Hound},
 }
 SPAWN_CRYSTAL_COVE := [?]Spawn_Entry {
-	{0.30, .Stonepaw},
-	{0.55, .Frostfang},
-	{0.78, .Rimescale},
-	{1.0, .Sparkit},
+	{0.50, .Hexling},
+	{1.0, .Crystalfin},
 }
 
 spawn_species_for :: proc(t: Terrain, rng: ^Rng) -> Species_Id {
+	r := rng_f32(rng)
 	switch t {
-	case .CAVE:         return spawn_pick(rng_f32(rng), SPAWN_CAVE[:])
-	case .GROVE:        return spawn_pick(rng_f32(rng), SPAWN_GROVE[:])
-	case .WATER:        return spawn_pick(rng_f32(rng), SPAWN_WATER[:])
-	case .DUNGEON:      return spawn_pick(rng_f32(rng), SPAWN_DUNGEON[:])
-	case .MUSHROOM:     return spawn_pick(rng_f32(rng), SPAWN_MUSHROOM[:])
-	case .RUINS:        return spawn_pick(rng_f32(rng), SPAWN_RUINS[:])
-	case .TUNDRA:       return spawn_pick(rng_f32(rng), SPAWN_TUNDRA[:])
-	case .JUNGLE:       return spawn_pick(rng_f32(rng), SPAWN_JUNGLE[:])
-	case .LAVA:         return spawn_pick(rng_f32(rng), SPAWN_LAVA[:])
-	case .DESERT:       return spawn_pick(rng_f32(rng), SPAWN_DESERT[:])
-	case .CRYSTAL_COVE: return spawn_pick(rng_f32(rng), SPAWN_CRYSTAL_COVE[:])
-	case .QUICKSAND:    return .Stonepaw
-	case .BOSS_ROOM:    return .Deep_One
-	case .TRADING_POST: return .Cave_Bat
-	case .ARENA:        return .Cave_Bat
+	case .CAVE:         return spawn_pick(r, SPAWN_CAVE[:])
+	case .GROVE:        return spawn_pick(r, SPAWN_GROVE[:])
+	case .WATER:        return spawn_pick(r, SPAWN_WATER[:])
+	case .DUNGEON:      return spawn_pick(r, SPAWN_DUNGEON[:])
+	case .MUSHROOM:     return spawn_pick(r, SPAWN_MUSHROOM[:])
+	case .RUINS:        return spawn_pick(r, SPAWN_RUINS[:])
+	case .TUNDRA:       return spawn_pick(r, SPAWN_TUNDRA[:])
+	case .JUNGLE:       return spawn_pick(r, SPAWN_JUNGLE[:])
+	case .LAVA:         return spawn_pick(r, SPAWN_LAVA[:])
+	case .DESERT:       return spawn_pick(r, SPAWN_DESERT[:])
+	case .QUICKSAND:    return spawn_pick(r, SPAWN_QUICKSAND[:])
+	case .CRYSTAL_COVE: return spawn_pick(r, SPAWN_CRYSTAL_COVE[:])
+	case .TRADING_POST, .BOSS_ROOM, .ARENA:
+		return .Grubling // no ambient spawns here; callers spawn their own
 	}
-	return .Cave_Bat
+	return .Grubling
 }
 
 // Threats keep pace with the run: wilds and raiders gain levels over time, so
@@ -171,12 +179,36 @@ spawn_level_for :: proc(c: ^Colony, hex: Hex) -> int {
 colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
 	lvl := spawn_level_for(c, hex) + ARENA_LEVEL_BONUS
 	for _ in 0..<ARENA_TEAM_SIZE {
-		sp := Species_Id(rng_below(&c.rng, len(Species_Id)))
+		sp := STARTER_SPECIES[rng_below(&c.rng, len(STARTER_SPECIES))]
 		spawn_wild_at(c, hex, sp, lvl)
 	}
 }
 
-spawn_wild_at :: proc(c: ^Colony, hex: Hex, species: Species_Id, level: int, role: Wild_Role = .WILD, pack: int = 0) {
+// Wilds grow up in the world, too: one spawned at or past its evolve level may
+// show up as its evolved form instead (and keeps climbing while the level
+// allows), so the late-game roster includes the evolved wilds. The odds rise
+// the further past the evolve level the spawn is.
+WILD_EVOLVE_CHANCE :: f32(0.5)
+
+wild_mature_species :: proc(id: Species_Id, level: int, rng: ^Rng) -> Species_Id {
+	cur := id
+	for _ in 0..<2 {
+		sp := SPECIES[cur]
+		if sp.evolve_level <= 0 || level < sp.evolve_level {
+			break
+		}
+		chance := clamp(WILD_EVOLVE_CHANCE + 0.1 * f32(level - sp.evolve_level), 0.0, 1.0)
+		if rng_f32(rng) >= chance {
+			break
+		}
+		cur = sp.evolves_to
+	}
+	return cur
+}
+
+spawn_wild_at :: proc(c: ^Colony, hex: Hex, species_in: Species_Id, level: int, role: Wild_Role = .WILD, pack: int = 0) {
+	// Spawns past an evolve level have a chance to arrive already evolved.
+	species := wild_mature_species(species_in, level, &c.rng)
 	m := Monster{
 		id       = c.next_id,
 		creature = creature_make(species, level, SPECIES[species].name, &c.rng),
@@ -1023,14 +1055,15 @@ BOSS_RESPAWN_TURNS :: 12
 BOSS_SPAWN_RANGE   :: 14
 
 boss_cronies :: proc(boss: Species_Id) -> [BOSS_PACK_SIZE - 1]Species_Id {
+	// Each boss keeps a retinue themed to its lair, drawn from the wild roster.
 	#partial switch boss {
-	case .Boss_Leviathan: return {.Krakling, .Bubblet, .Bogfang, .Frostmoss, .Rimescale}
-	case .Boss_Infernal:  return {.Magmite, .Cindermaw, .Emberbloom, .Pyrelord, .Cinderwing}
-	case .Boss_Titan:     return {.Stonepaw, .Mosshide, .Swampbeast, .Gloomling, .Venomtail}
-	case .Boss_Sovereign: return {.Sparkit, .Galebeast, .Wispling, .Blizzard, .Cave_Bat}
-	case:                 return {.Cave_Bat, .Cave_Bat, .Cave_Bat, .Cave_Bat, .Cave_Bat}
+	case .Boss_Leviathan: return {.Abyssal_Fry, .Ripjaw, .Bubblet, .Tidecaller, .Glacierling}
+	case .Boss_Infernal:  return {.Magmite, .Cinderwing, .Slagbeast, .Magmaw, .Cinderwing}
+	case .Boss_Titan:     return {.Rockmite, .Relic_Hound, .Sandfang, .Sentinel, .Slagbeast}
+	case .Boss_Sovereign: return {.Sparkit, .Hexling, .Wispling, .Voltail, .Vesperling}
+	case:                 return {.Grubling, .Vesperling, .Rockmite, .Dustwing, .Gloomling}
 	}
-	return {.Cave_Bat, .Cave_Bat, .Cave_Bat, .Cave_Bat, .Cave_Bat}
+	return {.Grubling, .Vesperling, .Rockmite, .Dustwing, .Gloomling}
 }
 
 colony_spawn_boss_pack :: proc(c: ^Colony, hex: Hex) {

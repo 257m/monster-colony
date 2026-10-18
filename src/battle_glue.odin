@@ -474,15 +474,6 @@ grant_card_to_defender :: proc(g: ^Game, hex: Hex) -> int {
 	for id in SPECIES[c.species].move_pool {
 		consider(&unknown, c, id)
 	}
-	for id in COMMON_MOVES {
-		consider(&unknown, c, id)
-	}
-	for id in STATUS_MOVES {
-		consider(&unknown, c, id)
-	}
-	for id in PREMIUM_MOVES {
-		consider(&unknown, c, id)
-	}
 	n := min(len(unknown), MAX_CHOICE_OPTIONS)
 	if n == 0 {
 		return 0

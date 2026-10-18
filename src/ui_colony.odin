@@ -3,6 +3,36 @@ package main
 import rl "vendor:raylib"
 import "core:fmt"
 import "core:math"
+// ----------------------------------------------------------------------------
+// Opening tutorial hints
+//
+// One short hint per turn for the first few turns, shown in a box the player
+// can click away. Kept purely advisory — nothing is gated behind it.
+// ----------------------------------------------------------------------------
+tutorial_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	return rl.Rectangle{sw / 2 - 330, 132, 660, 62}
+}
+
+TUTORIAL_HINTS := [?]string{
+	"Press B and click a tile to build. A Farm feeds your monsters - they eat every turn.",
+	"Click a tile next to your monster to move it. Right-drag or WASD pans, the wheel zooms.",
+	"Click a wild monster beside you to attack it. Click your own tile to pick a different monster.",
+	"Build a Granary or Silo near your Farms so the food actually reaches your stockpile.",
+	"Winning a fight drops loot and offers a new card. Press V to see the deck.",
+	"Press T on a Trading Post tile to heal, buy capture cards or recruit monsters.",
+	"Press M for the monster dex, L for the move dex, I for improvements, K for every control.",
+	"That is the basics - the tips stop here. K brings the full control list back any time.",
+}
+
+// The hint for this turn, if the tips are still running.
+tutorial_hint :: proc(turn: int) -> (string, bool) {
+	if turn < 0 || turn >= len(TUTORIAL_HINTS) {
+		return "", false
+	}
+	return TUTORIAL_HINTS[turn], true
+}
+
 draw_colony :: proc(g: ^Game) {
 	rl.ClearBackground(rl.Color{10, 12, 16, 255})
 
@@ -739,8 +769,26 @@ draw_colony_hud :: proc(g: ^Game) {
 	}
 
 	if g.show_key_hints {
-		rl.DrawText("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck | M dex | I improvements | G bag | U upgrades | Q journal | J relics | Y fallen | C nursery | H storage | O save | K help | P settings | X sound", 20, i32(sh) - 70, 14, rl.Color{120, 120, 145, 255})
-		rl.DrawText("RMB/WASD pan  |  wheel zoom  |  R recenter  |  M monsterdex  |  N new run", 20, i32(sh) - 46, 16, rl.Color{120, 120, 145, 255})
+		hint := cstring("Space end turn  ·  B build  ·  T trade  ·  V deck  ·  M dex  ·  L moves  ·  K all controls")
+		hw := rl.MeasureText(hint, 15)
+		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 32, 15, rl.Color{120, 120, 145, 255})
+	}
+
+	// First-turns tutorial: one short contextual hint at a time, click to
+	// dismiss for good.
+	if !g.tutorial_done {
+		if text, ok := tutorial_hint(g.colony.turn); ok {
+			box := tutorial_rect()
+			draw_panel(box, rl.Color{20, 26, 34, 240}, rl.Color{140, 190, 235, 255})
+			rl.DrawText("TIP", i32(box.x) + 16, i32(box.y) + 14, 14, rl.Color{140, 190, 235, 255})
+			draw_text_wrapped(fmt.ctprintf("%s", text), i32(box.x) + 62, i32(box.y) + 10, 16, i32(box.width) - 190, rl.Color{220, 230, 245, 255})
+			more := cstring("click for all tips")
+			mw := rl.MeasureText(more, 13)
+			rl.DrawText(more, i32(box.x + box.width) - 16 - mw, i32(box.y + box.height) - 24, 13, rl.Color{130, 140, 165, 255})
+			if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos(), box) {
+				g.show_tips = true
+			}
+		}
 	}
 
 	// World notifications (scuffles in the distance, things slipping away).

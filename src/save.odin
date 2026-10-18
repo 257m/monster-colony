@@ -17,7 +17,7 @@ import "core:time"
 // ============================================================================
 
 SAVE_MAGIC   :: "MCV1"
-SAVE_VERSION :: 4
+SAVE_VERSION :: 5
 SAVE_SLOTS   :: 3
 // The autosave is a 4th, special slot: the game writes it every so often and the
 // save panel only lets you load from it.

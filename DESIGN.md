@@ -101,19 +101,29 @@ Self-buffs and enemy debuffs share the same stat model, so a card can push a
 stat either way:
 
 - **Strength** — each point is **+10%** damage dealt (can go negative). Raised
-  by **Hone** (+5 str) and **Warcry** (+4 str, +1 def); lowered by **Weaken**
-  (−2 str) and **Disarm** (3 dmg, −2 str).
-- **Defense** — a temporary modifier on the defender. Raised by **Iron Skin /
-  Bark Skin / Warcry**; shredded by **Sunder** (5 dmg, −2 def) and **Corrode**
-  (−3 def).
+  by **Hone** (+5 str) and **Warcry** (+2 str, draw 1); lowered by **Depower**
+  (−2 str, −2 dex).
+- **Defense** — a temporary modifier on the defender. Raised by **Iron Skin**
+  (+3 def); shredded by **Sunder** (4 dmg, −3 def) and **Expose** (2 vuln,
+  −2 def).
+- **Dexterity** — a duration; each point adds **+1 Block** to every Block card.
+  Raised by **Footwork** (+2); lowered by **Disarm** (−3 dex) and **Depower**.
 - **Block** — a per-turn pool that absorbs damage, reset each round.
-- **Vulnerable** — each stack adds **+50%** damage taken (**×2.0** at 2 stacks,
-  etc.), ticking down one per turn (Screech, Cinder…).
+- **Vulnerable** — a **duration in turns** at a fixed **×1.5** damage taken (it
+  does not stack multiplicatively), ticking down one per turn (**Mark**, 3).
+- **Poison / Burn** — damage-over-time that decays each round. **Poison** phases
+  through Block (2%/stack of max HP); **Burn** is absorbed by Block (3%/stack)
+  *and* weakens the burned creature's damage (5%/stack, cap 50%).
+- **Stun (daze)** — loses card plays: it fumbles N cards at turn start, costs no
+  energy, and the turn continues (**Concuss**).
+- **Thorns** — reflects a **% of the attacker's max HP** on a diminishing curve,
+  spending a stack per hit.
+- **Haze** clears **stat boosts only**; **cleanse** (Antidote, Purify) clears
+  Poison / Burn / Stun.
 
-Weaken / Disarm / Sunder / Corrode are available to every species as **reward
-cards** (in `COMMON_MOVES`) and also sit in the starter decks of **Gloomling**
-(Weaken), **Wispling** (Disarm), **Bogfang** (Weaken), **Stonepaw** (Sunder) and
-**Venomtail** (Corrode), so wild monsters use them too.
+These cards reach you as **reward drops** (drawn from each species' own
+`move_pool`) and also sit in learnsets and starter decks, so wild monsters use
+them too.
 
 ### Turn order
 
@@ -130,25 +140,39 @@ and Speed both matter.
 
 Every species has a pool of **three passive abilities** (`ABILITY_POOLS` in
 `src/abilities.odin`); when a creature spawns it **rolls one at random**, so two
-Emberlings can play differently. Abilities fire at battle start, each turn, or
-on dealing damage:
+Emberlings can play differently. A boss always rolls its **signature** (the
+first entry in its pool). There are **21** abilities:
 
 | Ability | Effect |
 |---|---|
-| **Berserk** | +2 Strength at battle start |
+| **Berserk** | +3 Strength at battle start |
 | **Guardian** | +8 Block at battle start |
-| **Thick Hide** | +2 Defense at battle start |
-| **Swift** | +2 Speed for initiative |
+| **Thick Hide** | +3 Defense at battle start |
+| **Swift** | +4 Speed for initiative |
 | **Lucky** | draws 1 extra card each turn |
-| **Vampiric** | heals 2 whenever it deals card damage |
-| **Regenerator** | heals 4 at the end of each turn |
-| **Intimidate** | enemies start the fight with −2 Strength |
+| **Vampiric** | heals 25% of the damage it deals |
+| **Regenerator** | heals 6% of max HP at the end of each turn |
+| **Intimidate** | enemies start the fight with −3 Strength |
+| **Momentum** | +1 Strength at the start of each turn |
+| **Ironclad** | +1 Dexterity at the start of each turn |
+| **Aftershock** | its first Attack each turn hits twice |
+| **Envenom** | its Attacks apply 1 Poison |
+| **Predator** | ×1.25 damage against foes below half HP |
+| **Vengeance** | +1 Strength whenever it takes a hit |
+| **Resilient** | once a battle, survives a lethal blow at 25% HP |
+| **Abyssal** *(boss)* | takes ×0.70 damage while above half HP |
+| **Inferno** *(boss)* | burns every foe for 2 at the end of each turn |
+| **Colossus** *(boss)* | its Block is not cleared between rounds |
+| **Dominion** *(boss)* | strips 1 Strength from every foe each turn |
 
 Battle-start abilities are applied in `battle_start` (after the per-battle
-reset); the rest hook into `creature_begin_round` (Lucky), `creature_end_round`
-(Regenerator; Block is cleared here so **Guardian** keeps its Block through turn
-one), and `apply_damage` (Vampiric). The player panel and enemy rows show each
-fighter's ability, and the encyclopedia (`M`) lists every species' pool.
+reset). The rest hook in through `ability_begin_round` (Lucky, Momentum,
+Ironclad), `ability_defense_mult` / `ability_attack_mult` (Predator, Abyssal),
+`ability_on_hit_taken` (Vengeance), `ability_on_hit_poison` (Envenom),
+`ability_first_attack_doubles` (Aftershock), `ability_try_survive` (Resilient),
+`ability_keeps_block` (Colossus) and the end-of-turn pass (Regenerator,
+Inferno, Dominion). The player panel and enemy rows show each fighter's ability,
+and the encyclopedia (`M`) lists every species' pool.
 
 ### Items
 
@@ -406,8 +430,9 @@ it stored, is lost).
   streamed with `LoadMusicStreamFromMemory` so it loops seamlessly.
 - `audio` is a package-level singleton: any file fires a cue with
   `audio_play(.BUILD)`. Cues are hooked on build/repair, card play and battle
-  hits, victory/defeat, level-up, crystals, raids, end-turn, save/load and
-  starter choice.
+  hits — plus **BUFF / BLOCK / DOT** cues for the battle effects — as well as
+  victory/defeat, level-up, crystals, raids, end-turn, save/load and starter
+  choice. In battle `battle_sfx` keeps headless skirmishes silent.
 - If the device can't open, everything no-ops. **`F2`** toggles mute.
 
 ## Rewards & deck-building choices
@@ -415,7 +440,10 @@ it stored, is lost).
 - Reward cards are **no longer given after every battle** — they become **rare
   drops**.
 - Drop tables are **per species and per level**.
-- Many **special moves** only come from reward cards.
+- Reward drops draw **only** from a species' own `move_pool` (rarity-weighted),
+  so what you are offered always fits the monster. There is no shared pool of
+  generic cards: a move lives in the `move_pool` of every species that should
+  be able to learn it, and a card can appear both in a learnset and as a drop.
 - **You choose your cards — or decline.** Every level that unlocks a move raises
   a **`LEVEL UP!` prompt** (one card if the level unlocks one, up to 3 if
   several), and a **reward drop** offers **3 cards**. In both cases you can
@@ -805,4 +833,98 @@ it stored, is lost).
   `Discard N` readout, `draw_pile_readout`) opens `draw_piles` — a modal listing
   the active monster's **draw pile** and **discard pile** (name, cost, element).
   The stale "V deck" hint became "D piles".
-
+- Phase 32 ✅ **card systems & powers**: the `Move` struct grew a whole
+  vocabulary — **X-cost** cards (`x_cost`), **Retain**, **Ethereal**,
+  discard-hand / exhaust-hand, energy sabotage and self-energy, block/strength/
+  poison/burn **doublers**, `scale_per_exhausted`, **Dexterity** and **Speed**
+  modifiers, `offense_stat` (Body Press: damage from Defense), `unplayable` +
+  `hand_damage` (Wound), junk-card generation and `cleanse_status`. Cards carry
+  a `Card_Kind` (ATTACK / SKILL / POWER). **Powers** (`src/powers.odin`) are
+  per-battle permanent effects granted by POWER cards — Barricade, Juggernaut,
+  Demon Form, Metronome, Sanguine, Scavenger, Rage, Combustion, Toxic, Bastion
+  and Flow — shown as purple chips. Targeting collapsed into one `Move.targets`
+  bit set (empty = enemy-only).
+- Phase 33 ✅ **status & combat rework**: **Stun** became **daze** — it loses
+  card plays (fumbles N cards at turn start; no energy cost, turn continues).
+  **Vulnerable** is now a **duration in turns** at a fixed **×1.5**, not a
+  stacking multiplier. **Thorns** reflects a **% of the attacker's max HP** on a
+  diminishing curve (never reaching 100%), spending a stack per hit. **Burn**
+  and **Poison** split: Poison phases through Block (2%/stack), while Burn is
+  absorbed by Block (3%/stack) *and* weakens the burned creature's damage
+  (5%/stack, cap 50%). **Haze** clears stat boosts only; the new **cleanse**
+  clears Poison/Burn/Stun (Antidote, Purify). Lifesteal and thorns fire **per
+  hit**, so multi-hit cards interact correctly. Skirmishes and predation run
+  the **real battle engine headlessly** (`src/skirmish.odin`,
+  `run_headless_battle`, budgeted at 8 battles a turn then a stat fallback),
+  crowd fights split a tile into two sides and run one battle, and the world
+  events are now **Tremor / Stampede / Distant Roar / Migration** (never
+  rewriting terrain). A camera-based **UI scale factor** (`src/screen.odin`)
+  renders a 1280×720 design space scaled to the window, so text stays crisp at
+  any size.
+- Phase 34 ✅ **content revamp — roster, builds & evolutions**: the roster was
+  rebuilt from scratch around **3 starter lines + 5 bosses + 40 wild species**.
+  Each starter line runs three stages and **stages 2 and 3 are dual-typed**
+  (Emberling → Cinderscale → Magmalisk, Ember/Ground; Tidepup → Ripfin →
+  Tidewyrm, Aqua/Ice; Sproutle → Thornbud → Blightbloom, Flora/Poison). Every
+  species' learnset is a **build menu**: each level offers **three moves, one
+  per build column**, so a level-up commits a direction (the fire line's Fury /
+  Pyre / Ruin, and so on), and evolved stages add further tiers per column.
+  **Evolutions** are data (`Species.evolves_to` / `evolve_level`) and the
+  encyclopedia draws the **whole chain** with the levels between stages. **32
+  wilds** spawn from per-terrain tables and **8 of them evolve** (Grubling →
+  Rotshell, Vesperling → Nightwing, Thornkit → Thornmaw, Bubblet → Bubblord,
+  Snowpup → Frostfang, Magmite → Magmaw, Sporeling → Sporelord, Sparkit →
+  Voltail); a wild spawned at or past its evolve level may arrive **already
+  evolved** (`wild_mature_species`), and boss packs field a themed retinue of
+  real wilds. The ability roster grew to **21** (adding Momentum, Ironclad,
+  Aftershock, Envenom, Predator, Vengeance and Resilient, plus the boss-only
+  Abyssal, Inferno, Colossus and Dominion). Reward drops come **only** from a
+  species' own `move_pool` — there is no shared generic card pool.
+  **`SAVE_VERSION` is 5** — the rework reordered species and move ordinals, so
+  older saves are rejected rather than loaded corrupt.
+- Phase 35 ✅ **effect feedback everywhere**: every battle effect now announces
+  itself with a popup + burst + cue, including the ones that used to fire
+  silently. The per-turn triggers — **Momentum**, **Ironclad**, **Demon Form**,
+  **Bastion**, **Flow** and **Metronome** — pop their gain each round;
+  **Vengeance** pops when it gains Strength from a hit; and **Resilient** now
+  visibly saves you (popup, gold burst, cue and a log) instead of surviving
+  quietly, since `apply_damage` had no battle handle to report through. The
+  battle-start buffs (**Berserk**, **Guardian**, **Thick Hide**, **Swift**,
+  **Intimidate** and item buffs) pop as the fight opens. Card flow got popups
+  too: **draws** (Lucky, Warcry, Gambit, Scavenger), **junk cards** handed to a
+  hand, **discard / exhaust hand**, and **Haze / cleanse** now report how much
+  they wiped. Three new popup kinds (DRAW, JUNK, CLEAR) and three new cues
+  (BUFF, BLOCK, DOT) back it, and `battle_sfx` keeps headless skirmishes quiet.
+- Phase 36 ✅ **battle UI for big fights**: the HUD keeps a panel in each top
+  corner — yours left, the **selected target right** — and the enemy row now
+  lives in the band **between** them, so no enemy card can run under a panel or
+  off the screen. The row shows as many foes as fit (`enemy_visible_count`) and
+  scrolls the rest into view with the wheel, `[` / `]`, or a click, with a
+  `first-last of N` hint and edge arrows; it auto-scrolls to keep the target on
+  screen, and only on-screen foes are clickable. Enemy cards are compact —
+  avatar, name, level, type chips, ability, HP and energy — with their boosts
+  reduced to small colour-coded dots, since a full chip row ran hundreds of
+  pixels wide. The target panel mirrors the player panel exactly (avatar, name,
+  ability, level/type/stats, HP, energy, rarity, **active boosts**), and the
+  panel's stat line is split across two rows because `Lvl / type / PWR / DEF /
+  SPD` on one line overflowed the box. The initiative bar is capped to the gap
+  between the two panels.
+- Phase 37 ✅ **move dex, readable key hints & a tutorial**: **`L`** opens a
+  **move dex** — every card in the game in a scrolling list (cost on the right),
+  with a detail panel showing element / rarity / kind chips, the flavour line,
+  and an **effect breakdown generated from the card's own data**
+  (`move_lines`) rather than hand-written prose, plus a **LEARNED BY** line
+  listing the species whose `move_pool` carries it. The map's key hints were two
+  full-width lines that overflowed the screen; they are now **one centred line
+  of the most useful keys**, with the full list left to `K`. And the opening
+  turns now show a **tutorial tip** — one short contextual hint per turn for the
+  first eight turns (`TUTORIAL_HINTS`, **build first**), in a box the player can
+  click to open the **TIPS window**: all eight hints again in order, reachable
+  any time from the `K` help panel (and carrying a **show-at-start** toggle).
+- Phase 38 ✅ **temp-allocator leak fixed**: `fmt.ctprintf` (used ~260 times in
+  the draw code) allocates from `context.temp_allocator`, and the frame loop
+  never reset it, so the process climbed by ~12MB per 600k calls — a steady leak
+  while playing. Both loops (desktop and web) now `free_all` the temp allocator
+  at the end of every frame, and `set_status` **copies** its text into an owned
+  buffer (`Game.status_buf`) rather than keeping the pointer, so the two
+  `set_status(g, fmt.ctprintf(...))` callers can no longer dangle.

@@ -1022,8 +1022,13 @@ monster_add_xp :: proc(c: ^Colony, m: ^Monster, amount: int) -> bool {
 	leveled := false
 	for m.creature.xp >= xp_to_next(m.creature.level) {
 		m.creature.xp -= xp_to_next(m.creature.level)
-		opts, n := creature_level_up(&m.creature)
+		old_name := m.creature.name
+		opts, n, evolved := creature_level_up(&m.creature)
 		leveled = true
+		if evolved {
+			colony_notify(c, "%s evolved into %s!", old_name, m.creature.name)
+			colony_add_float(c, m.pos, .GROW, 1)
+		}
 		if n > 0 {
 			enqueue_choice(c, m.id, opts, n, .LEVEL)
 		}
@@ -1399,6 +1404,9 @@ SHOP_SLOTS :: 2
 shop_pick_species :: proc(c: ^Colony) -> Species_Id {
 	total := 0
 	for sp in SPECIES {
+		if sp.role == .BOSS {
+			continue // bosses aren't for sale
+		}
 		total += rarity_weight(sp.rarity)
 	}
 	if total <= 0 {
@@ -1407,6 +1415,9 @@ shop_pick_species :: proc(c: ^Colony) -> Species_Id {
 	roll := rng_below(&c.rng, total)
 	acc := 0
 	for id in Species_Id {
+		if SPECIES[id].role == .BOSS {
+			continue
+		}
 		acc += rarity_weight(SPECIES[id].rarity)
 		if roll < acc {
 			return id

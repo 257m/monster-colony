@@ -34,6 +34,7 @@ Game :: struct {
 	view_scroll: f32,
 
 	status:       cstring,
+	status_buf:   [256]u8, // owns whatever `set_status` was handed
 	status_timer: f32,
 
 	// build / trade overlays
@@ -53,6 +54,14 @@ Game :: struct {
 	show_improvements:  bool,
 	improvement_index:  int,
 	improvement_first:  int,
+
+	// move dex
+	show_moves:  bool,
+	move_index:  int,
+	move_first:  int,
+
+	// tutorial tips window
+	show_tips: bool,
 
 	// item bag viewer
 	show_bag:  bool,
@@ -100,6 +109,8 @@ Game :: struct {
 	show_fps:            bool,
 	show_terrain_legend: bool,
 	show_key_hints:      bool,
+	// first-turns tutorial hints (dismissed by clicking the box)
+	tutorial_done:       bool,
 
 	// modal yes/no confirmation for destructive actions
 	confirm_kind: Confirm_Kind,
@@ -200,6 +211,10 @@ main :: proc() {
 		screen_begin()
 		game_draw(&g)
 		screen_end()
+
+		// `fmt.ctprintf` (used all over the draw code) allocates from the temp
+		// allocator; without this reset every frame leaks.
+		free_all(context.temp_allocator)
 	}
 }
 
@@ -225,6 +240,8 @@ close_all_panels :: proc(g: ^Game) {
 	g.show_deck = false
 	g.show_encyclopedia = false
 	g.show_improvements = false
+	g.show_moves = false
+	g.show_tips = false
 	g.show_bag = false
 	g.show_upgrades = false
 	g.show_quests = false
@@ -278,7 +295,15 @@ choose_starter :: proc(g: ^Game, species_idx: Species_Id) {
 }
 
 set_status :: proc(g: ^Game, msg: cstring) {
-	g.status = msg
+	// Copy into an owned buffer: callers may hand us a temp-allocated string
+	// (the temp allocator is reset every frame), so we never keep the pointer.
+	bytes := cstring_bytes(msg)
+	n := min(len(bytes), len(g.status_buf) - 1)
+	for i in 0 ..< n {
+		g.status_buf[i] = bytes[i]
+	}
+	g.status_buf[n] = 0
+	g.status = cstring(&g.status_buf[0])
 	g.status_timer = 3.0
 }
 
@@ -315,6 +340,10 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_confirm(g)
 		return
 	}
+	if g.show_tips {
+		update_tips(g)
+		return
+	}
 	if g.show_help {
 		update_help(g)
 		return
@@ -333,6 +362,10 @@ game_update :: proc(g: ^Game, dt: f32) {
 	}
 	if g.show_improvements {
 		update_improvements(g)
+		return
+	}
+	if g.show_moves {
+		update_moves(g)
 		return
 	}
 	if g.show_bag {
@@ -389,6 +422,12 @@ game_update :: proc(g: ^Game, dt: f32) {
 		g.show_improvements = true
 		g.improvement_index = 0
 		g.improvement_first = 0
+		return
+	}
+	if g.mode == .MAP && rl.IsKeyPressed(.L) {
+		g.show_moves = true
+		g.move_index = 0
+		g.move_first = 0
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.G) {
@@ -955,6 +994,9 @@ game_draw :: proc(g: ^Game) {
 	if g.show_improvements {
 		draw_improvements(g)
 	}
+	if g.show_moves {
+		draw_moves(g)
+	}
 	if g.show_bag {
 		draw_bag(g)
 	}
@@ -987,6 +1029,9 @@ game_draw :: proc(g: ^Game) {
 	}
 	if g.confirm_kind != .NONE {
 		draw_confirm(g)
+	}
+	if g.show_tips {
+		draw_tips(g)
 	}
 	tooltip_draw()
 	ui_cursor_apply()

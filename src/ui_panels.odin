@@ -1012,6 +1012,8 @@ draw_save_panel :: proc(g: ^Game) {
 // ----------------------------------------------------------------------------
 
 ENCY_ROWS :: 21
+// Width of one build-column slot in the encyclopedia learnset grid.
+LEARN_COL_W :: 128
 
 ENCYCLOPEDIA_LIST :: List_View{rows = ENCY_ROWS, row_h = 26, x = 40, y = 120, w = 300}
 
@@ -1076,6 +1078,31 @@ draw_encyclopedia :: proc(g: ^Game) {
 	rl.DrawText(fmt.ctprintf("Role: %s", role_name(sp.role)), i32(dx + 96), i32(dy) + 70, 16, rl.Color{170, 170, 190, 255})
 	rl.DrawText(rarity_name(sp.rarity), i32(dx + 210), i32(dy) + 70, 16, rarity_color(sp.rarity))
 
+	// Evolution chain: the whole line at a glance, current stage highlighted.
+	{
+		chain, levels, count := evolution_line(Species_Id(g.encyclopedia_index))
+		cx := i32(dx)
+		cy := i32(dy) + 92
+		if count > 1 {
+			for i in 0 ..< count {
+				stage := SPECIES[chain[i]]
+				cur := chain[i] == Species_Id(g.encyclopedia_index)
+				nm := fmt.ctprintf("%s", stage.name)
+				w := rl.MeasureText(nm, 15)
+				rl.DrawText(nm, cx, cy, 15, cur ? rl.Color{255, 255, 255, 255} : rl.Color{150, 220, 180, 255})
+				cx += w
+				if i < count - 1 {
+					arrow := fmt.ctprintf("  >%d  ", levels[i + 1])
+					aw := rl.MeasureText(arrow, 15)
+					rl.DrawText(arrow, cx, cy, 15, rl.Color{150, 150, 170, 255})
+					cx += aw
+				}
+			}
+		} else {
+			rl.DrawText("No evolution line", cx, cy, 15, rl.Color{120, 120, 140, 255})
+		}
+	}
+
 	// Stats (drawn one at a time; ctprintf shares one buffer).
 	sx := i32(dx)
 	sy := i32(dy) + 112
@@ -1105,13 +1132,25 @@ draw_encyclopedia :: proc(g: ^Game) {
 		cy += 20
 	}
 
-	// Learnset by level.
+	// Learnset by level. The three cards offered at a level are the build
+	// columns, so they share a row — the whole menu fits in a few lines.
 	lx := i32(760)
 	ly := i32(dy) + 112
-	rl.DrawText("LEARNSET", lx, ly - 28, 16, rl.Color{150, 150, 170, 255})
-	for e in sp.learnset {
-		rl.DrawText(fmt.ctprintf("Lvl %d   %s", e.level, MOVE_DATA[e.move].name), lx, ly, 15, element_color(MOVE_DATA[e.move].element))
-		ly += 20
+	rl.DrawText("LEARNSET  (one per level)", lx, ly - 28, 16, rl.Color{150, 150, 170, 255})
+	{
+		i := 0
+		for i < len(sp.learnset) {
+			lvl := sp.learnset[i].level
+			rl.DrawText(fmt.ctprintf("Lvl %d", lvl), lx, ly, 15, rl.Color{150, 150, 170, 255})
+			cx := lx + LEARN_COL_W / 2
+			for i < len(sp.learnset) && sp.learnset[i].level == lvl {
+				mv := sp.learnset[i].move
+				rl.DrawText(fmt.ctprintf("%s", MOVE_DATA[mv].name), cx, ly, 15, element_color(MOVE_DATA[mv].element))
+				cx += LEARN_COL_W
+				i += 1
+			}
+			ly += 20
+		}
 	}
 
 	// Ability pool: a creature rolls one of these at spawn.
@@ -1124,6 +1163,9 @@ draw_encyclopedia :: proc(g: ^Game) {
 	}
 
 	rl.DrawText(fmt.ctprintf("%d species in the underground", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
+
+	// Dex blurb, under the detail column so it can never collide with the list.
+	draw_text_wrapped(fmt.ctprintf("%s", sp.desc), i32(dx), i32(sh) - 96, 16, i32(f32(screen_w()) - dx - 40), rl.Color{190, 190, 212, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -1299,6 +1341,145 @@ draw_improvements :: proc(g: ^Game) {
 	draw_text_wrapped(improvement_detail(im), i32(dx), ey + 24, 16, right - i32(dx), rl.Color{180, 180, 198, 255})
 
 	rl.DrawText(fmt.ctprintf("%d improvements", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
+}
+
+// ----------------------------------------------------------------------------
+// Move dex
+//
+// Every card in the game, with a breakdown generated from its own data (see
+// `move_lines`), plus who can learn it.
+// ----------------------------------------------------------------------------
+
+MOVE_ROWS :: 22
+
+MOVE_LIST :: List_View{rows = MOVE_ROWS, row_h = 24, x = 40, y = 120, w = 340}
+
+update_moves :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.L) {
+		g.show_moves = false
+		return
+	}
+	v := MOVE_LIST
+	v.index = g.move_index
+	v.first = g.move_first
+	list_navigate(&v, len(Move_Id))
+	g.move_index = v.index
+	g.move_first = v.first
+}
+
+draw_moves :: proc(g: ^Game) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	draw_list_screen_header("MOVE DEX", "Up/Down, wheel or click to browse   |   L / Esc to close")
+
+	n := len(Move_Id)
+
+	// Left: the list, with the energy cost on the right.
+	v := MOVE_LIST
+	v.index = g.move_index
+	v.first = g.move_first
+	panel := rl.Rectangle{30, 108, 350, f32(MOVE_ROWS) * 24 + 12}
+	draw_list_chrome(v, n, panel)
+	mp := mouse_pos()
+	for row in 0 ..< v.rows {
+		i := v.first + row
+		if i >= n {
+			break
+		}
+		m := MOVE_DATA[Move_Id(i)]
+		rec := list_row_rect(v, row)
+		sel := i == v.index
+		draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
+		rl.DrawText(fmt.ctprintf("%s", m.name), i32(rec.x) + 12, i32(rec.y) + 3, 16, sel ? rl.Color{235, 245, 235, 255} : element_color(m.element))
+		cost := m.x_cost ? cstring("X") : fmt.ctprintf("%s", fmt_num(m.cost))
+		cw := rl.MeasureText(cost, 14)
+		rl.DrawText(cost, i32(rec.x + rec.width) - 14 - cw, i32(rec.y) + 5, 14, rl.Color{240, 210, 130, 255})
+	}
+
+	if g.move_index < 0 || g.move_index >= n {
+		return
+	}
+	id := Move_Id(g.move_index)
+	m := MOVE_DATA[id]
+	dx := f32(410)
+	dy := f32(120)
+	right := f32(sw) - 40
+
+	rl.DrawText(fmt.ctprintf("%s", m.name), i32(dx), i32(dy) + 2, 30, rl.Color{235, 235, 245, 255})
+
+	// Element / rarity / kind chips.
+	cy := dy + 44
+	cx := dx
+	cx += draw_effect_chip(cx, cy, element_name(m.element), element_color(m.element)) + 8
+	cx += draw_effect_chip(cx, cy, card_rarity_name(m.rarity), card_rarity_color(m.rarity)) + 8
+	cx += draw_effect_chip(cx, cy, card_kind_name(m.kind), card_kind_color(m.kind)) + 8
+
+	// Short flavour line, then the generated breakdown.
+	cy += 34
+	cy = f32(draw_text_wrapped(fmt.ctprintf("%s", m.desc), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
+	cy += 12
+	rl.DrawText("EFFECTS", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
+	cy += 24
+	ml := move_lines(m)
+	for i in 0 ..< ml.n {
+		if cy > f32(sh) - 60 {
+			break
+		}
+		rl.DrawText(cstring(&ml.bufs[i][0]), i32(dx), i32(cy), 15, rl.Color{195, 200, 215, 255})
+		cy += 20
+	}
+
+	// Who can learn it (their `move_pool`), which is what rewards draw from.
+	{
+		buf: [768]u8
+		used := 0
+		shown := 0
+		total := 0
+		for sid in Species_Id {
+			knows := false
+			for mid in SPECIES[sid].move_pool {
+				if mid == id {
+					knows = true
+					break
+				}
+			}
+			if !knows {
+				continue
+			}
+			total += 1
+			if shown >= 14 {
+				continue
+			}
+			name := SPECIES[sid].name
+			if used + len(name) + 3 >= len(buf) {
+				break
+			}
+			if shown > 0 {
+				buf[used] = ','
+				buf[used + 1] = ' '
+				used += 2
+			}
+			for ch in name {
+				buf[used] = u8(ch)
+				used += 1
+			}
+			shown += 1
+		}
+		buf[used] = 0
+		label := cstring("LEARNED BY")
+		text: cstring
+		if total == 0 {
+			text = "nobody - it only comes from junk cards"
+		} else if total > shown {
+			text = fmt.ctprintf("%s and %d more", cstring(&buf[0]), total - shown)
+		} else {
+			text = cstring(&buf[0])
+		}
+		rl.DrawText(label, i32(dx), i32(sh) - 84, 15, rl.Color{150, 150, 170, 255})
+		draw_text_wrapped(text, i32(dx), i32(sh) - 62, 15, i32(right - dx), rl.Color{170, 180, 200, 255})
+	}
+
+	rl.DrawText(fmt.ctprintf("%d cards", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -2152,6 +2333,7 @@ HELP_LEFT := [?]Help_Line{
 HELP_RIGHT := [?]Help_Line{
 	{"V", "deck viewer (right-click a card to forget it)"},
 	{"M", "monster encyclopedia"},
+	{"L", "move dex (every card, and who learns it)"},
 	{"I", "improvements reference"},
 	{"G", "item bag"},
 	{"U", "crystal progression tree"},
@@ -2168,9 +2350,26 @@ HELP_RIGHT := [?]Help_Line{
 	{"Esc", "close the current panel"},
 }
 
+help_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	return rl.Rectangle{sw / 2 - 500, sh / 2 - 300, 1000, 600}
+}
+
+help_tips_rect :: proc() -> rl.Rectangle {
+	p := help_panel_rect()
+	return rl.Rectangle{p.x + 26, p.y + p.height - 66, 260, 42}
+}
+
 update_help :: proc(g: ^Game) {
 	if rl.IsKeyPressed(.K) || rl.IsKeyPressed(.ESCAPE) {
 		g.show_help = false
+		return
+	}
+	// The tips window holds the opening hints again, in order.
+	if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos(), help_tips_rect()) {
+		g.show_help = false
+		g.show_tips = true
 	}
 }
 
@@ -2179,7 +2378,7 @@ draw_help :: proc(g: ^Game) {
 	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 246})
 
-	p := rl.Rectangle{sw / 2 - 500, sh / 2 - 300, 1000, 600}
+	p := help_panel_rect()
 	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
 	rl.DrawText("CONTROLS", i32(p.x) + 26, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
 	rl.DrawText("Most panels close with their key or Esc. Esc never quits.", i32(p.x) + 26, i32(p.y) + 54, 15, rl.Color{170, 180, 200, 255})
@@ -2194,6 +2393,59 @@ draw_help :: proc(g: ^Game) {
 		draw_help_row(p.x + 500, y0 + f32(i) * row_h, key_w, line)
 	}
 
+	hint := cstring("K / Esc to close")
+	hw := rl.MeasureText(hint, 16)
+	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
+	draw_button(help_tips_rect(), "Tutorial tips", true, BUTTON_PANEL, 16)
+}
+
+// ----------------------------------------------------------------------------
+// Tutorial tips window
+//
+// The opening hints again, in order, so they can be re-read (or turned off)
+// once the first-turns box has gone.
+// ----------------------------------------------------------------------------
+TIPS_PANEL_H :: f32(500)
+
+tips_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	return rl.Rectangle{sw / 2 - 450, sh / 2 - TIPS_PANEL_H / 2, 900, TIPS_PANEL_H}
+}
+
+tips_toggle_rect :: proc() -> rl.Rectangle {
+	p := tips_panel_rect()
+	return rl.Rectangle{p.x + 26, p.y + p.height - 68, 330, 42}
+}
+
+update_tips :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.K) {
+		g.show_tips = false
+		return
+	}
+	if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos(), tips_toggle_rect()) {
+		g.tutorial_done = !g.tutorial_done
+	}
+}
+
+draw_tips :: proc(g: ^Game) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 246})
+
+	p := tips_panel_rect()
+	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{140, 190, 235, 255})
+	rl.DrawText("TIPS", i32(p.x) + 26, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
+	rl.DrawText("The opening hints, in order - one per turn for the first eight turns.", i32(p.x) + 26, i32(p.y) + 54, 15, rl.Color{170, 180, 200, 255})
+
+	y := p.y + 94
+	for text, i in TUTORIAL_HINTS {
+		rl.DrawText(fmt.ctprintf("%d.", i + 1), i32(p.x) + 26, i32(y), 16, rl.Color{140, 190, 235, 255})
+		y = f32(draw_text_wrapped(fmt.ctprintf("%s", text), i32(p.x) + 54, i32(y), 16, i32(p.width) - 104, rl.Color{212, 220, 238, 255}))
+		y += 8
+	}
+
+	draw_button(tips_toggle_rect(), g.tutorial_done ? cstring("Show tips at start: OFF") : cstring("Show tips at start: ON"), true, BUTTON_PANEL, 16)
 	hint := cstring("K / Esc to close")
 	hw := rl.MeasureText(hint, 16)
 	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
