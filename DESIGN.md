@@ -1058,3 +1058,13 @@ it stored, is lost).
   game, so it pays **12 crystals** (double a boss) and **always drops an item**,
   making it the crystal farm while Boss Rooms stay the relic source. Bosses
   re-lair every **30** turns.
+- Phase 51 ✅ **battle HUD, ring clarity & a fair Arena**: the initiative bar's
+  `NEXT` label moved back under the chips (it was touching the turn counter),
+  and the party field now gives the **acting** monster the big outer ring while
+  the selected teammate only gets a thin inner border — the yellow halo used to
+  be the most prominent thing on the field, so it read as "this one is moving".
+  An
+  **Arena** fight now also strips every colony-side battle effect: no relics, no
+  Watchtower guard Block, no Drills, no Beacon mark, no Kitchen rations and
+  no Scout capture edge. Only monsters, decks, abilities and items decide it.
+  Verified: the same fight gives 22 Block outside the Arena and **0** inside.

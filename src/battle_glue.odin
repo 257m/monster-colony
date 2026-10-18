@@ -370,8 +370,11 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 
 	g.battle = battle_start(defs[:], enemies[:], ids[:], &g.seed_rng)
 	// Relic Towers in range of this fight project their battle relics onto the
-	// party (see `battle_apply_relics`).
-	battle_apply_relics(&g.battle, relics_in_range(&g.colony, g.battle_hex))
+	// party (see `battle_apply_relics`) — but not in the Arena, which is meant to
+	// be a fair fight.
+	if !g.battle_arena {
+		battle_apply_relics(&g.battle, relics_in_range(&g.colony, g.battle_hex))
+	}
 	// Fighting ends the turn for the monsters that take part, so you can't
 	// chain fights to keep moving on battle-refilled energy.
 	for &m in g.colony.roster {
@@ -385,27 +388,33 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 			}
 		}
 	}
-	// Watchtower guard bonus: applied after the opening draw/reset.
-	// Drills: the colony's defenders start every fight with some Block.
-	drills := upgrade_drills_block(&g.colony)
-	for p, i in g.battle.party {
-		p.block += blocks[i] + drills
-	}
-	g.battle.capture_bonus = upgrade_capture_bonus(&g.colony)
-	// Beacon: wilds attacking within its guard radius start Vulnerable.
-	if near_improvement(&g.colony, hex, BEACON_GUARD, .BEACON) {
-		vuln := BEACON_VULN + upgrade_beacon_vuln(&g.colony)
-		for e in g.battle.enemies {
-			e.vulnerable += vuln
+	// Everything below is the colony helping its own side: Watchtower guard
+	// Block, Drills, the Beacon's mark, the Kitchen's rations and the Scouts'
+	// capture edge. An **Arena** fight skips all of it — it is meant to be a
+	// fair fight where only monsters, decks, abilities and items decide it.
+	if !g.battle_arena {
+		// Watchtower guard bonus: applied after the opening draw/reset.
+		// Drills: the colony's defenders start every fight with some Block.
+		drills := upgrade_drills_block(&g.colony)
+		for p, i in g.battle.party {
+			p.block += blocks[i] + drills
 		}
-	}
-	// Kitchen: spend rations to give the defenders +Strength for this fight.
-	if ki := nearest_improvement_within(&g.colony, hex, KITCHEN_RADIUS, .KITCHEN); ki >= 0 {
-		if gi := nearest_food_store_with(&g.colony, g.colony.tiles[ki].hex, DELIVER_RADIUS, KITCHEN_FOOD_COST); gi >= 0 {
-			g.colony.tiles[gi].stored -= KITCHEN_FOOD_COST
-			str := KITCHEN_STRENGTH + upgrade_kitchen_strength(&g.colony)
-			for p in g.battle.party {
-				p.strength += str
+		g.battle.capture_bonus = upgrade_capture_bonus(&g.colony)
+		// Beacon: wilds attacking within its guard radius start Vulnerable.
+		if near_improvement(&g.colony, hex, BEACON_GUARD, .BEACON) {
+			vuln := BEACON_VULN + upgrade_beacon_vuln(&g.colony)
+			for e in g.battle.enemies {
+				e.vulnerable += vuln
+			}
+		}
+		// Kitchen: spend rations to give the defenders +Strength for this fight.
+		if ki := nearest_improvement_within(&g.colony, hex, KITCHEN_RADIUS, .KITCHEN); ki >= 0 {
+			if gi := nearest_food_store_with(&g.colony, g.colony.tiles[ki].hex, DELIVER_RADIUS, KITCHEN_FOOD_COST); gi >= 0 {
+				g.colony.tiles[gi].stored -= KITCHEN_FOOD_COST
+				str := KITCHEN_STRENGTH + upgrade_kitchen_strength(&g.colony)
+				for p in g.battle.party {
+					p.strength += str
+				}
 			}
 		}
 	}

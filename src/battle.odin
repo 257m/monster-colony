@@ -2291,7 +2291,7 @@ draw_initiative :: proc(b: ^Battle) {
 	x := sw / 2 - total / 2
 	y := f32(44)
 	start := (b.order_pos - 1 + n) % n
-	rl.DrawText("NEXT", i32(x), i32(y) - 16, 12, rl.Color{150, 150, 170, 255})
+	rl.DrawText("NEXT", i32(x), i32(y) + 34, 12, rl.Color{150, 150, 170, 255})
 	for k in 0..<count {
 		a := b.order[(start + k) % n]
 		c := actor_creature(b, a)
@@ -2846,9 +2846,14 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 			border = rl.Color{74, 52, 58, 255}
 		}
 		rl.DrawRectangleRoundedLinesEx(rec, 0.09, 6, 2, border)
-		// The selected teammate gets an outer ring, mirroring the enemy target.
+		// The monster whose turn it is wears the big outer ring — it is the one
+		// that matters right now. (The selected teammate only gets a thin inner
+		// border, so it can't be mistaken for the acting monster.)
+		if active && !dead {
+			rl.DrawRectangleRoundedLinesEx(rl.Rectangle{rec.x - 4, rec.y - 4, rec.width + 8, rec.height + 8}, 0.09, 6, 3, rl.Color{120, 230, 180, 255})
+		}
 		if i == b.ally_target && b.phase == .PLAYER_ACTION && !dead {
-			rl.DrawRectangleRoundedLinesEx(rl.Rectangle{rec.x - 3, rec.y - 3, rec.width + 6, rec.height + 6}, 0.09, 6, 3, rl.Color{255, 225, 130, 255})
+			rl.DrawRectangleRoundedLinesEx(rl.Rectangle{rec.x + 2, rec.y + 2, rec.width - 4, rec.height - 4}, 0.09, 6, 2, rl.Color{255, 225, 130, 255})
 		}
 
 		ox, oy := creature_offset(c)
