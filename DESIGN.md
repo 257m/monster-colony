@@ -1129,3 +1129,38 @@ it stored, is lost).
   part** (it governs findability, not strength), a species already on the team
   is down-weighted rather than banned (`ARENA_REPEAT`), and challengers skip
   wild maturation since the builder already picks by strength.
+- Phase 57 ✅ **the tower's level curve is logarithmic**: the challengers are
+  levelled from the party's average level **at the moment the run started**
+  (`arena_base_level`, so the tower doesn't drift up under you mid-run), scaled
+  by `1 + 0.3·ln(floor)` — the same slow shape as `energy_scale`. A party of
+  level 30 meets level 30 on floor 1, 71 on floor 100 and 92 on floor 1000. A
+  flat "+1 per floor" put floor 1000 thousands of levels away; this keeps the
+  whole tower reachable and lets the attrition carry the difficulty.
+
+- Phase 58 ✅ **deep floors stay varied**: the tower no longer collapses to
+  nothing but bosses. Two changes. First, the pick band **widens as you climb**
+  (`arena_spread`, 4.5 ranks up to 11), so the strong regulars stay in the
+  lineup. Second, a non-boss challenger is levelled by a **multiplier** that
+  ramps in with the floor (`1 + floor/800`, so 1.0× on floor 1 and 2.25× at
+  floor 1000) to stand beside the bosses' unique abilities and much larger base
+  stats. Floor 1 is still an even fight; floor 1000 is roughly half bosses and
+  half levelled regulars.
+
+- Phase 59 ✅ **synergy sets**: `src/sets.odin` is regenerated so every set is
+  built around a real **synergy** from that species' own move pool — a poison
+  engine ending in Catalyst, a block wall that swings with Body Press, a thorn
+  shell, a strength ramp, a multi-hit swarm, a vulnerable ambush, a tempo loop,
+  an exhaust payoff (Finale), a stun lock, a sustain grind, a reckless low-HP
+  gamble, a defence-shred sweep, a speed package. The held item and the ability
+  are chosen to reinforce the plan. A species' three sets are its three best
+  fits; if a pool cannot support three real synergies it gets honest generic
+  ones (**Bruiser** / **Warden** / **Skirmisher**) instead of a synergy it
+  cannot run. So a challenger is never just a wild with a bigger number.
+
+- Phase 60 ✅ **the battle row fits a whole Arena team**: the enemy row is now a
+  **full-width band below the two corner panels** instead of the gap between
+  them, so **nine** challengers are on screen at once and a six-monster team
+  never needs scrolling. The cards are slightly more compact (smaller avatars,
+  tighter text) to fit, a pack smaller than the row is **centred** rather than
+  bunched left, and the scroll arrows either side are now **clickable**
+  (alongside the wheel and `[` / `]`).

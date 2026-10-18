@@ -1917,6 +1917,17 @@ battle_input :: proc(b: ^Battle) {
 		if rl.IsKeyPressed(.RIGHT_BRACKET) {
 			enemy_scroll(b, 1)
 		}
+		// The arrows either side of the row are clickable, too.
+		if rl.IsMouseButtonPressed(.LEFT) {
+			if rl.CheckCollisionPointRec(mp, enemy_arrow_rect(true)) {
+				enemy_scroll(b, -1)
+				return
+			}
+			if rl.CheckCollisionPointRec(mp, enemy_arrow_rect(false)) {
+				enemy_scroll(b, 1)
+				return
+			}
+		}
 	}
 
 	if b.phase != .PLAYER_ACTION {
@@ -2315,27 +2326,29 @@ draw_initiative :: proc(b: ^Battle) {
 // ----------------------------------------------------------------------------
 // Enemy row layout
 //
-// A panel sits in each top corner (yours on the left, the selected target on
-// the right). The enemy row lives in the band *between* them, so no enemy card
-// can ever run under a panel or off the screen. When a pack is wider than the
-// band the row scrolls (wheel, `[` / `]`, or clicking).
+// The row is a full-width band *below* the two corner panels, so a whole Arena
+// team (six challengers) fits on screen at once with no scrolling. Only a wider
+// pack than that scrolls (wheel, `[` / `]`, or the arrows either side).
 // ----------------------------------------------------------------------------
 PANEL_W      :: f32(340)
 PANEL_H      :: f32(180)
 PANEL_MARGIN :: f32(16)
-ENEMY_CARD_W :: f32(138)
-ENEMY_EY     :: f32(212)
+ENEMY_CARD_W :: f32(132)
+ENEMY_EY     :: f32(272)
+// How far the card reaches above / below its centre line.
+ENEMY_ROW_TOP :: f32(72)
+ENEMY_ROW_BOT :: f32(78)
+ENEMY_ROW_PAD :: f32(34)
 
-// The horizontal band between the two corner panels.
-enemy_band :: proc() -> (left, right: f32) {
+// The full-width band the enemy row lives in.
+enemy_row_band :: proc() -> (left, right: f32) {
 	sw := f32(screen_w())
-	l := PANEL_MARGIN + PANEL_W + 8
-	return l, sw - l
+	return ENEMY_ROW_PAD, sw - ENEMY_ROW_PAD
 }
 
-// How many enemy cards fit in the band.
+// How many enemy cards fit in the row.
 enemy_visible_count :: proc() -> int {
-	l, r := enemy_band()
+	l, r := enemy_row_band()
 	return max(1, int((r - l) / ENEMY_CARD_W))
 }
 
@@ -2346,12 +2359,28 @@ enemy_first_index :: proc(b: ^Battle) -> int {
 	return clamp(b.enemy_first, 0, max(n - visible, 0))
 }
 
-// Centre x of visible slot `slot` (0-based) out of `visible` slots, spread
-// evenly across the band so the row never touches a panel.
-enemy_slot_x :: proc(slot, visible: int) -> f32 {
-	l, r := enemy_band()
-	step := (r - l) / f32(visible)
+// Centre x of visible slot `slot` (0-based) out of `spread` slots, spread evenly
+// across the row. A pack smaller than the row is centred rather than bunched to
+// the left.
+enemy_slot_x :: proc(slot, spread: int) -> f32 {
+	l, r := enemy_row_band()
+	step := (r - l) / f32(max(spread, 1))
 	return l + (f32(slot) + 0.5) * step
+}
+
+// The clickable rect for enemy `i` in the scrolled row.
+enemy_rect :: proc(b: ^Battle, i: int) -> rl.Rectangle {
+	spread := min(enemy_visible_count(), len(b.enemies))
+	first := enemy_first_index(b)
+	ex := enemy_slot_x(i - first, spread)
+	return rl.Rectangle{ex - ENEMY_CARD_W / 2, ENEMY_EY - ENEMY_ROW_TOP, ENEMY_CARD_W, ENEMY_ROW_TOP + ENEMY_ROW_BOT}
+}
+
+// The clickable scroll arrows either side of the row.
+enemy_arrow_rect :: proc(left: bool) -> rl.Rectangle {
+	l, r := enemy_row_band()
+	x := left ? l - 24 : r - 4
+	return rl.Rectangle{x, ENEMY_EY - 24, 28, 48}
 }
 
 // Scroll the row the least amount needed to bring enemy `i` on screen.
@@ -2369,14 +2398,6 @@ enemy_scroll_to :: proc(b: ^Battle, i: int) {
 enemy_scroll :: proc(b: ^Battle, step: int) {
 	visible := enemy_visible_count()
 	b.enemy_first = clamp(b.enemy_first + step, 0, max(len(b.enemies) - visible, 0))
-}
-
-// The clickable rect for enemy `i` in the scrolled row.
-enemy_rect :: proc(b: ^Battle, i: int) -> rl.Rectangle {
-	visible := enemy_visible_count()
-	first := enemy_first_index(b)
-	ex := enemy_slot_x(i - first, visible)
-	return rl.Rectangle{ex - ENEMY_CARD_W / 2, ENEMY_EY - 70, ENEMY_CARD_W, 150}
 }
 // ----------------------------------------------------------------------------
 // Active combat boosts (Strength / Defense / Block / Vulnerable) and the
@@ -2593,6 +2614,7 @@ draw_enemies :: proc(b: ^Battle) {
 	n := len(b.enemies)
 	visible := enemy_visible_count()
 	first := enemy_first_index(b)
+	spread := min(visible, n)
 	ey := ENEMY_EY
 	cw := ENEMY_CARD_W
 
@@ -2602,61 +2624,61 @@ draw_enemies :: proc(b: ^Battle) {
 			break
 		}
 		e := b.enemies[i]
-		ex := enemy_slot_x(slot, visible)
-		radius := f32(44)
+		ex := enemy_slot_x(slot, spread)
+		radius := f32(32)
 		ox, oy := creature_offset(e)
 		draw_creature_avatar(rl.Vector2{ex + ox, ey + oy}, radius, e, e.hp <= 0)
 
 		name := fmt.ctprintf("%s", e.name)
-		nw := rl.MeasureText(name, 16)
-		rl.DrawText(name, i32(ex) - nw / 2, i32(ey) - 100, 16, COL_TEXT)
+		nw := rl.MeasureText(name, 14)
+		rl.DrawText(name, i32(ex) - nw / 2, i32(ey) - 70, 14, COL_TEXT)
 
 		// Level, then the enemy's element types as coloured chips.
 		lvl := fmt.ctprintf("Lv%d", e.level)
-		lw := rl.MeasureText(lvl, 12)
+		lw := rl.MeasureText(lvl, 11)
 		els := creature_elements(e)
-		chip_gap := f32(5)
+		chip_gap := f32(4)
 		total_w := f32(lw)
 		for el in els {
-			total_w += f32(rl.MeasureText(element_name(el), 11)) + 8 + chip_gap
+			total_w += f32(rl.MeasureText(element_name(el), 10)) + 7 + chip_gap
 		}
 		x0 := ex - total_w / 2
-		rl.DrawText(lvl, i32(x0), i32(ey) - 82, 12, rl.Color{175, 175, 195, 255})
+		rl.DrawText(lvl, i32(x0), i32(ey) - 56, 11, rl.Color{175, 175, 195, 255})
 		ccx := x0 + f32(lw) + chip_gap
 		for el in els {
 			txt := element_name(el)
-			w := f32(rl.MeasureText(txt, 11)) + 8
-			crec := rl.Rectangle{ccx, ey - 85, w, 16}
+			w := f32(rl.MeasureText(txt, 10)) + 7
+			crec := rl.Rectangle{ccx, ey - 58, w, 14}
 			col := element_color(el)
 			rl.DrawRectangleRounded(crec, 0.4, 4, rl.Color{col[0] / 5, col[1] / 5, col[2] / 5, 235})
 			rl.DrawRectangleRoundedLinesEx(crec, 0.4, 4, 1, col)
-			rl.DrawText(txt, i32(ccx) + 5, i32(ey) - 82, 11, col)
+			rl.DrawText(txt, i32(ccx) + 4, i32(ey) - 56, 10, col)
 			ccx += w + chip_gap
 		}
 
 		if e.ability != .NONE {
 			ab := ability_name(e.ability)
-			aw := rl.MeasureText(ab, 12)
-			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 66, 12, rl.Color{200, 180, 240, 255})
+			aw := rl.MeasureText(ab, 11)
+			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 41, 11, rl.Color{200, 180, 240, 255})
 		}
 
-		hp_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 56, cw - 8, 16}
+		hp_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 38, cw - 8, 14}
 		draw_bar(hp_rec, e.hp, e.max_hp, COL_HP)
 		hp_txt := fmt.ctprintf("%d/%d", e.hp, e.max_hp)
-		hw := rl.MeasureText(hp_txt, 11)
-		rl.DrawText(hp_txt, i32(ex) - hw / 2, i32(hp_rec.y) + 2, 11, COL_TEXT)
+		hw := rl.MeasureText(hp_txt, 10)
+		rl.DrawText(hp_txt, i32(ex) - hw / 2, i32(hp_rec.y) + 1, 10, COL_TEXT)
 
 		// Energy (the same pool the wild uses on the colony map).
-		en_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 76, cw - 8, 6}
+		en_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 56, cw - 8, 5}
 		draw_bar(en_rec, int(e.energy * 100), int(max(e.energy_max, 0.01) * 100), COL_ENERGY)
 		en_txt := fmt.ctprintf("En %s/%s", fmt_num(e.energy), fmt_num(e.energy_max))
 		ew := rl.MeasureText(en_txt, 10)
-		rl.DrawText(en_txt, i32(ex) - ew / 2, i32(en_rec.y) + 7, 10, COL_TEXT)
+		rl.DrawText(en_txt, i32(ex) - ew / 2, i32(en_rec.y) + 6, 10, COL_TEXT)
 
 		// Active boosts as compact colour-coded dots — the full chips for the
 		// selected target live in the target panel, so a card stays narrow.
 		effs, ne := build_effects(e)
-		draw_effect_dots(effs[:ne], ex, ey + 94, 6)
+		draw_effect_dots(effs[:ne], ex, ey + 74, 6)
 
 		if i == b.target && e.hp > 0 {
 			rl.DrawCircleLinesV(rl.Vector2{ex, ey}, radius + 5, rl.Color{255, 235, 140, 255})
@@ -2665,20 +2687,29 @@ draw_enemies :: proc(b: ^Battle) {
 		}
 	}
 
-	// Scroll affordances when the pack is wider than the band.
+	// Scroll affordances when the pack is wider than the row.
 	if n > visible {
-		hint := fmt.ctprintf("%d-%d of %d   (wheel or [ ] to scroll)", first + 1, min(first + visible, n), n)
-		hw := rl.MeasureText(hint, 14)
-		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(ey) + 128, 14, COL_MUTED)
-		if first > 0 {
-			l, _ := enemy_band()
-			rl.DrawText("<", i32(l) - 26, i32(ey) - 10, 26, rl.Color{200, 200, 215, 255})
-		}
-		if first + visible < n {
-			_, r := enemy_band()
-			rl.DrawText(">", i32(r) + 6, i32(ey) - 10, 26, rl.Color{200, 200, 215, 255})
-		}
+		hint := fmt.ctprintf("%d-%d of %d   (wheel, [ ] or the arrows)", first + 1, min(first + visible, n), n)
+		hw := rl.MeasureText(hint, 13)
+		// Above the row: the space below it belongs to your party.
+		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(ey) - 88, 13, COL_MUTED)
+		l, r := enemy_row_band()
+		mp := mouse_pos()
+		draw_scroll_arrow(l - 20, ey, true, first > 0, rl.CheckCollisionPointRec(mp, enemy_arrow_rect(true)))
+		draw_scroll_arrow(r - 16, ey, false, first + visible < n, rl.CheckCollisionPointRec(mp, enemy_arrow_rect(false)))
 	}
+}
+
+// A scroll arrow either side of the enemy row. Dimmed when there is nothing
+// left to scroll to, and highlighted on hover so it reads as clickable.
+draw_scroll_arrow :: proc(x, ey: f32, left, active, hovered: bool) {
+	col := rl.Color{110, 112, 128, 255}
+	if active {
+		col = hovered ? rl.Color{255, 240, 200, 255} : rl.Color{205, 205, 220, 255}
+	}
+	txt := left ? cstring("<") : cstring(">")
+	w := rl.MeasureText(txt, 26)
+	rl.DrawText(txt, i32(x) + (28 - w) / 2, i32(ey) - 14, 26, col)
 }
 
 // A compact stand-in for the full chip row: one small colour-coded dot per

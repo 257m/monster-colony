@@ -2091,6 +2091,7 @@ update_arena :: proc(g: ^Game) {
 		return
 	}
 	if rl.CheckCollisionPointRec(mp, arena_fight_rect()) {
+		hex := g.colony.roster[g.selected].pos
 		// The fee is flat and only paid once, when the run starts.
 		if !g.colony.arena_run {
 			if colony_total_gold(&g.colony) < ARENA_ENTRY_COST {
@@ -2101,8 +2102,10 @@ update_arena :: proc(g: ^Game) {
 			g.colony.arena_run = true
 			g.colony.arena_floor = 1
 			g.colony.arena_run_crystals = 0
+			// The whole run is scaled off the party you walked in with, so the
+			// tower doesn't drift up under you as you level mid-run.
+			g.colony.arena_base_level = arena_party_level(&g.colony, hex)
 		}
-		hex := g.colony.roster[g.selected].pos
 		colony_spawn_arena_team(&g.colony, hex)
 		g.arena_open = false
 		g.battle_hex = hex
@@ -2142,7 +2145,8 @@ draw_arena :: proc(g: ^Game) {
 		rl.DrawText("Climb as far as you can, then cash out - or wipe and lose it all.",
 			i32(p.x) + 28, i32(p.y) + 120, 15, rl.Color{200, 185, 160, 255})
 	}
-	rl.DrawText(fmt.ctprintf("Next: %d challengers, built to beat the team you bring.", team),
+	rl.DrawText(fmt.ctprintf("Next: %d challengers around level %d, built to beat the team you bring.",
+		team, arena_challenger_level(&g.colony, g.colony.roster[g.selected].pos)),
 		i32(p.x) + 28, i32(p.y) + 150, 16, rl.Color{215, 200, 175, 255})
 	rl.DrawText(fmt.ctprintf("A heal comes every %d floor%s here.", heal_iv, heal_iv == 1 ? "" : "s"),
 		i32(p.x) + 28, i32(p.y) + 174, 15, rl.Color{180, 210, 180, 255})

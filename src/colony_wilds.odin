@@ -210,7 +210,8 @@ arena_species_power :: proc(sp: Species_Id) -> f32 {
 }
 
 ARENA_RAMP_FLOORS :: 250  // floors to walk the whole roster, weakest to strongest
-ARENA_BAND        :: 0.05 // how tight the tower's band is, measured in ranks
+ARENA_SPREAD      :: 4.5  // the tower's band, measured in ranks
+ARENA_SPREAD_MAX  :: 11.0 // ...and how wide it may get at the very top
 ARENA_REPEAT      :: 0.15 // weight multiplier for a species already on the team
 
 // The weakest and strongest species on the roster, so the ramp has no magic
@@ -247,13 +248,21 @@ arena_rank_below :: proc(p: f32) -> f32 {
 	return r
 }
 
+// The band widens as you climb. At the very top the tower would otherwise field
+// nothing but the handful of bosses, which is boring; a wider band lets the
+// strong regulars — levelled up to hold their own — keep showing up.
+arena_spread :: proc(floor: int) -> f32 {
+	return min(ARENA_SPREAD + f32(floor) / 25.0, ARENA_SPREAD_MAX)
+}
+
 // Rarity deliberately plays no part: it governs how hard a species is to find
 // and catch, not how hard it hits. The tower's picks are about strength alone.
 arena_species_weight :: proc(sp: Species_Id, floor: int) -> f32 {
 	d := arena_rank_below(arena_species_power(sp)) - arena_rank_below(arena_wanted_power(floor))
+	s := arena_spread(floor)
 	// The small constant keeps every species technically possible at any floor,
 	// but it is tiny, so the deep floors really are the deep roster.
-	return math.exp(-d * d * ARENA_BAND) + 0.0005
+	return math.exp(-(d * d) / (s * s)) + 0.0005
 }
 
 // Weight of a species for a team that already has `avoid` on it. A repeat is
@@ -310,6 +319,35 @@ arena_species_for :: proc(floor: int, rng: ^Rng, avoid: []Species_Id = nil) -> S
 
 // Give an Arena monster one of its species' sets: the ability it fights with,
 // the item it holds, and the deck that set is built around.
+// The challengers' level: the party's average level *when the run started*,
+// scaled by a logarithmic curve — the same slow shape the game's other long
+// curves use (see `energy_scale`). A flat "+1 per floor" would put floor 1000
+// thousands of levels away and make the tower's top unreachable.
+arena_level_scale :: proc(floor: int) -> f32 {
+	return 1.0 + ARENA_LEVEL_LOG * math.ln(f32(max(floor, 1)))
+}
+
+arena_challenger_level :: proc(c: ^Colony, hex: Hex) -> int {
+	base := c.arena_base_level
+	if base <= 0 {
+		// Older saves (and a run started before this existed) fall back to the
+		// party as it stands.
+		base = arena_party_level(c, hex)
+	}
+	return max(int(f32(base) * arena_level_scale(max(c.arena_floor, 1))), ARENA_BASE_LEVEL)
+}
+
+// Bosses carry unique, powerful abilities (and several times the base stats), so
+// a regular monster in a deep-floor lineup is levelled up to stand beside them.
+// Without this the top of the tower is nothing but bosses, which is boring. The
+// edge is a *multiplier* that ramps in as you climb, so floor 1 is still an even
+// fight.
+ARENA_REGULAR_LEVEL_RAMP :: 800
+
+arena_regular_level_mult :: proc(floor: int) -> f32 {
+	return 1.0 + f32(floor) / f32(ARENA_REGULAR_LEVEL_RAMP)
+}
+
 arena_apply_set :: proc(c: ^Creature, set: Species_Set) {
 	c.ability = set.ability
 	c.item = set.item
@@ -383,14 +421,16 @@ arena_reset :: proc(g: ^Game) {
 
 colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
 	floor := max(c.arena_floor, 1)
-	// At least the average level you brought, and it climbs with the floor.
-	lvl := max(ARENA_BASE_LEVEL + floor * ARENA_LEVEL_PER_FLOOR, arena_party_level(c, hex) + floor / 2)
+	lvl := arena_challenger_level(c, hex)
+	mult := arena_regular_level_mult(floor)
 	n := min(ARENA_TEAM_BASE + floor / ARENA_TEAM_PER_FLOOR, ARENA_TEAM_SIZE)
 	avoid := make([dynamic]Species_Id, 0, context.temp_allocator)
 	for _ in 0..<n {
 		sp := arena_species_for(floor, &c.rng, avoid[:])
 		append(&avoid, sp)
-		spawn_wild_at(c, hex, sp, lvl, mature = false)
+		// Regular monsters get a level edge over the bosses' abilities.
+		mon_lvl := SPECIES[sp].role == .BOSS ? lvl : int(f32(lvl) * mult)
+		spawn_wild_at(c, hex, sp, mon_lvl, mature = false)
 		m := &c.roster[len(c.roster) - 1]
 		// A challenger arrives as one of its species' sets, not a stock wild.
 		sets := SPECIES_SETS[m.creature.species]
