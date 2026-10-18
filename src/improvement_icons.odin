@@ -50,6 +50,10 @@ draw_improvement_icon :: proc(im: Improvement, cx, cy, zoom: f32) {
 	case .NURSERY:    draw_icon_nursery(cx, cy, z, t)
 	case .MENDER:     draw_icon_mender(cx, cy, z, t)
 	case .RELIC_TOWER: draw_icon_relic_tower(cx, cy, z, t)
+	case .WARD_STONE: draw_icon_ward_stone(cx, cy, z, t)
+	case .TRAINING_YARD: draw_icon_training_yard(cx, cy, z, t)
+	case .CALTROPS: draw_icon_caltrops(cx, cy, z, t)
+	case .BATTERY: draw_icon_battery(cx, cy, z, t)
 	case .NONE:
 	}
 }
@@ -362,4 +366,49 @@ draw_icon_relic_tower :: proc(cx, cy, z, t: f32) {
 	bob := math.sin(t * 2.0) * 1.6 * z
 	rl.DrawCircleV(rl.Vector2{cx, cy - 14 * z + bob}, 3.2 * z, rl.Color{245, 215, 140, 255})
 	rl.DrawCircleLinesV(rl.Vector2{cx, cy - 14 * z + bob}, (4.5 + 1.5 * math.sin(t * 3.0)) * z, rl.Color{255, 235, 170, 190})
+}
+
+// Ward Stone: a standing stone with a slow halo.
+draw_icon_ward_stone :: proc(cx, cy, z, t: f32) {
+	rl.DrawRectangleRounded(rl.Rectangle{cx - 6 * z, cy - 11 * z, 12 * z, 22 * z}, 0.3, 5, rl.Color{120, 126, 160, 255})
+	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{cx - 6 * z, cy - 11 * z, 12 * z, 22 * z}, 0.3, 5, 1.5 * z, rl.Color{170, 178, 215, 255})
+	pulse := 0.5 + 0.5 * math.sin(t * 2.0)
+	rl.DrawCircleLinesV(rl.Vector2{cx, cy - 3 * z}, (7 + 4 * pulse) * z, rl.Color{180, 200, 255, u8(150 * (1 - pulse))})
+	rl.DrawCircleV(rl.Vector2{cx, cy - 3 * z}, 2.6 * z, rl.Color{210, 225, 255, 255})
+}
+
+// Training Yard: a practice dummy on a mat.
+draw_icon_training_yard :: proc(cx, cy, z, t: f32) {
+	rl.DrawRectangleRounded(rl.Rectangle{cx - 14 * z, cy + 6 * z, 28 * z, 7 * z}, 0.4, 4, rl.Color{84, 68, 52, 255})
+	rl.DrawRectangleRounded(rl.Rectangle{cx - 4 * z, cy - 12 * z, 8 * z, 18 * z}, 0.3, 4, rl.Color{140, 112, 78, 255})
+	rl.DrawCircleV(rl.Vector2{cx, cy - 12 * z}, 5 * z, rl.Color{158, 128, 90, 255})
+	rl.DrawLineEx(rl.Vector2{cx - 9 * z, cy - 2 * z}, rl.Vector2{cx + 9 * z, cy - 2 * z}, 2.2 * z, rl.Color{196, 170, 130, 255})
+	sway := math.sin(t * 2.4) * 1.4 * z
+	rl.DrawLineEx(rl.Vector2{cx + 12 * z, cy + 4 * z}, rl.Vector2{cx + 12 * z + sway, cy - 10 * z}, 2.2 * z, rl.Color{200, 200, 210, 255})
+}
+
+// Caltrops: a scatter of spikes on the ground.
+draw_icon_caltrops :: proc(cx, cy, z, t: f32) {
+	_ = t
+	rl.DrawRectangleRounded(rl.Rectangle{cx - 14 * z, cy + 6 * z, 28 * z, 6 * z}, 0.4, 4, rl.Color{70, 62, 54, 255})
+	for k in 0..<4 {
+		x := cx + (f32(k) - 1.5) * 7 * z
+		h := (5 + f32(k % 2) * 3) * z
+		rl.DrawTriangle(rl.Vector2{x - 3 * z, cy + 6 * z}, rl.Vector2{x + 3 * z, cy + 6 * z}, rl.Vector2{x, cy + 6 * z - h}, rl.Color{190, 195, 205, 255})
+	}
+}
+
+// Battery: a stack of cells with a charge level.
+draw_icon_battery :: proc(cx, cy, z, t: f32) {
+	rl.DrawRectangleRounded(rl.Rectangle{cx - 11 * z, cy - 10 * z, 22 * z, 20 * z}, 0.2, 4, rl.Color{38, 42, 54, 255})
+	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{cx - 11 * z, cy - 10 * z, 22 * z, 20 * z}, 0.2, 4, 1.6 * z, rl.Color{120, 130, 160, 255})
+	// three cells, the lit portion pulsing
+	lit := 0.55 + 0.45 * math.sin(t * 2.2)
+	for k in 0..<3 {
+		x := cx - 8 * z + f32(k) * 6 * z
+		rl.DrawRectangleRounded(rl.Rectangle{x, cy - 7 * z, 4 * z, 14 * z}, 0.3, 3, rl.Color{30, 34, 44, 255})
+		h := 14 * z * f32(k + 1) / 3 * lit
+		rl.DrawRectangleRounded(rl.Rectangle{x, cy + 7 * z - h, 4 * z, h}, 0.3, 3, rl.Color{242, 200, 70, 255})
+	}
+	rl.DrawRectangleRounded(rl.Rectangle{cx + 11 * z, cy - 3 * z, 3 * z, 6 * z}, 0.4, 2, rl.Color{150, 160, 190, 255})
 }

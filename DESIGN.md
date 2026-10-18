@@ -1028,3 +1028,29 @@ it stored, is lost).
   50% = ~48%, 80% = ~79%, 100% = always. Raiders, alphas and sieges still hunt
   deliberately. (A procedural creature-sprite pass was tried here and reverted —
   the circles keep their letter until per-species art exists.)
+- Phase 49 ✅ **revamp batch 6 — base building**: a proper perimeter is
+  affordable now — **Wall 15→6**, **Gate 12→5**, **Drawbridge 16→8**, Spike Trap
+  18→9, Scarecrow 8→5, Road 10→6 — and the repeat-build divisor for Walls and
+  Gates went **6 → 16**, so the eleventh wall still costs 6. Three new
+  improvements round out a base: **Ward Stone** (every Relic Tower within 4
+  projects 2 tiles further, so a ring of stones turns one tower into a
+  district-wide aura), **Training Yard** (a monster standing on it gains 8 XP a
+  turn, for bringing a recruit up without feeding it to fights) and **Caltrops**
+  (a nastier Spike Trap at 24% max HP/turn). Finally, the crystal tree gained
+  **uncapped nodes**: `Upgrade_Info.cost_growth` compounds the price per level,
+  and Focused Barrels, Reinforced Mounts, Reservoir, Green Thumb and Rich Seams
+  are now unlimited (Focused Barrels: 8 → 116 → 1000 → 7896 crystals at levels
+  0/5/12/20) so Turrets can keep pace with the escalating threats. The panel
+  caps its pips at 8 and shows a `Lv N` readout for those nodes.
+- Phase 50 ✅ **percentage lines, a Battery, and a reason to fight the Arena**:
+  **Green Thumb** and **Rich Seams** are now **percentage** lines (+8% food /
+  gold per level) instead of flat +2s, so they scale with the base yield as the
+  colony grows — verified a staffed Farm goes 6 → 8 food at 5 levels. New
+  improvement **Battery**: when every Turret and Mender in a Fountain's reach is
+  already full, the surplus pours into a Battery within 4 tiles instead of being
+  wasted, and Turrets within 4 draw from it whenever their own cells run dry.
+  Verified: a full Turret banked 3 charge, and a dry Turret drew 2 back to fire.
+  Finally, the **Arena** is now worth entering: it is the hardest fight in the
+  game, so it pays **12 crystals** (double a boss) and **always drops an item**,
+  making it the crystal farm while Boss Rooms stay the relic source. Bosses were
+  already farmable (they re-lair every 12 turns).

@@ -1981,12 +1981,17 @@ draw_upgrades :: proc(g: ^Game) {
 		name_col := unlocked ? rl.Color{235, 232, 250, 255} : rl.Color{130, 128, 145, 255}
 		rl.DrawText(upgrade_name(u), i32(rec.x + indent) + 14, i32(rec.y) + 5, 15, name_col)
 
-		// Level pips after the name.
+		// Level pips after the name. Uncapped nodes show at most 8 pips plus a
+		// numeric level, so the row never overruns its cell.
 		nw := rl.MeasureText(upgrade_name(u), 15)
-		for lv in 0..<info.max_level {
+		pips := min(info.max_level, 8)
+		for lv in 0..<pips {
 			cx := rec.x + indent + 14 + f32(nw) + 12 + f32(lv) * 13
 			col := lv < level ? rl.Color{170, 140, 245, 255} : rl.Color{58, 56, 74, 255}
 			rl.DrawCircleV(rl.Vector2{cx, rec.y + 12}, 4.5, col)
+		}
+		if info.max_level > 8 {
+			rl.DrawText(fmt.ctprintf("Lv %d", level), i32(rec.x + indent + 14 + f32(nw) + 12 + f32(pips) * 13), i32(rec.y) + 5, 13, rl.Color{200, 185, 245, 255})
 		}
 
 		if unlocked {

@@ -97,15 +97,32 @@ relics_unplaced :: proc(c: ^Colony, r: Relic) -> int {
 	return n
 }
 
-// Tally the relics projecting onto `hex` — every tower within RELIC_RADIUS.
-// Effects stack, so callers multiply by the count.
+// Tally the relics projecting onto `hex` — every tower in range. A Ward Stone
+// widens the towers near it, so the radius is per tower. Effects stack, so
+// callers multiply by the count.
 relics_in_range :: proc(c: ^Colony, hex: Hex) -> [Relic]int {
 	out: [Relic]int
+	// Gather the ward stones once (a fixed stack buffer, no allocation), so the
+	// tower sweep below stays cheap.
+	wards: [32]Hex
+	nw := 0
+	for t in c.tiles {
+		if t.improvement == .WARD_STONE && nw < len(wards) {
+			wards[nw] = t.hex
+			nw += 1
+		}
+	}
 	for t in c.tiles {
 		if t.improvement != .RELIC_TOWER || t.relic_count == 0 {
 			continue
 		}
-		if hex_distance(t.hex, hex) > RELIC_RADIUS {
+		radius := RELIC_RADIUS
+		for w in wards[:nw] {
+			if hex_distance(w, t.hex) <= WARD_STONE_RANGE {
+				radius += WARD_STONE_BONUS
+			}
+		}
+		if hex_distance(t.hex, hex) > radius {
 			continue
 		}
 		for i in 0..<int(t.relic_count) {
