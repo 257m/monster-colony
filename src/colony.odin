@@ -23,7 +23,7 @@ import "core:math"
 // ============================================================================
 
 Terrain :: enum { CAVE, WATER, DUNGEON, GROVE, TRADING_POST, BOSS_ROOM, MUSHROOM, RUINS, TUNDRA, JUNGLE, LAVA, DESERT, QUICKSAND, ARENA, CRYSTAL_COVE }
-Improvement :: enum { NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON, DEN, VAULT, NURSERY, MENDER }
+Improvement :: enum { NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON, DEN, VAULT, NURSERY, MENDER, RELIC_TOWER }
 
 MAX_MONSTERS_PER_TILE :: 6
 REFILL_FRAC           :: f32(0.5) // of max satiation gained per fed turn
@@ -341,6 +341,12 @@ IMPROVEMENT_INFO := [Improvement]Improvement_Info {
 		heat = 3, terrains = {.CAVE, .GROVE, .RUINS, .DESERT, .MUSHROOM}, cost_divisor = 3,
 		detail = "A repair drone. It draws energy from a Fountain within 4 tiles into its own charge, then spends that charge to mend every damaged improvement within 4 tiles by 1 HP per turn — buildings and overlays alike. Useless without a Fountain, so build one alongside it. Slow, but it quietly keeps a wall line or a front-line cluster patched between raids without spending gold.",
 	},
+	.RELIC_TOWER = Improvement_Info{
+		name = "Relic Tower", cost = 60, hp = 60, category = "Support",
+		effect = "holds 3 relics; projects them 5 tiles",
+		heat = 4, terrains = {.CAVE, .GROVE, .MUSHROOM, .RUINS, .TUNDRA, .DESERT, .JUNGLE, .CRYSTAL_COVE}, cost_divisor = 2,
+		detail = "A spire built to hold relics. It has 3 slots; each relic slotted here projects its effect over a 5-tile radius — battle relics buff your monsters fighting inside that radius, economy relics boost the Mines, Farms and Turrets inside it, and win-bonus relics pay out for fights won there. Relics outside a tower do nothing, so where you raise your towers decides what your relics actually do. Copies stack.",
+	},
 }
 
 // Every buildable improvement, in build-panel order (used by the improvements dex).
@@ -348,7 +354,7 @@ ALL_IMPROVEMENTS := [?]Improvement{
 	.FARM, .MINE, .WELL, .BRIDGE, .GRANARY, .TREASURY, .WATCHTOWER, .WALL,
 	.GATE, .SPIKE_TRAP, .SCARECROW, .ROAD, .SILO, .CRYSTAL_REFINERY, .FOUNTAIN,
 	.TURRET, .DRAWBRIDGE, .QUARRY, .LUMBER_MILL, .MARKETPLACE, .KITCHEN,
-	.BARRACKS, .BEACON, .DEN, .VAULT, .NURSERY, .MENDER,
+	.BARRACKS, .BEACON, .DEN, .VAULT, .NURSERY, .MENDER, .RELIC_TOWER,
 }
 
 tile_has :: proc(t: ^Tile, im: Improvement) -> bool {
@@ -505,13 +511,15 @@ Colony :: struct {
 	// Lifetime stats + milestone board (Phase 22).
 	fights_won:         int,
 	alphas_slain:       int,
+	bosses_slain:       [Species_Id]bool, // one flag per boss, for the quest board
 	crystals_earned:    int,
 	improvements_built: int,
 	milestones:         [Milestone_Kind]bool,
 	goal_done:          bool,
 
-	// Colony-wide boss relics (Phase 25), stackable.
-	relics: [Relic]int,
+	// Boss relics you own but haven't slotted into a tower yet (Phase 25/44).
+	// Placed relics live on the tower tile itself; see `src/relics.odin`.
+	relic_bag: [dynamic]Relic,
 
 	// World event state (Phase: ecology/events).
 	tremor: f32, // seconds of screen shake remaining
@@ -1639,6 +1647,8 @@ colony_end_turn :: proc(c: ^Colony) {
 		if t.improvement == .MINE && near_improvement(c, t.hex, MARKET_RADIUS, .MARKETPLACE) {
 			yield += int(f32(yield) * (MARKET_BONUS + upgrade_market_bonus(c)))
 		}
+		// Coin of Plenty relics project onto the Mine/Quarry they cover.
+		yield = int(f32(yield) * relic_gold_mult_at(c, t.hex))
 		kept := colony_deposit_gold(c, t.hex, yield)
 		if kept > 0 {
 			colony_add_float(c, t.hex, .GOLD, kept)
@@ -1683,7 +1693,7 @@ colony_end_turn :: proc(c: ^Colony) {
 			if t.improvement == .FARM {
 				food += upgrade_farm_food_bonus(c)
 			}
-			food = int(f32(food) * relic_food_mult(c))
+			food = int(f32(food) * relic_food_mult_at(c, t.hex))
 			farm_pool[i] = food
 			colony_add_float(c, t.hex, .FOOD, food)
 		}
@@ -1993,7 +2003,7 @@ colony_turrets :: proc(c: ^Colony) {
 			}
 			t.stored -= TURRET_COST
 			target_hex := c.roster[best_w].pos
-			dmg := int(f32(TURRET_DAMAGE+upgrade_turret_damage(c)) * relic_turret_mult(c))
+			dmg := int(f32(TURRET_DAMAGE+upgrade_turret_damage(c)) * relic_turret_mult_at(c, t.hex))
 			c.roster[best_w].creature.hp -= dmg
 			colony_add_float(c, target_hex, .DAMAGE, dmg)
 			if c.roster[best_w].creature.hp <= 0 {

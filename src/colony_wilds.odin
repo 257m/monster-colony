@@ -780,6 +780,17 @@ colony_crowd_fights :: proc(c: ^Colony) {
 		if rng_f32(&c.rng) >= CROWD_FIGHT_CHANCE {
 			continue
 		}
+		// Same readiness rule as picking a fight with you.
+		ready := false
+		for &m in c.roster {
+			if m.wild && hex_equal(m.pos, hex) && wild_ready_to_fight(c, &m) {
+				ready = true
+				break
+			}
+		}
+		if !ready {
+			continue
+		}
 		ids := make([dynamic]int, 0)
 		for m in c.roster {
 			if m.wild && hex_equal(m.pos, hex) {
@@ -844,6 +855,19 @@ colony_crowd_fights :: proc(c: ^Colony) {
 	}
 }
 
+// A wild won't pick a fight it can't afford. Stepping onto one of your monsters
+// (or brawling over a crowded tile) starts a battle, so a drained wild holds off
+// and a charged one gets bolder — fights are worth having on both sides.
+WILD_FIGHT_ENERGY_MIN :: f32(0.40) // fraction of its bank it wants before engaging
+
+wild_ready_to_fight :: proc(c: ^Colony, m: ^Monster) -> bool {
+	frac := m.creature.energy / max(m.creature.energy_max, 0.001)
+	if frac < WILD_FIGHT_ENERGY_MIN {
+		return false
+	}
+	return rng_f32(&c.rng) < frac
+}
+
 colony_roam_wilds :: proc(c: ^Colony) {
 	for i in 0..<len(c.roster) {
 		m := &c.roster[i]
@@ -884,6 +908,11 @@ colony_roam_wilds :: proc(c: ^Colony) {
 				continue
 			}
 			if tile_passable(c, m, n) {
+				// Walking onto your monster starts a fight; only a charged wild
+				// will commit to that.
+				if monsters_on_tile(c, n, false) > 0 && !wild_ready_to_fight(c, m) {
+					continue
+				}
 				m.pos = n
 				break
 			}
@@ -1048,7 +1077,7 @@ wild_monsters :: proc(c: ^Colony) -> int {
 // unit of six and are re-challengeable, so relics can be farmed.
 // ----------------------------------------------------------------------------
 
-BOSS_SPECIES := [?]Species_Id{.Boss_Leviathan, .Boss_Infernal, .Boss_Titan, .Boss_Sovereign}
+BOSS_SPECIES := [?]Species_Id{.Boss_Leviathan, .Boss_Infernal, .Boss_Titan, .Boss_Sovereign, .Deep_One}
 BOSS_PACK_SIZE     :: 6
 BOSS_LEVEL_BONUS   :: 5
 BOSS_RESPAWN_TURNS :: 12

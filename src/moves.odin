@@ -200,6 +200,35 @@ Move_Id :: enum {
 	Devour,
 	Antidote,
 	Purify,
+	// Reward-only utility cards.
+	Dazzle,
+	Metronome,
+	Scavenger,
+	Slime_Spit,
+	// Elemental top-ups: Electric, Flora, Ice and Air were thin on cards.
+	Jolt,
+	Static_Shock,
+	Overcharge,
+	Short_Circuit,
+	Chain_Lightning,
+	Capacitor,
+	Thorn_Volley,
+	Photosynthesis,
+	Frost_Nova,
+	Ice_Wall,
+	Updraft,
+	Tailwind,
+	// Aqua top-up + a premium attack for every element.
+	Riptide,
+	Firestorm,
+	Tidal_Crash,
+	Bramble_Crush,
+	Avalanche,
+	Fault_Line,
+	Supercell,
+	Gale_Force,
+	Venom_Fang,
+	Earthquake,
 }
 
 // Card rarity drives how often a reward pick offers it (see `Rarity` in
@@ -324,6 +353,7 @@ Move :: struct {
 	// Utility
 	clear_boosts:  bool, // wipe every battle *stat* modifier on the target (Haze)
 	cleanse_status: bool, // remove Poison / Burn / Stun from the beneficiary
+	aoe:           bool, // hits every foe at once instead of the chosen target
 
 	// Classification + powers
 	kind:         Card_Kind, // ATTACK (default), SKILL, or POWER
@@ -497,6 +527,38 @@ MOVE_DATA := [Move_Id]Move{
 	// Status healing (distinct from Haze, which only touches stats).
 	.Antidote     = {name = "Antidote",     desc = "cleanse statuses",          cost = 0.5, element = .NEUTRAL,  rarity = .COMMON,   kind = .SKILL, targets = {.SELF}, cleanse_status = true},
 	.Purify       = {name = "Purify",       desc = "cleanse an ally",           cost = 1.0, element = .NEUTRAL,  rarity = .UNCOMMON, kind = .SKILL, targets = {.ALLY}, cleanse_status = true, heal_pct = 0.08},
+	// Reward-only utility cards (no learnset grants them; they come from
+	// `move_pool` rewards).
+	.Dazzle       = {name = "Dazzle",       desc = "1 stun, add 2 Dazed",       cost = 1.5, element = .NEUTRAL,  rarity = .UNCOMMON, kind = .SKILL, stun = 1, add_move = .Dazed, add_count = 2, add_where = .HAND, add_to_target = true},
+	.Metronome    = {name = "Metronome",    desc = "power: combo strength",     cost = 2.0, element = .NEUTRAL,  rarity = .RARE,     kind = .POWER, targets = {.SELF}, grant_power = .Metronome, power_stacks = 1, exhaust = true},
+	.Scavenger    = {name = "Scavenger",    desc = "power: draw on exhaust",     cost = 2.0, element = .NEUTRAL,  rarity = .UNCOMMON, kind = .POWER, targets = {.SELF}, grant_power = .Scavenger, power_stacks = 1, exhaust = true},
+	.Slime_Spit   = {name = "Slime Spit",   desc = "5 dmg, 2 Dazed",            cost = 1.5, element = .POISON,   rarity = .UNCOMMON, damage = 5, hits = 1, add_move = .Dazed, add_count = 2, add_where = .HAND, add_to_target = true},
+	// Elemental top-ups.
+	.Jolt            = {name = "Jolt",            desc = "3 dmg",                 cost = 0.5, element = .ELECTRIC, rarity = .COMMON,   damage = 3, hits = 1},
+	.Static_Shock    = {name = "Static Shock",    desc = "5 dmg, 1 stun",         cost = 1.5, element = .ELECTRIC, rarity = .UNCOMMON, damage = 5, hits = 1, stun = 1},
+	.Overcharge      = {name = "Overcharge",      desc = "5 dmg x energy",        cost = 0.0, element = .ELECTRIC, rarity = .RARE,     x_cost = true, damage = 5, hits = 1, exhaust = true},
+	.Short_Circuit   = {name = "Short Circuit",   desc = "4 dmg, burn 2 energy",  cost = 1.0, element = .ELECTRIC, rarity = .UNCOMMON, damage = 4, hits = 1, energy_burn = 2},
+	.Chain_Lightning = {name = "Chain Lightning", desc = "4 dmg x3",             cost = 2.0, element = .ELECTRIC, rarity = .RARE,     damage = 4, hits = 3},
+	.Capacitor       = {name = "Capacitor",       desc = "+3 en, draw 1",         cost = 1.0, element = .ELECTRIC, rarity = .UNCOMMON, kind = .SKILL, targets = {.SELF}, energy_give = 3, draw = 1},
+	.Thorn_Volley    = {name = "Thorn Volley",    desc = "4 dmg x2, +1 thorns",   cost = 1.5, element = .FLORA,    rarity = .UNCOMMON, damage = 4, hits = 2, thorns = 1},
+	.Photosynthesis  = {name = "Photosynthesis",  desc = "+2 regen, draw 1",      cost = 1.0, element = .FLORA,    rarity = .UNCOMMON, kind = .SKILL, targets = {.SELF}, regen = 2, draw = 1},
+	.Frost_Nova      = {name = "Frost Nova",      desc = "8 dmg, 2 vuln",         cost = 1.5, element = .ICE,      rarity = .UNCOMMON, damage = 8, hits = 1, vulnerable = 2},
+	.Ice_Wall        = {name = "Ice Wall",        desc = "8 block, +1 thorns",    cost = 1.0, element = .ICE,      rarity = .UNCOMMON, kind = .SKILL, targets = {.SELF}, block = 8, thorns = 1},
+	.Updraft         = {name = "Updraft",         desc = "5 block, +2 speed",     cost = 1.0, element = .AIR,      rarity = .COMMON,   kind = .SKILL, targets = {.SELF}, block = 5, speed = 2},
+	.Tailwind        = {name = "Tailwind",        desc = "draw 2, +2 speed",      cost = 1.0, element = .AIR,      rarity = .UNCOMMON, kind = .SKILL, targets = {.SELF}, draw = 2, speed = 2},
+	// Premium attacks: every element gets one heavy hitter at the 6-damage-per-
+	// energy rate, with a twist that matches its identity.
+	.Riptide         = {name = "Riptide",         desc = "4 dmg x2, drain",       cost = 1.5, element = .AQUA,     rarity = .UNCOMMON, damage = 4, hits = 2, leech_pct = 0.3},
+	.Firestorm       = {name = "Firestorm",       desc = "15 dmg, 3 burn",        cost = 3.0, element = .EMBER,    rarity = .RARE,     damage = 15, hits = 1, burn = 3},
+	.Tidal_Crash     = {name = "Tidal Crash",     desc = "18 dmg",                cost = 3.0, element = .AQUA,     rarity = .RARE,     damage = 18, hits = 1},
+	.Bramble_Crush   = {name = "Bramble Crush",   desc = "16 dmg, +2 thorns",     cost = 3.0, element = .FLORA,    rarity = .RARE,     damage = 16, hits = 1, thorns = 2},
+	.Avalanche       = {name = "Avalanche",       desc = "15 dmg, 3 vuln",        cost = 3.0, element = .ICE,      rarity = .RARE,     damage = 15, hits = 1, vulnerable = 3},
+	.Fault_Line      = {name = "Fault Line",      desc = "16 dmg, -3 def",        cost = 3.0, element = .GROUND,   rarity = .RARE,     damage = 16, hits = 1, defense_down = 3},
+	.Supercell       = {name = "Supercell",       desc = "15 dmg, 1 stun",        cost = 3.0, element = .ELECTRIC, rarity = .RARE,     damage = 15, hits = 1, stun = 1},
+	.Gale_Force      = {name = "Gale Force",      desc = "6 dmg x3",              cost = 3.0, element = .AIR,      rarity = .RARE,     damage = 6, hits = 3},
+	.Venom_Fang      = {name = "Venom Fang",      desc = "12 dmg, 4 poison",      cost = 3.0, element = .POISON,   rarity = .RARE,     damage = 12, hits = 1, poison = 4},
+	// AoE: hits every foe at once.
+	.Earthquake      = {name = "Earthquake",      desc = "12 dmg to all foes",   cost = 3.0, element = .GROUND,   rarity = .RARE,     damage = 12, hits = 1, aoe = true},
 }
 
 // The kinds a card can be played on. An empty set means enemy-only (the
@@ -515,6 +577,9 @@ move_has_damage :: proc(m: Move) -> bool {
 
 // Short label for the kinds a card can be played on (shown in the tooltip).
 move_target_label :: proc(m: Move) -> string {
+	if m.aoe {
+		return "every foe"
+	}
 	t := move_targets(m)
 	switch {
 	case t == {.ENEMY}:
@@ -551,7 +616,7 @@ move_value :: proc(id: Move_Id) -> int {
 		m.add_count * (m.add_where == .DECK ? 6 : 4) + (m.grant_power != .NONE ? 12 * max(m.power_stacks, 1) : 0) +
 		int(m.speed) * 4 + m.scale_per_exhausted * 3 + m.dexterity * 5 + m.dexterity_down * 4 +
 		(m.double_block ? 10 : 0) + (m.double_strength ? 12 : 0) + (m.double_poison ? 10 : 0) + (m.double_burn ? 10 : 0) +
-		(m.x_cost ? 6 : 0) + (m.retain ? 4 : 0) + (m.ethereal ? 2 : 0) + m.energy_burn * 4 +
+		(m.aoe ? 28 : 0) + (m.x_cost ? 6 : 0) + (m.retain ? 4 : 0) + (m.ethereal ? 2 : 0) + m.energy_burn * 4 +
 		(m.discard_hand ? 6 : 0) + (m.exhaust_hand ? 4 : 0) + (m.cleanse_status ? 6 : 0) -
 		(m.exhaust ? 4 : 0) -
 		m.self_strength_down * 4 - int(m.self_defense_down) * 4 - m.self_damage * 2
@@ -633,6 +698,9 @@ move_lines :: proc(m: Move) -> Move_Lines {
 		add(&out, "Cost: %s energy", fmt_num(m.cost))
 	}
 	add(&out, "Targets: %s", move_target_label(m))
+	if m.aoe {
+		add(&out, "Hits every foe at once")
+	}
 	add(&out, "Type: %s   Rarity: %s", card_kind_name(m.kind), card_rarity_name(m.rarity))
 
 	if move_has_damage(m) {

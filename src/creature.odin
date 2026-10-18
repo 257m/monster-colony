@@ -124,7 +124,7 @@ SPECIES := [Species_Id]Species{
 			{.Cleave, 8}, {.Sunder, 8}, {.Fuse, 8},
 			{.Hone, 10}, {.Haze, 10}, {.Overclock, 10},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Warcry, .Followup, .Cleave, .Bash, .Sunder, .Mark, .Expose, .Blood_Pact, .Reckoning, .Cull, .Fuse, .Guard, .Hone, .Mark, .Iron_Skin, .Slash},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Warcry, .Followup, .Cleave, .Bash, .Sunder, .Mark, .Expose, .Blood_Pact, .Reckoning, .Cull, .Fuse, .Guard, .Hone, .Mark, .Iron_Skin, .Slash, .Metronome, .Firestorm},
 	},
 	.Cinderscale = {
 		name = "Cinderscale", desc = "A scaled lizard that basks in lava. Its hide cracks into cooling plates.", elements = []Element{.EMBER, .GROUND}, base_hp = 88, base_energy = 3, base_energy_max = 9, base_power = 1.2, base_defense = 1.2, base_speed = 11.0, base_satiety = 135, base_upkeep = 4,
@@ -137,7 +137,7 @@ SPECIES := [Species_Id]Species{
 			{.Amplify, 17}, {.Haze, 17}, {.Finale, 17},
 			{.Meteor, 19}, {.Overwhelm, 19}, {.Cull, 19},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Cleave, .Sunder, .Bash, .Overwhelm, .Warcry, .Followup, .Dragon_Dance, .Amplify, .All_In, .Meteor, .Concuss, .Blood_Pact, .Reckoning, .Cull, .Finale, .Overclock, .Fuse, .Guard, .Hone},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Cleave, .Sunder, .Bash, .Overwhelm, .Warcry, .Followup, .Dragon_Dance, .Amplify, .All_In, .Meteor, .Concuss, .Blood_Pact, .Reckoning, .Cull, .Finale, .Overclock, .Fuse, .Guard, .Hone, .Metronome, .Firestorm},
 	},
 	.Magmalisk = {
 		name = "Magmalisk", desc = "A magma-lizard the size of a cart. It swims through molten rock.", elements = []Element{.EMBER, .GROUND}, base_hp = 120, base_energy = 3, base_energy_max = 10, base_power = 1.45, base_defense = 1.5, base_speed = 12.0, base_satiety = 175, base_upkeep = 6,
@@ -148,7 +148,7 @@ SPECIES := [Species_Id]Species{
 			{.Meteor, 32}, {.Rage, 32}, {.Amplify, 32},
 			{.Dragon_Dance, 36}, {.Overwhelm, 36}, {.Finale, 36},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Cleave, .Sunder, .Overwhelm, .Bash, .All_In, .Meteor, .Concuss, .Amplify, .Dragon_Dance, .Rage, .Combustion, .Demon_Form, .Finale, .Cull, .Guard, .Hone},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Cleave, .Sunder, .Overwhelm, .Bash, .All_In, .Meteor, .Concuss, .Amplify, .Dragon_Dance, .Rage, .Combustion, .Demon_Form, .Finale, .Cull, .Guard, .Hone, .Metronome, .Firestorm},
 	},
 	.Tidepup = {
 		name = "Tidepup", desc = "A playful water-pup. It naps in shallow tidepools and wakes to the tide.", elements = []Element{.AQUA}, base_hp = 62, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 8.0, base_satiety = 105, base_upkeep = 3,
@@ -162,7 +162,7 @@ SPECIES := [Species_Id]Species{
 			{.Rampart, 8}, {.Body_Press, 8}, {.Gambit, 8},
 			{.Fortify, 10}, {.Leech, 10}, {.Siphon, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Leech, .Fang_Flurry, .Cyclone, .Overwhelm, .Footwork, .Iron_Skin, .Shield_Bash, .Body_Press, .Rampart, .Guard, .Fortify, .Insight, .Study, .Meditate, .Adrenaline, .Gambit, .Hold_the_Line},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Leech, .Fang_Flurry, .Cyclone, .Overwhelm, .Footwork, .Iron_Skin, .Shield_Bash, .Body_Press, .Rampart, .Guard, .Fortify, .Insight, .Study, .Meditate, .Adrenaline, .Gambit, .Hold_the_Line, .Tidal_Crash},
 	},
 	.Ripfin = {
 		name = "Ripfin", desc = "A sleek riptide-hunter. It rides its own current and never stops moving.", elements = []Element{.AQUA, .ICE}, base_hp = 92, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.45, base_speed = 8.0, base_satiety = 145, base_upkeep = 4,
@@ -175,7 +175,7 @@ SPECIES := [Species_Id]Species{
 			{.Barrier, 17}, {.Cyclone, 17}, {.Channel, 17},
 			{.Bulwark, 19}, {.Leech, 19}, {.Flow, 19},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Leech, .Fang_Flurry, .Cyclone, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Bulwark, .Rampart, .Hold_the_Line, .Fortify, .Iron_Skin, .Footwork, .Insight, .Study, .Meditate, .Siphon, .Blackout, .Overclock, .Maelstrom, .Channel, .Guard},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Leech, .Fang_Flurry, .Cyclone, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Bulwark, .Rampart, .Hold_the_Line, .Fortify, .Iron_Skin, .Footwork, .Insight, .Study, .Meditate, .Siphon, .Blackout, .Overclock, .Maelstrom, .Channel, .Guard, .Riptide, .Tidal_Crash},
 	},
 	.Tidewyrm = {
 		name = "Tidewyrm", desc = "A serpent of the deep current. Its coils freeze the water around it.", elements = []Element{.AQUA, .ICE}, base_hp = 145, base_energy = 3, base_energy_max = 10, base_power = 1.25, base_defense = 1.9, base_speed = 7.0, base_satiety = 195, base_upkeep = 6,
@@ -186,7 +186,7 @@ SPECIES := [Species_Id]Species{
 			{.Maelstrom, 32}, {.Bulwark, 32}, {.Channel, 32},
 			{.Barrier, 36}, {.Entrench, 36}, {.Bastion, 36},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Maelstrom, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Bulwark, .Rampart, .Hold_the_Line, .Bastion, .Flow, .Barricade, .Fortify, .Iron_Skin, .Footwork, .Insight, .Study, .Siphon, .Blackout, .Channel, .Guard},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Maelstrom, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Bulwark, .Rampart, .Hold_the_Line, .Bastion, .Flow, .Barricade, .Fortify, .Iron_Skin, .Footwork, .Insight, .Study, .Siphon, .Blackout, .Channel, .Guard, .Riptide, .Tidal_Crash},
 	},
 	.Sproutle = {
 		name = "Sproutle", desc = "A seedling with legs. It photosynthesises while it sleeps.", elements = []Element{.FLORA}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.0, base_speed = 7.0, base_satiety = 95, base_upkeep = 3,
@@ -200,7 +200,7 @@ SPECIES := [Species_Id]Species{
 			{.Expose, 8}, {.Hold_the_Line, 8}, {.Purify, 8},
 			{.Venom, 10}, {.Bramble_Armor, 10}, {.Entrench, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Bramble_Armor, .Spike_Shell, .Overwhelm, .Body_Press, .Footwork, .Iron_Skin, .Rampart, .Mark, .Expose, .Haze, .Purify, .Guard, .Fortify, .Hold_the_Line},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Bramble_Armor, .Spike_Shell, .Overwhelm, .Body_Press, .Footwork, .Iron_Skin, .Rampart, .Mark, .Expose, .Haze, .Purify, .Guard, .Fortify, .Hold_the_Line, .Thorn_Volley, .Photosynthesis, .Bramble_Crush},
 	},
 	.Thornbud = {
 		name = "Thornbud", desc = "A thorny thicket that walks. Its barbs catch anything that comes close.", elements = []Element{.FLORA, .POISON}, base_hp = 86, base_energy = 3, base_energy_max = 9, base_power = 1.2, base_defense = 1.25, base_speed = 8.0, base_satiety = 130, base_upkeep = 4,
@@ -213,7 +213,7 @@ SPECIES := [Species_Id]Species{
 			{.Toxic, 17}, {.Barricade, 17}, {.Combustion, 17},
 			{.Catalyst, 19}, {.Bramble_Armor, 19}, {.Cull, 19},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Toxic, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Barricade, .Footwork, .Iron_Skin, .Rampart, .Sunder, .Depower, .Mark, .Expose, .Haze, .Purify, .Reckoning, .Cull, .All_In, .Guard},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Toxic, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Barricade, .Footwork, .Iron_Skin, .Rampart, .Sunder, .Depower, .Mark, .Expose, .Haze, .Purify, .Reckoning, .Cull, .All_In, .Guard, .Thorn_Volley, .Photosynthesis, .Bramble_Crush},
 	},
 	.Blightbloom = {
 		name = "Blightbloom", desc = "A flower that burns instead of wilting. Its pollen is a slow poison.", elements = []Element{.FLORA, .POISON}, base_hp = 122, base_energy = 3, base_energy_max = 10, base_power = 1.4, base_defense = 1.55, base_speed = 8.0, base_satiety = 170, base_upkeep = 6,
@@ -224,7 +224,7 @@ SPECIES := [Species_Id]Species{
 			{.Toxic, 32}, {.Barricade, 32}, {.All_In, 32},
 			{.Catalyst, 36}, {.Barrier, 36}, {.Sunder, 36},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Toxic, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Barricade, .Combustion, .Bastion, .Amplify, .Sunder, .Depower, .Haze, .Purify, .Mark, .Expose, .Guard},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Toxic, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench, .Barrier, .Barricade, .Combustion, .Bastion, .Amplify, .Sunder, .Depower, .Haze, .Purify, .Mark, .Expose, .Guard, .Thorn_Volley, .Photosynthesis, .Bramble_Crush},
 	},
 	.Grubling = {
 		name = "Grubling", desc = "A pale grub that burrows through the dark. It panics when cornered.", elements = []Element{.NEUTRAL}, base_hp = 34, base_energy = 3, base_energy_max = 8, base_power = 0.8, base_defense = 0.4, base_speed = 7.0, base_satiety = 60, base_upkeep = 2,
@@ -236,7 +236,7 @@ SPECIES := [Species_Id]Species{
 			{.Overclock, 6}, {.Shiv, 6}, {.Finale, 6},
 			{.All_In, 10}, {.Purge, 10}, {.Blade_Dance, 10},
 		},
-		move_pool = []Move_Id{.Tackle, .Slash, .Guard, .Blood_Pact, .Reckoning, .Cull, .Overclock, .Shiv, .Finale, .All_In, .Purge, .Blade_Dance},
+		move_pool = []Move_Id{.Tackle, .Slash, .Guard, .Blood_Pact, .Reckoning, .Cull, .Overclock, .Shiv, .Finale, .All_In, .Purge, .Blade_Dance, .Scavenger, .Slime_Spit, .Earthquake},
 	},
 	.Vesperling = {
 		name = "Vesperling", desc = "A cave bat that hunts by sound. Paper wings, needle teeth.", elements = []Element{.AIR, .NEUTRAL}, base_hp = 40, base_energy = 3, base_energy_max = 9, base_power = 0.95, base_defense = 0.6, base_speed = 14.0, base_satiety = 75, base_upkeep = 2,
@@ -248,7 +248,7 @@ SPECIES := [Species_Id]Species{
 			{.Cyclone, 6}, {.Sanguine, 6}, {.Agility, 6},
 			{.Blade_Dance, 10}, {.Overwhelm, 10}, {.Adrenaline, 10},
 		},
-		move_pool = []Move_Id{.Gust, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Agility, .Blade_Dance, .Overwhelm, .Adrenaline, .Siphon, .Guard, .Slash},
+		move_pool = []Move_Id{.Gust, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Agility, .Blade_Dance, .Overwhelm, .Adrenaline, .Siphon, .Guard, .Slash, .Scavenger, .Updraft, .Tailwind, .Gale_Force},
 	},
 	.Rockmite = {
 		name = "Rockmite", desc = "A scuttling boulder. Its shell is thicker than its temper.", elements = []Element{.GROUND}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.4, base_speed = 5.0, base_satiety = 85, base_upkeep = 3,
@@ -259,7 +259,7 @@ SPECIES := [Species_Id]Species{
 			{.Entrench, 6}, {.Body_Press, 6}, {.Iron_Skin, 6},
 			{.Rampart, 10}, {.Barrier, 10}, {.Bulwark, 10},
 		},
-		move_pool = []Move_Id{.Rock_Throw, .Guard, .Shield_Bash, .Footwork, .Body_Press, .Iron_Skin, .Fortify, .Entrench, .Rampart, .Barrier, .Bulwark, .Slash, .Juggernaut},
+		move_pool = []Move_Id{.Rock_Throw, .Guard, .Shield_Bash, .Footwork, .Body_Press, .Iron_Skin, .Fortify, .Entrench, .Rampart, .Barrier, .Bulwark, .Slash, .Juggernaut, .Fault_Line, .Earthquake},
 	},
 	.Dustwing = {
 		name = "Dustwing", desc = "A moth of grey dust. It moves in fits and starts.", elements = []Element{.AIR}, base_hp = 36, base_energy = 3, base_energy_max = 9, base_power = 0.8, base_defense = 0.3, base_speed = 13.0, base_satiety = 65, base_upkeep = 2,
@@ -270,7 +270,7 @@ SPECIES := [Species_Id]Species{
 			{.Meditate, 6}, {.Adrenaline, 6}, {.Cyclone, 6},
 			{.Overclock, 10}, {.Siphon, 10}, {.Blackout, 10},
 		},
-		move_pool = []Move_Id{.Gust, .Insight, .Study, .Cyclone, .Meditate, .Adrenaline, .Overclock, .Siphon, .Blackout, .Guard, .Slash, .Agility, .Rally},
+		move_pool = []Move_Id{.Gust, .Insight, .Study, .Cyclone, .Meditate, .Adrenaline, .Overclock, .Siphon, .Blackout, .Guard, .Slash, .Agility, .Rally, .Metronome, .Scavenger, .Updraft, .Tailwind, .Gale_Force},
 	},
 	.Thornkit = {
 		name = "Thornkit", desc = "A prickly sprout. Its barbs catch anything that comes close.", elements = []Element{.FLORA}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.1, base_speed = 9.0, base_satiety = 85, base_upkeep = 2,
@@ -282,7 +282,7 @@ SPECIES := [Species_Id]Species{
 			{.Entrench, 6}, {.Body_Press, 6}, {.Shield_Bash, 6},
 			{.Barricade, 10}, {.Rampart, 10}, {.Bulwark, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Bramble_Armor, .Spike_Shell, .Iron_Skin, .Entrench, .Body_Press, .Shield_Bash, .Barricade, .Rampart, .Bulwark, .Guard, .Fortify},
+		move_pool = []Move_Id{.Vine_Whip, .Bramble_Armor, .Spike_Shell, .Iron_Skin, .Entrench, .Body_Press, .Shield_Bash, .Barricade, .Rampart, .Bulwark, .Guard, .Fortify, .Thorn_Volley, .Bramble_Crush},
 	},
 	.Mossling = {
 		name = "Mossling", desc = "A soft mound of moss. It sleeps through most fights.", elements = []Element{.FLORA}, base_hp = 52, base_energy = 3, base_energy_max = 8, base_power = 0.8, base_defense = 1.2, base_speed = 6.0, base_satiety = 95, base_upkeep = 3,
@@ -293,7 +293,7 @@ SPECIES := [Species_Id]Species{
 			{.Footwork, 6}, {.Rampart, 6}, {.Barrier, 6},
 			{.Bastion, 10}, {.Flow, 10}, {.Bulwark, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Guard, .Fortify, .Meditate, .Purify, .Antidote, .Footwork, .Rampart, .Barrier, .Bastion, .Flow, .Bulwark, .Rally},
+		move_pool = []Move_Id{.Vine_Whip, .Guard, .Fortify, .Meditate, .Purify, .Antidote, .Footwork, .Rampart, .Barrier, .Bastion, .Flow, .Bulwark, .Rally, .Thorn_Volley, .Photosynthesis, .Bramble_Crush},
 	},
 	.Bloomcap = {
 		name = "Bloomcap", desc = "A cap of bright spores. Breathe deep and you will not wake.", elements = []Element{.FLORA, .POISON}, base_hp = 46, base_energy = 3, base_energy_max = 8, base_power = 0.9, base_defense = 1.0, base_speed = 8.0, base_satiety = 90, base_upkeep = 3,
@@ -304,7 +304,7 @@ SPECIES := [Species_Id]Species{
 			{.Toxic, 6}, {.Haze, 6}, {.Bramble_Armor, 6},
 			{.Combustion, 10}, {.Spike_Shell, 10}, {.Purify, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Toxic, .Haze, .Bramble_Armor, .Combustion, .Spike_Shell, .Purify, .Guard, .Spike_Shell},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Envenom, .Catalyst, .Toxic, .Haze, .Bramble_Armor, .Combustion, .Spike_Shell, .Purify, .Guard, .Spike_Shell, .Slime_Spit, .Venom_Fang},
 	},
 	.Barkhound = {
 		name = "Barkhound", desc = "A hound of living bark. It headbutts with a trunk.", elements = []Element{.FLORA, .GROUND}, base_hp = 56, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.4, base_speed = 8.0, base_satiety = 100, base_upkeep = 3,
@@ -315,7 +315,7 @@ SPECIES := [Species_Id]Species{
 			{.Shield_Bash, 6}, {.Fortify, 6}, {.Entrench, 6},
 			{.Rampart, 10}, {.Bulwark, 10}, {.All_In, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Rock_Throw, .Body_Press, .Iron_Skin, .Shield_Bash, .Fortify, .Entrench, .Rampart, .Bulwark, .All_In, .Guard, .Bash, .Juggernaut},
+		move_pool = []Move_Id{.Vine_Whip, .Rock_Throw, .Body_Press, .Iron_Skin, .Shield_Bash, .Fortify, .Entrench, .Rampart, .Bulwark, .All_In, .Guard, .Bash, .Juggernaut, .Thorn_Volley, .Bramble_Crush, .Fault_Line, .Earthquake},
 	},
 	.Bubblet = {
 		name = "Bubblet", desc = "A round drifter that floats on its own bubbles.", elements = []Element{.AQUA}, base_hp = 48, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 1.2, base_speed = 8.0, base_satiety = 95, base_upkeep = 2,
@@ -327,7 +327,7 @@ SPECIES := [Species_Id]Species{
 			{.Fortify, 6}, {.Body_Press, 6}, {.Rampart, 6},
 			{.Barrier, 10}, {.Bulwark, 10}, {.Bastion, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Guard, .Shield_Bash, .Footwork, .Fortify, .Body_Press, .Rampart, .Barrier, .Bulwark, .Bastion, .Meditate},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Guard, .Shield_Bash, .Footwork, .Fortify, .Body_Press, .Rampart, .Barrier, .Bulwark, .Bastion, .Meditate, .Riptide, .Tidal_Crash},
 	},
 	.Ripjaw = {
 		name = "Ripjaw", desc = "A lean hunter with too many teeth. It never stops biting.", elements = []Element{.AQUA}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 0.9, base_speed = 10.0, base_satiety = 95, base_upkeep = 3,
@@ -338,7 +338,7 @@ SPECIES := [Species_Id]Species{
 			{.Cyclone, 6}, {.Sanguine, 6}, {.Overwhelm, 6},
 			{.Blade_Dance, 10}, {.Shiv, 10}, {.Adrenaline, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Overwhelm, .Blade_Dance, .Shiv, .Adrenaline, .Guard, .Slash},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Overwhelm, .Blade_Dance, .Shiv, .Adrenaline, .Guard, .Slash, .Metronome, .Scavenger, .Riptide, .Tidal_Crash},
 	},
 	.Tidecaller = {
 		name = "Tidecaller", desc = "It hums the tide into a lullaby. Prey stands still to listen.", elements = []Element{.AQUA, .ICE}, base_hp = 54, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 1.3, base_speed = 8.0, base_satiety = 110, base_upkeep = 3,
@@ -349,7 +349,7 @@ SPECIES := [Species_Id]Species{
 			{.Mark, 6}, {.Depower, 6}, {.Meditate, 6},
 			{.Barrier, 10}, {.Haze, 10}, {.Hold_the_Line, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Frost_Bite, .Concuss, .Snowball, .Mark, .Depower, .Meditate, .Barrier, .Haze, .Hold_the_Line, .Guard},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Frost_Bite, .Concuss, .Snowball, .Mark, .Depower, .Meditate, .Barrier, .Haze, .Hold_the_Line, .Guard, .Dazzle, .Frost_Nova, .Ice_Wall, .Riptide, .Tidal_Crash, .Avalanche},
 	},
 	.Abyssal_Fry = {
 		name = "Abyssal Fry", desc = "A deep-sea hatchling with venom in its fins.", elements = []Element{.AQUA, .POISON}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.9, base_defense = 0.8, base_speed = 9.0, base_satiety = 85, base_upkeep = 3,
@@ -360,7 +360,7 @@ SPECIES := [Species_Id]Species{
 			{.Catalyst, 6}, {.Toxic, 6}, {.Fang_Flurry, 6},
 			{.Combustion, 10}, {.Siphon, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Venom, .Envenom, .Leech, .Catalyst, .Toxic, .Fang_Flurry, .Combustion, .Siphon, .Overwhelm, .Guard, .Haze},
+		move_pool = []Move_Id{.Aqua_Jet, .Venom, .Envenom, .Leech, .Catalyst, .Toxic, .Fang_Flurry, .Combustion, .Siphon, .Overwhelm, .Guard, .Haze, .Slime_Spit, .Riptide, .Tidal_Crash, .Venom_Fang},
 	},
 	.Gloomling = {
 		name = "Gloomling", desc = "A shadow that clings to cave ceilings and watches.", elements = []Element{.NEUTRAL}, base_hp = 42, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 0.5, base_speed = 10.0, base_satiety = 80, base_upkeep = 2,
@@ -371,7 +371,7 @@ SPECIES := [Species_Id]Species{
 			{.Cull, 6}, {.Expose, 6}, {.Overclock, 6},
 			{.All_In, 10}, {.Finale, 10}, {.Sunder, 10},
 		},
-		move_pool = []Move_Id{.Tackle, .Slash, .Blood_Pact, .Reckoning, .Mark, .Cull, .Expose, .Overclock, .All_In, .Finale, .Sunder, .Guard, .Disarm},
+		move_pool = []Move_Id{.Tackle, .Slash, .Blood_Pact, .Reckoning, .Mark, .Cull, .Expose, .Overclock, .All_In, .Finale, .Sunder, .Guard, .Disarm, .Dazzle},
 	},
 	.Crypt_Rat = {
 		name = "Crypt Rat", desc = "A rat that nests in old bones. Its bite festers.", elements = []Element{.NEUTRAL, .POISON}, base_hp = 44, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 0.7, base_speed = 11.0, base_satiety = 80, base_upkeep = 2,
@@ -382,7 +382,7 @@ SPECIES := [Species_Id]Species{
 			{.Catalyst, 6}, {.Cyclone, 6}, {.Leech, 6},
 			{.Sabotage, 10}, {.Toxic, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Tackle, .Venom, .Fang_Flurry, .Envenom, .Catalyst, .Cyclone, .Leech, .Sabotage, .Toxic, .Overwhelm, .Guard, .Haze},
+		move_pool = []Move_Id{.Tackle, .Venom, .Fang_Flurry, .Envenom, .Catalyst, .Cyclone, .Leech, .Sabotage, .Toxic, .Overwhelm, .Guard, .Haze, .Venom_Fang},
 	},
 	.Wispling = {
 		name = "Wispling", desc = "A flickering spirit that leads travellers astray.", elements = []Element{.AIR, .ELECTRIC}, base_hp = 40, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 0.5, base_speed = 14.0, base_satiety = 75, base_upkeep = 2,
@@ -393,7 +393,7 @@ SPECIES := [Species_Id]Species{
 			{.Agility, 6}, {.Study, 6}, {.Concuss, 6},
 			{.Thunderbolt, 10}, {.Overclock, 10}, {.Adrenaline, 10},
 		},
-		move_pool = []Move_Id{.Gust, .Zap, .Agility, .Insight, .Study, .Concuss, .Thunderbolt, .Overclock, .Adrenaline, .Guard, .Slash, .Cyclone, .Disarm},
+		move_pool = []Move_Id{.Gust, .Zap, .Agility, .Insight, .Study, .Concuss, .Thunderbolt, .Overclock, .Adrenaline, .Guard, .Slash, .Cyclone, .Disarm, .Dazzle, .Jolt, .Static_Shock, .Short_Circuit, .Capacitor, .Updraft, .Tailwind, .Supercell, .Gale_Force},
 	},
 	.Sporeling = {
 		name = "Sporeling", desc = "A drifting spore-cloud with a grudge.", elements = []Element{.POISON}, base_hp = 40, base_energy = 3, base_energy_max = 8, base_power = 0.85, base_defense = 0.7, base_speed = 9.0, base_satiety = 80, base_upkeep = 2,
@@ -405,7 +405,7 @@ SPECIES := [Species_Id]Species{
 			{.Catalyst, 6}, {.Toxic, 6}, {.Purify, 6},
 			{.Combustion, 10}, {.Spike_Shell, 10}, {.Bramble_Armor, 10},
 		},
-		move_pool = []Move_Id{.Sting, .Venom, .Envenom, .Haze, .Catalyst, .Toxic, .Purify, .Combustion, .Spike_Shell, .Bramble_Armor, .Guard, .Slash},
+		move_pool = []Move_Id{.Sting, .Venom, .Envenom, .Haze, .Catalyst, .Toxic, .Purify, .Combustion, .Spike_Shell, .Bramble_Armor, .Guard, .Slash, .Slime_Spit, .Photosynthesis, .Bramble_Crush, .Venom_Fang},
 	},
 	.Capmaw = {
 		name = "Capmaw", desc = "A mushroom with a mouth. It feeds on what the spores drop.", elements = []Element{.FLORA, .POISON}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.2, base_speed = 7.0, base_satiety = 105, base_upkeep = 3,
@@ -416,7 +416,7 @@ SPECIES := [Species_Id]Species{
 			{.Catalyst, 6}, {.Fang_Flurry, 6}, {.Toxic, 6},
 			{.Combustion, 10}, {.Sanguine, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Venom, .Leech, .Envenom, .Catalyst, .Fang_Flurry, .Toxic, .Combustion, .Sanguine, .Overwhelm, .Guard, .Haze},
+		move_pool = []Move_Id{.Vine_Whip, .Venom, .Leech, .Envenom, .Catalyst, .Fang_Flurry, .Toxic, .Combustion, .Sanguine, .Overwhelm, .Guard, .Haze, .Slime_Spit, .Photosynthesis, .Bramble_Crush, .Venom_Fang},
 	},
 	.Sentinel = {
 		name = "Sentinel", desc = "An ancient guardian that never abandons its post.", elements = []Element{.NEUTRAL}, base_hp = 66, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 1.8, base_speed = 6.0, base_satiety = 120, base_upkeep = 4,
@@ -427,7 +427,7 @@ SPECIES := [Species_Id]Species{
 			{.Barrier, 6}, {.Entrench, 6}, {.Footwork, 6},
 			{.Rampart, 10}, {.Bulwark, 10}, {.Barricade, 10},
 		},
-		move_pool = []Move_Id{.Slash, .Guard, .Shield_Bash, .Fortify, .Barrier, .Entrench, .Footwork, .Rampart, .Bulwark, .Barricade, .Body_Press, .Iron_Skin, .Disarm, .Juggernaut, .Rally},
+		move_pool = []Move_Id{.Slash, .Guard, .Shield_Bash, .Fortify, .Barrier, .Entrench, .Footwork, .Rampart, .Bulwark, .Barricade, .Body_Press, .Iron_Skin, .Disarm, .Juggernaut, .Rally, .Dazzle},
 	},
 	.Relic_Hound = {
 		name = "Relic Hound", desc = "A stone hound that guards buried vaults.", elements = []Element{.GROUND}, base_hp = 58, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 1.5, base_speed = 8.0, base_satiety = 105, base_upkeep = 3,
@@ -438,7 +438,7 @@ SPECIES := [Species_Id]Species{
 			{.Shield_Bash, 6}, {.Entrench, 6}, {.Bash, 6},
 			{.Rampart, 10}, {.All_In, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Rock_Throw, .Body_Press, .Iron_Skin, .Shield_Bash, .Entrench, .Bash, .Rampart, .All_In, .Overwhelm, .Fortify, .Guard, .Cleave, .Juggernaut},
+		move_pool = []Move_Id{.Rock_Throw, .Body_Press, .Iron_Skin, .Shield_Bash, .Entrench, .Bash, .Rampart, .All_In, .Overwhelm, .Fortify, .Guard, .Cleave, .Juggernaut, .Fault_Line, .Earthquake},
 	},
 	.Hexling = {
 		name = "Hexling", desc = "A knot of static that curses what it touches.", elements = []Element{.ELECTRIC}, base_hp = 46, base_energy = 3, base_energy_max = 9, base_power = 0.95, base_defense = 0.8, base_speed = 12.0, base_satiety = 85, base_upkeep = 2,
@@ -449,7 +449,7 @@ SPECIES := [Species_Id]Species{
 			{.Depower, 6}, {.Thunderbolt, 6}, {.Blackout, 6},
 			{.All_In, 10}, {.Overclock, 10}, {.Sabotage, 10},
 		},
-		move_pool = []Move_Id{.Zap, .Thunderbolt, .Concuss, .Agility, .Depower, .Blackout, .All_In, .Overclock, .Sabotage, .Guard, .Slash, .Insight, .Disarm},
+		move_pool = []Move_Id{.Zap, .Thunderbolt, .Concuss, .Agility, .Depower, .Blackout, .All_In, .Overclock, .Sabotage, .Guard, .Slash, .Insight, .Disarm, .Dazzle, .Jolt, .Static_Shock, .Short_Circuit, .Capacitor, .Chain_Lightning, .Overcharge, .Supercell},
 	},
 	.Snowpup = {
 		name = "Snowpup", desc = "A pup of packed snow. Its bark frosts the air.", elements = []Element{.ICE}, base_hp = 46, base_energy = 3, base_energy_max = 8, base_power = 0.9, base_defense = 0.9, base_speed = 10.0, base_satiety = 90, base_upkeep = 2,
@@ -461,7 +461,7 @@ SPECIES := [Species_Id]Species{
 			{.Bash, 6}, {.Expose, 6}, {.Cleave, 6},
 			{.Overwhelm, 10}, {.All_In, 10}, {.Sunder, 10},
 		},
-		move_pool = []Move_Id{.Snowball, .Frost_Bite, .Mark, .Bash, .Expose, .Cleave, .Overwhelm, .All_In, .Sunder, .Guard, .Hone, .Slash},
+		move_pool = []Move_Id{.Snowball, .Frost_Bite, .Mark, .Bash, .Expose, .Cleave, .Overwhelm, .All_In, .Sunder, .Guard, .Hone, .Slash, .Frost_Nova, .Avalanche},
 	},
 	.Frostmaw = {
 		name = "Frostmaw", desc = "A maw of black ice. It bites and does not let go.", elements = []Element{.ICE, .GROUND}, base_hp = 62, base_energy = 3, base_energy_max = 9, base_power = 1.1, base_defense = 1.3, base_speed = 8.0, base_satiety = 115, base_upkeep = 4,
@@ -472,7 +472,7 @@ SPECIES := [Species_Id]Species{
 			{.Shield_Bash, 6}, {.Bash, 6}, {.Entrench, 6},
 			{.All_In, 10}, {.Overwhelm, 10}, {.Rampart, 10},
 		},
-		move_pool = []Move_Id{.Snowball, .Rock_Throw, .Frost_Bite, .Body_Press, .Shield_Bash, .Bash, .Entrench, .All_In, .Overwhelm, .Rampart, .Guard, .Iron_Skin, .Juggernaut},
+		move_pool = []Move_Id{.Snowball, .Rock_Throw, .Frost_Bite, .Body_Press, .Shield_Bash, .Bash, .Entrench, .All_In, .Overwhelm, .Rampart, .Guard, .Iron_Skin, .Juggernaut, .Frost_Nova, .Ice_Wall, .Avalanche, .Fault_Line, .Earthquake},
 	},
 	.Glacierling = {
 		name = "Glacierling", desc = "A slow wall of ice. It does not need to chase you.", elements = []Element{.ICE, .AQUA}, base_hp = 70, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 1.9, base_speed = 5.0, base_satiety = 130, base_upkeep = 4,
@@ -483,7 +483,7 @@ SPECIES := [Species_Id]Species{
 			{.Barrier, 6}, {.Footwork, 6}, {.Entrench, 6},
 			{.Rampart, 10}, {.Bastion, 10}, {.Bulwark, 10},
 		},
-		move_pool = []Move_Id{.Snowball, .Aqua_Jet, .Guard, .Fortify, .Barrier, .Footwork, .Entrench, .Rampart, .Bastion, .Bulwark, .Body_Press, .Iron_Skin, .Juggernaut},
+		move_pool = []Move_Id{.Snowball, .Aqua_Jet, .Guard, .Fortify, .Barrier, .Footwork, .Entrench, .Rampart, .Bastion, .Bulwark, .Body_Press, .Iron_Skin, .Juggernaut, .Frost_Nova, .Ice_Wall, .Tidal_Crash, .Avalanche},
 	},
 	.Vinecat = {
 		name = "Vinecat", desc = "A cat made of vines. It pounces three times before you blink.", elements = []Element{.FLORA}, base_hp = 48, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 0.8, base_speed = 12.0, base_satiety = 90, base_upkeep = 3,
@@ -494,7 +494,7 @@ SPECIES := [Species_Id]Species{
 			{.Agility, 6}, {.Leech, 6}, {.Blade_Dance, 6},
 			{.Overwhelm, 10}, {.Sanguine, 10}, {.Shiv, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Fang_Flurry, .Cyclone, .Agility, .Leech, .Blade_Dance, .Overwhelm, .Sanguine, .Shiv, .Guard, .Slash, .Insight},
+		move_pool = []Move_Id{.Vine_Whip, .Fang_Flurry, .Cyclone, .Agility, .Leech, .Blade_Dance, .Overwhelm, .Sanguine, .Shiv, .Guard, .Slash, .Insight, .Metronome, .Thorn_Volley, .Bramble_Crush},
 	},
 	.Venomtail = {
 		name = "Venomtail", desc = "A dripping stinger. Everything it touches goes numb.", elements = []Element{.POISON}, base_hp = 50, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 1.0, base_speed = 10.0, base_satiety = 95, base_upkeep = 3,
@@ -505,7 +505,7 @@ SPECIES := [Species_Id]Species{
 			{.Cyclone, 6}, {.Catalyst, 6}, {.Toxic, 6},
 			{.Combustion, 10}, {.Sabotage, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Sting, .Venom, .Fang_Flurry, .Envenom, .Cyclone, .Catalyst, .Toxic, .Combustion, .Sabotage, .Overwhelm, .Guard, .Haze},
+		move_pool = []Move_Id{.Sting, .Venom, .Fang_Flurry, .Envenom, .Cyclone, .Catalyst, .Toxic, .Combustion, .Sabotage, .Overwhelm, .Guard, .Haze, .Dazzle, .Slime_Spit, .Venom_Fang},
 	},
 	.Pouncer = {
 		name = "Pouncer", desc = "A jungle stalker. It leaps before it lands.", elements = []Element{.FLORA, .AIR}, base_hp = 52, base_energy = 3, base_energy_max = 8, base_power = 1.0, base_defense = 0.9, base_speed = 13.0, base_satiety = 95, base_upkeep = 3,
@@ -516,7 +516,7 @@ SPECIES := [Species_Id]Species{
 			{.Cyclone, 6}, {.Fang_Flurry, 6}, {.Expose, 6},
 			{.All_In, 10}, {.Overwhelm, 10}, {.Sunder, 10},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Gust, .Frost_Bite, .Mark, .Cyclone, .Fang_Flurry, .Expose, .All_In, .Overwhelm, .Sunder, .Guard, .Agility},
+		move_pool = []Move_Id{.Vine_Whip, .Gust, .Frost_Bite, .Mark, .Cyclone, .Fang_Flurry, .Expose, .All_In, .Overwhelm, .Sunder, .Guard, .Agility, .Thorn_Volley, .Updraft, .Tailwind, .Bramble_Crush, .Gale_Force},
 	},
 	.Magmite = {
 		name = "Magmite", desc = "A pebble of living magma. Warm to the touch, warmer when angry.", elements = []Element{.EMBER}, base_hp = 48, base_energy = 3, base_energy_max = 8, base_power = 0.95, base_defense = 1.0, base_speed = 7.0, base_satiety = 90, base_upkeep = 3,
@@ -528,7 +528,7 @@ SPECIES := [Species_Id]Species{
 			{.Mark, 6}, {.Combustion, 6}, {.Hone, 6},
 			{.Overwhelm, 10}, {.Fuse, 10}, {.All_In, 10},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Mark, .Combustion, .Hone, .Overwhelm, .Fuse, .All_In, .Guard, .Cleave, .Warcry},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Mark, .Combustion, .Hone, .Overwhelm, .Fuse, .All_In, .Guard, .Cleave, .Warcry, .Firestorm},
 	},
 	.Cinderwing = {
 		name = "Cinderwing", desc = "A cinder-drake that rides the hot updrafts.", elements = []Element{.EMBER, .AIR}, base_hp = 50, base_energy = 3, base_energy_max = 9, base_power = 1.0, base_defense = 0.8, base_speed = 13.0, base_satiety = 95, base_upkeep = 3,
@@ -539,7 +539,7 @@ SPECIES := [Species_Id]Species{
 			{.Cyclone, 6}, {.Combustion, 6}, {.Agility, 6},
 			{.Dragon_Dance, 10}, {.Overwhelm, 10}, {.All_In, 10},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Gust, .Flame_Burst, .Ember_Coil, .Cyclone, .Combustion, .Agility, .Dragon_Dance, .Overwhelm, .All_In, .Guard, .Fuse},
+		move_pool = []Move_Id{.Ember_Strike, .Gust, .Flame_Burst, .Ember_Coil, .Cyclone, .Combustion, .Agility, .Dragon_Dance, .Overwhelm, .All_In, .Guard, .Fuse, .Metronome, .Updraft, .Firestorm, .Gale_Force},
 	},
 	.Slagbeast = {
 		name = "Slagbeast", desc = "A heap of cooling slag that walks like a bear.", elements = []Element{.EMBER, .GROUND}, base_hp = 66, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.5, base_speed = 6.0, base_satiety = 120, base_upkeep = 4,
@@ -550,7 +550,7 @@ SPECIES := [Species_Id]Species{
 			{.Body_Press, 6}, {.Bash, 6}, {.Amplify, 6},
 			{.All_In, 10}, {.Rampart, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Rock_Throw, .Cleave, .Body_Press, .Hone, .Warcry, .Bash, .Amplify, .All_In, .Rampart, .Overwhelm, .Guard, .Juggernaut},
+		move_pool = []Move_Id{.Ember_Strike, .Rock_Throw, .Cleave, .Body_Press, .Hone, .Warcry, .Bash, .Amplify, .All_In, .Rampart, .Overwhelm, .Guard, .Juggernaut, .Firestorm, .Fault_Line, .Earthquake},
 	},
 	.Sandfang = {
 		name = "Sandfang", desc = "A desert lurker that swims through dunes.", elements = []Element{.GROUND}, base_hp = 56, base_energy = 3, base_energy_max = 8, base_power = 1.05, base_defense = 1.1, base_speed = 10.0, base_satiety = 105, base_upkeep = 3,
@@ -561,7 +561,7 @@ SPECIES := [Species_Id]Species{
 			{.Warcry, 6}, {.Sunder, 6}, {.Followup, 6},
 			{.Amplify, 10}, {.All_In, 10}, {.Overwhelm, 10},
 		},
-		move_pool = []Move_Id{.Sand_Attack, .Hone, .Bash, .Sunder, .Warcry, .Followup, .Amplify, .All_In, .Overwhelm, .Cleave, .Guard, .Rock_Throw},
+		move_pool = []Move_Id{.Sand_Attack, .Hone, .Bash, .Sunder, .Warcry, .Followup, .Amplify, .All_In, .Overwhelm, .Cleave, .Guard, .Rock_Throw, .Fault_Line, .Earthquake},
 	},
 	.Sparkit = {
 		name = "Sparkit", desc = "A crackling spark that cannot sit still.", elements = []Element{.ELECTRIC}, base_hp = 42, base_energy = 3, base_energy_max = 9, base_power = 0.9, base_defense = 0.6, base_speed = 15.0, base_satiety = 80, base_upkeep = 2,
@@ -573,7 +573,7 @@ SPECIES := [Species_Id]Species{
 			{.Thunderbolt, 6}, {.Study, 6}, {.Concuss, 6},
 			{.All_In, 10}, {.Overclock, 10}, {.Adrenaline, 10},
 		},
-		move_pool = []Move_Id{.Zap, .Thunderbolt, .Insight, .Agility, .Study, .Concuss, .All_In, .Overclock, .Adrenaline, .Guard, .Slash, .Siphon},
+		move_pool = []Move_Id{.Zap, .Thunderbolt, .Insight, .Agility, .Study, .Concuss, .All_In, .Overclock, .Adrenaline, .Guard, .Slash, .Siphon, .Jolt, .Static_Shock, .Short_Circuit, .Capacitor, .Chain_Lightning, .Overcharge, .Supercell},
 	},
 	.Crystalfin = {
 		name = "Crystalfin", desc = "A fish of living crystal. Its scales hum with charge.", elements = []Element{.ICE, .ELECTRIC}, base_hp = 54, base_energy = 3, base_energy_max = 10, base_power = 1.0, base_defense = 1.1, base_speed = 11.0, base_satiety = 105, base_upkeep = 3,
@@ -584,7 +584,7 @@ SPECIES := [Species_Id]Species{
 			{.Barrier, 6}, {.Thunderbolt, 6}, {.Footwork, 6},
 			{.Flow, 10}, {.All_In, 10}, {.Bulwark, 10},
 		},
-		move_pool = []Move_Id{.Snowball, .Zap, .Thunderbolt, .Barrier, .Footwork, .Flow, .All_In, .Bulwark, .Frost_Bite, .Concuss, .Guard, .Slash, .Rally},
+		move_pool = []Move_Id{.Snowball, .Zap, .Thunderbolt, .Barrier, .Footwork, .Flow, .All_In, .Bulwark, .Frost_Bite, .Concuss, .Guard, .Slash, .Rally, .Jolt, .Static_Shock, .Short_Circuit, .Capacitor, .Chain_Lightning, .Frost_Nova, .Ice_Wall, .Tidal_Crash, .Avalanche, .Supercell},
 	},
 	.Rotshell = {
 		name = "Rotshell", desc = "A hulking rot-beetle. It eats what it kills, and it kills slowly.", elements = []Element{.NEUTRAL, .POISON}, base_hp = 74, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.4, base_speed = 7.0, base_satiety = 130, base_upkeep = 4,
@@ -595,7 +595,7 @@ SPECIES := [Species_Id]Species{
 			{.All_In, 20}, {.Finale, 20}, {.Envenom, 20},
 			{.Overwhelm, 24}, {.Combustion, 24}, {.Cull, 24},
 		},
-		move_pool = []Move_Id{.Slash, .Venom, .Envenom, .Catalyst, .Blood_Pact, .Reckoning, .Cull, .All_In, .Finale, .Overwhelm, .Combustion, .Guard},
+		move_pool = []Move_Id{.Slash, .Venom, .Envenom, .Catalyst, .Blood_Pact, .Reckoning, .Cull, .All_In, .Finale, .Overwhelm, .Combustion, .Guard, .Scavenger, .Slime_Spit, .Venom_Fang, .Earthquake},
 	},
 	.Nightwing = {
 		name = "Nightwing", desc = "A bat grown huge on blood. It hunts by the sound of your heartbeat.", elements = []Element{.AIR, .NEUTRAL}, base_hp = 68, base_energy = 3, base_energy_max = 10, base_power = 1.15, base_defense = 0.9, base_speed = 16.0, base_satiety = 120, base_upkeep = 4,
@@ -606,7 +606,7 @@ SPECIES := [Species_Id]Species{
 			{.Sanguine, 20}, {.Blade_Dance, 20}, {.Overwhelm, 20},
 			{.All_In, 24}, {.Shiv, 24}, {.Adrenaline, 24},
 		},
-		move_pool = []Move_Id{.Gust, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Blade_Dance, .Overwhelm, .All_In, .Shiv, .Adrenaline, .Guard, .Slash, .Disarm},
+		move_pool = []Move_Id{.Gust, .Fang_Flurry, .Leech, .Cyclone, .Sanguine, .Blade_Dance, .Overwhelm, .All_In, .Shiv, .Adrenaline, .Guard, .Slash, .Disarm, .Dazzle, .Scavenger, .Updraft, .Tailwind, .Gale_Force},
 	},
 	.Thornmaw = {
 		name = "Thornmaw", desc = "A wall of briars with a mouth somewhere in the middle.", elements = []Element{.FLORA, .GROUND}, base_hp = 78, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.8, base_speed = 7.0, base_satiety = 135, base_upkeep = 4,
@@ -617,7 +617,7 @@ SPECIES := [Species_Id]Species{
 			{.Entrench, 20}, {.Rampart, 20}, {.Bulwark, 20},
 			{.All_In, 24}, {.Barricade, 24}, {.Overwhelm, 24},
 		},
-		move_pool = []Move_Id{.Vine_Whip, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench, .Rampart, .Bulwark, .All_In, .Barricade, .Overwhelm, .Guard},
+		move_pool = []Move_Id{.Vine_Whip, .Bramble_Armor, .Spike_Shell, .Body_Press, .Shield_Bash, .Entrench, .Rampart, .Bulwark, .All_In, .Barricade, .Overwhelm, .Guard, .Thorn_Volley, .Bramble_Crush},
 	},
 	.Bubblord = {
 		name = "Bubblord", desc = "A bloated orb of water. Everything it swallows comes back out blue.", elements = []Element{.AQUA}, base_hp = 84, base_energy = 3, base_energy_max = 10, base_power = 1.05, base_defense = 2.1, base_speed = 6.0, base_satiety = 145, base_upkeep = 4,
@@ -628,7 +628,7 @@ SPECIES := [Species_Id]Species{
 			{.Rampart, 20}, {.Bulwark, 20}, {.Flow, 20},
 			{.Bastion, 24}, {.Barricade, 24}, {.All_In, 24},
 		},
-		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Barrier, .Body_Press, .Shield_Bash, .Footwork, .Rampart, .Bulwark, .Flow, .Bastion, .Barricade, .All_In, .Rally},
+		move_pool = []Move_Id{.Aqua_Jet, .Aqua_Cutter, .Barrier, .Body_Press, .Shield_Bash, .Footwork, .Rampart, .Bulwark, .Flow, .Bastion, .Barricade, .All_In, .Rally, .Tidal_Crash},
 	},
 	.Frostfang = {
 		name = "Frostfang", desc = "A wolf of black ice. It freezes you, then takes its time.", elements = []Element{.ICE, .GROUND}, base_hp = 72, base_energy = 3, base_energy_max = 9, base_power = 1.25, base_defense = 1.4, base_speed = 10.0, base_satiety = 125, base_upkeep = 4,
@@ -639,7 +639,7 @@ SPECIES := [Species_Id]Species{
 			{.Sunder, 20}, {.Expose, 20}, {.Cleave, 20},
 			{.All_In, 24}, {.Overwhelm, 24}, {.Meteor, 24},
 		},
-		move_pool = []Move_Id{.Snowball, .Frost_Bite, .Mark, .Bash, .Sunder, .Expose, .Cleave, .All_In, .Overwhelm, .Meteor, .Guard, .Iron_Skin},
+		move_pool = []Move_Id{.Snowball, .Frost_Bite, .Mark, .Bash, .Sunder, .Expose, .Cleave, .All_In, .Overwhelm, .Meteor, .Guard, .Iron_Skin, .Frost_Nova, .Ice_Wall, .Avalanche},
 	},
 	.Magmaw = {
 		name = "Magmaw", desc = "A furnace with legs. Its throat glows through the cracks in its hide.", elements = []Element{.EMBER, .GROUND}, base_hp = 76, base_energy = 3, base_energy_max = 10, base_power = 1.3, base_defense = 1.5, base_speed = 8.0, base_satiety = 130, base_upkeep = 4,
@@ -650,7 +650,7 @@ SPECIES := [Species_Id]Species{
 			{.Mark, 20}, {.Overwhelm, 20}, {.Amplify, 20},
 			{.All_In, 24}, {.Fuse, 24}, {.Meteor, 24},
 		},
-		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Combustion, .Hone, .Mark, .Overwhelm, .Amplify, .All_In, .Fuse, .Meteor, .Guard, .Juggernaut},
+		move_pool = []Move_Id{.Ember_Strike, .Flame_Burst, .Ember_Coil, .Combustion, .Hone, .Mark, .Overwhelm, .Amplify, .All_In, .Fuse, .Meteor, .Guard, .Juggernaut, .Firestorm},
 	},
 	.Sporelord = {
 		name = "Sporelord", desc = "A crowned mushroom that farms the dead. Its spores sing.", elements = []Element{.POISON, .FLORA}, base_hp = 74, base_energy = 3, base_energy_max = 9, base_power = 1.15, base_defense = 1.5, base_speed = 7.0, base_satiety = 130, base_upkeep = 4,
@@ -661,7 +661,7 @@ SPECIES := [Species_Id]Species{
 			{.Toxic, 20}, {.Combustion, 20}, {.Leech, 20},
 			{.Overwhelm, 24}, {.Sanguine, 24}, {.Bramble_Armor, 24},
 		},
-		move_pool = []Move_Id{.Sting, .Venom, .Envenom, .Catalyst, .Toxic, .Combustion, .Leech, .Overwhelm, .Sanguine, .Bramble_Armor, .Guard, .Purify},
+		move_pool = []Move_Id{.Sting, .Venom, .Envenom, .Catalyst, .Toxic, .Combustion, .Leech, .Overwhelm, .Sanguine, .Bramble_Armor, .Guard, .Purify, .Slime_Spit, .Photosynthesis, .Bramble_Crush, .Venom_Fang},
 	},
 	.Voltail = {
 		name = "Voltail", desc = "A storm given a spine. It discharges when it is bored.", elements = []Element{.ELECTRIC}, base_hp = 70, base_energy = 3, base_energy_max = 11, base_power = 1.2, base_defense = 1.0, base_speed = 17.0, base_satiety = 125, base_upkeep = 4,
@@ -672,7 +672,7 @@ SPECIES := [Species_Id]Species{
 			{.Thunderbolt, 20}, {.Overclock, 20}, {.All_In, 20},
 			{.Meteor, 24}, {.Dragon_Dance, 24}, {.Adrenaline, 24},
 		},
-		move_pool = []Move_Id{.Zap, .Thunderbolt, .Concuss, .Agility, .Overclock, .All_In, .Meteor, .Dragon_Dance, .Adrenaline, .Guard, .Slash, .Blackout},
+		move_pool = []Move_Id{.Zap, .Thunderbolt, .Concuss, .Agility, .Overclock, .All_In, .Meteor, .Dragon_Dance, .Adrenaline, .Guard, .Slash, .Blackout, .Jolt, .Static_Shock, .Short_Circuit, .Capacitor, .Chain_Lightning, .Overcharge, .Supercell},
 	},
 	.Deep_One = {
 		name = "Deep One", desc = "A pale thing from the flooded depths. It hums to itself.", elements = []Element{.NEUTRAL}, base_hp = 120, base_energy = 3, base_energy_max = 10, base_power = 1.6, base_defense = 3.0, base_speed = 5.0, base_satiety = 220, base_upkeep = 8,
@@ -695,7 +695,7 @@ SPECIES := [Species_Id]Species{
 			{.Barrier, 4}, {.Entrench, 4}, {.Leech, 4},
 			{.Sanguine, 6}, {.All_In, 6}, {.Maelstrom, 6},
 		},
-		move_pool = []Move_Id{.Maelstrom, .Aqua_Jet, .Aqua_Cutter, .Leech, .Fang_Flurry, .Cyclone, .Body_Press, .Barrier, .Entrench, .Fortify, .Sanguine, .Guard, .Rally},
+		move_pool = []Move_Id{.Maelstrom, .Aqua_Jet, .Aqua_Cutter, .Leech, .Fang_Flurry, .Cyclone, .Body_Press, .Barrier, .Entrench, .Fortify, .Sanguine, .Guard, .Rally, .Tidal_Crash},
 	},
 	.Boss_Infernal = {
 		name = "Boss Infernal", desc = "A lord of the deep fires. Its court is ash.", elements = []Element{.EMBER}, base_hp = 170, base_energy = 3, base_energy_max = 12, base_power = 2.2, base_defense = 2.6, base_speed = 9.0, base_satiety = 240, base_upkeep = 11,
@@ -706,7 +706,7 @@ SPECIES := [Species_Id]Species{
 			{.Overwhelm, 4}, {.Combustion, 4}, {.Hone, 4},
 			{.All_In, 6}, {.Meteor, 6}, {.Rage, 6},
 		},
-		move_pool = []Move_Id{.Hellfire, .Ember_Strike, .Flame_Burst, .Ember_Coil, .Combustion, .Overwhelm, .Mark, .Expose, .Warcry, .Guard, .Cleave},
+		move_pool = []Move_Id{.Hellfire, .Ember_Strike, .Flame_Burst, .Ember_Coil, .Combustion, .Overwhelm, .Mark, .Expose, .Warcry, .Guard, .Cleave, .Firestorm},
 	},
 	.Boss_Titan = {
 		name = "Boss Titan", desc = "The first mountain, and it remembers being awake.", elements = []Element{.GROUND}, base_hp = 280, base_energy = 3, base_energy_max = 12, base_power = 1.7, base_defense = 5.2, base_speed = 4.0, base_satiety = 320, base_upkeep = 14,
@@ -717,7 +717,7 @@ SPECIES := [Species_Id]Species{
 			{.Depower, 4}, {.Entrench, 4}, {.Rampart, 4},
 			{.Overwhelm, 6}, {.All_In, 6}, {.Cataclysm, 6},
 		},
-		move_pool = []Move_Id{.Cataclysm, .Cleave, .Bash, .Overwhelm, .Shield_Bash, .Body_Press, .Entrench, .Barricade, .Rampart, .Barrier, .Fortify, .Iron_Skin, .Depower, .Guard, .Juggernaut, .Rally},
+		move_pool = []Move_Id{.Cataclysm, .Cleave, .Bash, .Overwhelm, .Shield_Bash, .Body_Press, .Entrench, .Barricade, .Rampart, .Barrier, .Fortify, .Iron_Skin, .Depower, .Guard, .Juggernaut, .Rally, .Fault_Line, .Earthquake},
 	},
 	.Boss_Sovereign = {
 		name = "Boss Sovereign", desc = "The throne at the bottom of the world. It does not negotiate.", elements = []Element{.ELECTRIC, .AIR}, base_hp = 180, base_energy = 3, base_energy_max = 12, base_power = 1.9, base_defense = 3.0, base_speed = 13.0, base_satiety = 250, base_upkeep = 11,
@@ -728,7 +728,7 @@ SPECIES := [Species_Id]Species{
 			{.Overwhelm, 4}, {.Thunderbolt, 4}, {.Agility, 4},
 			{.All_In, 6}, {.Dragon_Dance, 6}, {.Decree, 6},
 		},
-		move_pool = []Move_Id{.Decree, .Zap, .Gust, .Thunderbolt, .Cyclone, .Concuss, .Agility, .Dragon_Dance, .Overwhelm, .Depower, .Haze, .Guard, .Rally},
+		move_pool = []Move_Id{.Decree, .Zap, .Gust, .Thunderbolt, .Cyclone, .Concuss, .Agility, .Dragon_Dance, .Overwhelm, .Depower, .Haze, .Guard, .Rally, .Jolt, .Static_Shock, .Short_Circuit, .Capacitor, .Updraft, .Supercell, .Gale_Force},
 	},
 }
 
@@ -824,6 +824,8 @@ Creature :: struct {
 	played:     int,              // cards played this turn (combo synergy)
 	attacked_this_turn: bool,     // Aftershock: has an Attack been played yet this turn
 	resilient_used:     bool,     // Resilient: the once-per-battle save is spent
+	item_once_used:     bool,     // Amber Fruit / Grit Charm: the once-per-battle trigger is spent
+	energy_regen_buff:  f32,      // per-battle energy regen from relics (Mana Shard)
 
 	// transient hit feedback (decays each frame, not saved)
 	shake: f32,
@@ -1129,6 +1131,9 @@ creature_make_genes :: proc(species_idx: Species_Id, level: int, name: string, g
 	}
 	creature_recompute_stats(&c)
 	c.hp = c.max_hp
+	// Start charged: a creature that spawns with an empty bank can barely act,
+	// which made freshly-spawned wilds (and a fresh starter) fight on fumes.
+	c.energy = c.energy_max
 	return c
 }
 
@@ -1208,22 +1213,9 @@ creature_recompute_stats :: proc(c: ^Creature) {
 	energy_regen *= ge
 	energy_max *= ge
 
-	it := ITEM_DATA[c.item]
-	max_hp += int(f32(max_hp) * it.hp_pct)
-	power += it.power
-	defense += it.defense
-	speed += it.speed
-	energy_regen += it.energy_regen
-	energy_max += it.energy_max
-
-	// Colony relics (Phase 25): stackable passives for player monsters only.
-	// The state global is synced from the colony whenever relics change.
-	if c.player {
-		max_hp = int(f32(max_hp) * relic_state.hp)
-		power *= relic_state.power
-		speed *= relic_state.speed
-		energy_regen += relic_state.energy_regen
-	}
+	// Items are effect-based now, not stat sticks (see `src/items.odin`); the
+	// only one that touches stats is the energy berry.
+	energy_regen += ITEM_DATA[c.item].energy_regen
 
 	c.max_hp = max_hp
 	c.power = power
@@ -1323,6 +1315,8 @@ creature_reset_battle_state :: proc(c: ^Creature) {
 	c.powers = {}
 	c.attacked_this_turn = false
 	c.resilient_used = false
+	c.item_once_used = false
+	c.energy_regen_buff = 0
 	c.shake = 0
 	c.flash = 0
 	c.fx_t = 0

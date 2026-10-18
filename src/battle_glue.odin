@@ -369,6 +369,9 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 	}
 
 	g.battle = battle_start(defs[:], enemies[:], ids[:], &g.seed_rng)
+	// Relic Towers in range of this fight project their battle relics onto the
+	// party (see `battle_apply_relics`).
+	battle_apply_relics(&g.battle, relics_in_range(&g.colony, g.battle_hex))
 	// Fighting ends the turn for the monsters that take part, so you can't
 	// chain fights to keep moving on battle-refilled energy.
 	for &m in g.colony.roster {
@@ -384,7 +387,7 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 	}
 	// Watchtower guard bonus: applied after the opening draw/reset.
 	// Drills: the colony's defenders start every fight with some Block.
-	drills := upgrade_drills_block(&g.colony) + relic_block(&g.colony)
+	drills := upgrade_drills_block(&g.colony)
 	for p, i in g.battle.party {
 		p.block += blocks[i] + drills
 	}
@@ -438,6 +441,7 @@ update_battle :: proc(g: ^Game, dt: f32) {
 }
 
 finish_battle :: proc(g: ^Game) {
+	g.battle_arena = false
 	g.colony.capture_cards = g.battle.capture_cards
 	battle_free(&g.battle)
 	g.battle = Battle{}
@@ -509,11 +513,14 @@ grant_card_to_defender :: proc(g: ^Game, hex: Hex) -> int {
 resolve_won :: proc(g: ^Game) {
 	audio_play(.VICTORY)
 	hex := g.battle_hex
+	// `finish_battle` clears this partway through, so remember it up front.
+	was_arena := g.battle_arena
 
 	// Tally results from the wilds on the tile before anything is removed.
 	res: Battle_Results
 	food_amt := 0
 	killed_levels := 0
+	boss_killed := false
 	for m in g.colony.roster {
 		if !m.wild || !hex_equal(m.pos, hex) {
 			continue
@@ -534,12 +541,16 @@ resolve_won :: proc(g: ^Game) {
 		if m.role == .ALPHA {
 			g.colony.alphas_slain += 1
 		}
+		if m.role == .BOSS {
+			g.colony.bosses_slain[m.creature.species] = true
+			boss_killed = true
+		}
 		loot := species_loot_gold(m.creature.species, lv) + rng_below(&g.colony.rng, lv + 1)
-		res.gold += int(f32(loot) * upgrade_bounty_mult(&g.colony) * relic_gold_mult(&g.colony))
+		res.gold += int(f32(loot) * upgrade_bounty_mult(&g.colony))
 		killed_levels += lv
 		food_amt += lv * 2 + upgrade_forage_food(&g.colony)
 	}
-	res.xp = int(f32(killed_levels * 10) * upgrade_xp_mult(&g.colony) * relic_xp_mult(&g.colony))
+	res.xp = int(f32(killed_levels * 10) * upgrade_xp_mult(&g.colony) * relic_xp_mult_at(&g.colony, hex))
 	res.gold = colony_deposit_gold(&g.colony, hex, res.gold)
 
 	// Captured enemies become yours.
@@ -580,13 +591,9 @@ resolve_won :: proc(g: ^Game) {
 		}
 	}
 
-	// Item drop: Boss Rooms always drop one, normal fights sometimes. Items go
-	// to the shared inventory, equipped from the deck viewer.
-	boss_room := false
-	if t := tile_at(&g.colony, hex); t != nil && t.terrain == .BOSS_ROOM {
-		boss_room = true
-	}
-	if boss_room || rng_f32(&g.colony.rng) < 0.22 {
+	// Item drop: slaying a boss always drops one, normal fights sometimes. Items
+	// go to the shared inventory, equipped from the deck viewer.
+	if boss_killed || rng_f32(&g.colony.rng) < 0.22 {
 		// Only fits while the bag has room; build a Vault to hold more.
 		if len(g.colony.items) < colony_item_cap(&g.colony) {
 			it := random_item(&g.colony.rng)
@@ -595,16 +602,17 @@ resolve_won :: proc(g: ^Game) {
 		}
 	}
 
-	// Arena & Boss fights are the real crystal source; Spoils adds to both.
+	// Arena and Boss rewards belong to the *fight*, not the tile: an ordinary
+	// wild that happens to be standing on an Arena or Boss Room pays nothing
+	// extra, or you could farm the tile's bounty off wandering mobs.
 	if t := tile_at(&g.colony, hex); t != nil {
-		bonus := upgrade_crystal_bonus(&g.colony) + relic_crystal_bonus(&g.colony)
-		#partial switch t.terrain {
-		case .ARENA:
+		bonus := upgrade_crystal_bonus(&g.colony) + relic_crystal_bonus_at(&g.colony, hex)
+		if t.terrain == .ARENA && was_arena {
 			g.colony.crystals += ARENA_CRYSTAL_REWARD + bonus
 			g.colony.crystals_earned += ARENA_CRYSTAL_REWARD + bonus
 			res.crystals = ARENA_CRYSTAL_REWARD + bonus
 			audio_play(.CRYSTAL)
-		case .BOSS_ROOM:
+		} else if boss_killed {
 			g.colony.crystals += BOSS_CRYSTAL_REWARD + bonus
 			g.colony.crystals_earned += BOSS_CRYSTAL_REWARD + bonus
 			res.crystals = BOSS_CRYSTAL_REWARD + bonus

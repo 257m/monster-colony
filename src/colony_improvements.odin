@@ -50,6 +50,8 @@ Tile :: struct {
 	carrion:        int,   // turns a corpse marker lingers (attracts scavengers)
 	hit_t0:         f32,   // rl.GetTime of the last damage (for hit shake/flash)
 	drawbridge_down: bool, // false = raised (blocks wilds), true = lowered (bridge)
+	relics:      [RELIC_SLOTS]Relic, // a Relic Tower's slotted relics
+	relic_count: u8,
 }
 
 // Does this tile contain the given improvement (as building or overlay)?

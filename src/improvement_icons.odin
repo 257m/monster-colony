@@ -49,6 +49,7 @@ draw_improvement_icon :: proc(im: Improvement, cx, cy, zoom: f32) {
 	case .VAULT:      draw_icon_vault(cx, cy, z, t)
 	case .NURSERY:    draw_icon_nursery(cx, cy, z, t)
 	case .MENDER:     draw_icon_mender(cx, cy, z, t)
+	case .RELIC_TOWER: draw_icon_relic_tower(cx, cy, z, t)
 	case .NONE:
 	}
 }
@@ -352,4 +353,13 @@ draw_icon_mender :: proc(cx, cy, z, t: f32) {
 	rl.DrawRectangleRec(rl.Rectangle{cx - 5 * z, cy - 2 * z + bob, 10 * z, 3 * z}, green)
 	rl.DrawRectangleRec(rl.Rectangle{cx - 1.5 * z, cy - 5.5 * z + bob, 3 * z, 10 * z}, green)
 	rl.DrawCircleLinesV(rl.Vector2{cx, cy + bob}, (10 + 4 * pulse) * z, rl.Color{140, 235, 160, u8(90 * (1 - pulse))})
+}
+
+// Relic Tower: a tapered spire with a floating relic core bobbing above it.
+draw_icon_relic_tower :: proc(cx, cy, z, t: f32) {
+	rl.DrawTriangle(rl.Vector2{cx - 7 * z, cy + 8 * z}, rl.Vector2{cx + 7 * z, cy + 8 * z}, rl.Vector2{cx, cy - 9 * z}, rl.Color{96, 104, 140, 255})
+	rl.DrawTriangleLines(rl.Vector2{cx - 7 * z, cy + 8 * z}, rl.Vector2{cx + 7 * z, cy + 8 * z}, rl.Vector2{cx, cy - 9 * z}, rl.Color{150, 165, 220, 255})
+	bob := math.sin(t * 2.0) * 1.6 * z
+	rl.DrawCircleV(rl.Vector2{cx, cy - 14 * z + bob}, 3.2 * z, rl.Color{245, 215, 140, 255})
+	rl.DrawCircleLinesV(rl.Vector2{cx, cy - 14 * z + bob}, (4.5 + 1.5 * math.sin(t * 3.0)) * z, rl.Color{255, 235, 170, 190})
 }

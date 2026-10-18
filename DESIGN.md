@@ -928,3 +928,103 @@ it stored, is lost).
   at the end of every frame, and `set_status` **copies** its text into an owned
   buffer (`Game.status_buf`) rather than keeping the pointer, so the two
   `set_status(g, fmt.ctprintf(...))` callers can no longer dangle.
+- Phase 39 ✅ **revamp batch 1 — dead content wired up**: three finished things
+  had no delivery. **Dazzle** (1 Stun + 2 `Dazed` into the foe's hand) finally
+  creates the `Dazed` junk card, which nothing could produce before.
+  **Metronome** and **Scavenger** are now POWER cards (combo Strength /
+  draw-on-exhaust), so every power has a granting card, and **Slime Spit**
+  (Poison: 5 damage + 2 `Dazed`) spreads the daze as an attack. **Intimidate**
+  finally sits in a species pool (Sentinel, Slagbeast). New cards append to the
+  end of `Move_Id` so existing save ordinals don't shift.
+- Phase 40 ✅ **revamp batch 2 — elemental top-ups**: Electric, Flora, Ice and
+  Air were thin (2–3 cards each), so **twelve new cards** fill them out at
+  roughly the existing rate (~5 damage / 8–10 Block per energy). **Electric**
+  gets a real identity — chip damage (**Jolt**), stun (**Static Shock**), energy
+  denial (**Short Circuit**), chain (**Chain Lightning**), a battery
+  (**Capacitor**) and an X-cost finisher (**Overcharge**) — going from 2 cards
+  to 8. **Flora** gains **Thorn Volley** and **Photosynthesis**, **Ice** gains
+  **Frost Nova** and **Ice Wall**, **Air** gains **Updraft** and **Tailwind**,
+  so every element now has 5 or more. **Every element also gets a premium
+  attack** at the 6-damage-per-energy rate with a twist of its own —
+  **Firestorm** (15 + 3 Burn), **Tidal Crash** (18), **Bramble Crush** (16 + 2
+  Thorns), **Avalanche** (15 + 3 Vulnerable), **Fault Line** (16 + −3 Def),
+  **Supercell** (15 + Stun), **Gale Force** (6×3), **Venom Fang** (12 + 4
+  Poison) — plus **Riptide** (4×2, drain) rounding Aqua up to 6. The baseline
+  card is 5 damage per energy; these are the 15–18 damage finishers.
+- Phase 41 ✅ **AoE cards**: `Move.aoe` makes a card hit **every living foe at
+  once** — damage and hostile statuses loop over all of them, while the
+  caster-side effects (Block, buffs, powers) still land once. **Earthquake**
+  (Ground, 3.0, RARE) is the first: 12 damage to every foe. Single-target
+  resolution is unchanged, and the AI values an AoE well above its per-target
+  number (`move_value` +28) so wilds will actually use one.
+- Phase 42 ✅ **staggered hit feedback**: damage still resolves instantly, so
+  the game logic never waits, but the *feedback* now goes through a queue
+  (`Battle.hit_fx`) that plays out in `battle_update`. Events are grouped into
+  **waves by hit index**, so a multi-hit card reads as several impacts — one
+  popup, spark, flinch and cue per hit, 60ms apart — while a **spread (AoE)**
+  card is a single wave, hitting every victim at the same instant. The old
+  aggregated per-victim damage number is gone in favour of per-hit numbers, and
+  `drain_hit_fx` runs in every phase (including headless skirmishes).
+- Phase 43 ✅ **revamp batch 3 — held items**: the 12 items were flat stat
+  sticks; they are now **held items**, each a rule that hooks a specific
+  synergy. Offense: **Bloodstone** (+30% damage, 3% max-HP recoil per Attack),
+  **Weakpoint Lens** (+25% on super-effective hits), **Ricochet Charm**
+  (multi-hit Attacks land one extra hit). Synergy: **Siphon Gland** (+50% drain
+  / lifesteal), **Venom Sac** (+1 Poison/Burn stack), **Spiked Carapace** (start
+  with 2 Thorns). Sustain and defense: **Ration Pouch** (4%/turn), **Amber
+  Fruit** (once, heal 25% below half HP), **Cleansing Bloom** (cleanse each
+  turn), **Grit Charm** (survive one lethal blow at 1 HP) and **Grudge Idol**
+  (+2 Strength when hit super-effectively). **Snare Kit** stays colony-facing.
+  The enum keeps its 12 slots in order, so old saves still load.
+- Phase 44 ✅ **revamp batch 4 — Relic Towers**: relics are no longer
+  colony-wide. Each one must be slotted into a **Relic Tower** (a new
+  improvement, 60g, 3 slots, 60 HP) and then projects over a **5-tile radius**
+  around it, so relics became a base-building decision rather than a passive
+  pile. The 10 relics were reworked around what "in range" means: **battle**
+  relics (**War Banner** +2 Str, **Iron Idol** +10 Block, **Swift Totem** +4
+  Speed, **Mana Shard** +1 energy regen, **Warden's Seal** +2 Thorns) buff your
+  party for a fight inside the radius, **economy** relics (**Coin of Plenty**,
+  **Harvest Charm**, **Siege Core**) boost the Mines, Farms and Turrets inside
+  it, and **post-battle** relics (**Crystal Prism**, **Beast Fang**) pay out for
+  wins there. Copies stack. The `J` panel gained **Place** / **Take** buttons
+  (Place arms a click-on-the-tower mode with an on-map banner), the build panel
+  and tile readout list a tower's contents, and `SAVE_VERSION` is **6** because
+  tiles now carry their slots.
+- Phase 45 ✅ **revamp batch 4b — one inventory**: relics became **bag entries**
+  instead of a separate count array (`Colony.relic_bag` replaces
+  `Colony.relics`), so items and relics live in one place and the `J` relic
+  panel is gone (`J` is now an alias for the inventory). The bag panel was
+  rewritten as a proper **inventory screen**: a **slot grid** (items first, then
+  relics) with a per-slot procedural icon, a detail pane showing the name, kind,
+  description and full effect breakdown, and action buttons — **Equip** /
+  **Unequip** for items (onto the map-selected monster) and **Place** /
+  **Take back** for relics. `SAVE_VERSION` is **7** for the new bag layout.
+- Phase 46 ✅ **revamp batch 5 — the quest board**: the 10 easy milestones
+  became a **20-entry ladder** running from "build your first Farm" out to
+  **slaying each of the five bosses**, surviving **150 turns**, winning **50
+  battles**, weathering **10 raids** and commanding **20 monsters**. Rewards
+  scale with the target (96 crystals total, up from 27), and the board pays into
+  `crystals_earned` too. Per-boss quests needed boss tracking, so the colony
+  gained `bosses_slain[Species_Id]` (set on a `.BOSS` kill, saved —
+  `SAVE_VERSION` is **8**), and the panel is now a **two-column** board. The
+  Deep One was also missing from the boss spawn table, so it could never be
+  fought — that is fixed (5 bosses, 5 spawns).
+- Phase 47 ✅ **energy, and rewards scoped to the fight**: creatures were created
+  with `energy = 0` against a bank of 10–17 and ~2 regen a turn, so a wild
+  spawned that turn fought on fumes (and so did a fresh starter). Every creature
+  now spawns **charged** (`energy = energy_max`). Separately, `resolve_won` paid
+  the **Arena** bounty from the *tile* — any wandering wild standing on an Arena
+  paid 5 crystals — and the **Boss** bounty likewise. Both are now scoped to the
+  fight: the Arena reward needs a **paid challenge** (`Game.battle_arena`, since
+  `finish_battle` clears it mid-resolve it is captured up front) and the Boss
+  reward needs an actual **`.BOSS` kill**. The hovered-tile readout now explains
+  Arena / Trading Post / Boss Room tiles, which is how you start an Arena fight:
+  stand a monster there and press **T**.
+- Phase 48 ✅ **wild fight-readiness**: a plain wild that wanders onto one of
+  your monsters starts the fight, so wilds now **hold off unless they are
+  charged** — below **40%** of their energy bank they will not step onto your
+  monsters (or start a crowded-tile brawl), and above that the odds scale with
+  energy, so a full wild almost always commits. Verified: 0–39% energy = never,
+  50% = ~48%, 80% = ~79%, 100% = always. Raiders, alphas and sieges still hunt
+  deliberately. (A procedural creature-sprite pass was tried here and reverted —
+  the circles keep their letter until per-species art exists.)

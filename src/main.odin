@@ -62,6 +62,9 @@ Game :: struct {
 
 	// tutorial tips window
 	show_tips: bool,
+	// relic placement: a relic is "in hand" until it's slotted into a tower
+	relic_place_active: bool,
+	relic_place:        Relic,
 
 	// item bag viewer
 	show_bag:  bool,
@@ -78,7 +81,7 @@ Game :: struct {
 	show_quests: bool,
 
 	// relics panel (Phase 25)
-	show_relics: bool,
+
 
 	// hall of the fallen (graveyard) — Phase 22
 	show_graveyard: bool,
@@ -139,6 +142,7 @@ Game :: struct {
 	battle_choice_open: bool,
 	battle_hex:         Hex,
 	battle_forced:      bool, // true when a wild is attacking you (can't back out)
+	battle_arena:       bool, // true for a paid Arena challenge (Arena rewards only then)
 	battle_auto:        bool,
 	results_open:       bool,
 	results:            Battle_Results,
@@ -242,6 +246,7 @@ close_all_panels :: proc(g: ^Game) {
 	g.show_improvements = false
 	g.show_moves = false
 	g.show_tips = false
+	g.relic_place_active = false
 	g.show_bag = false
 	g.show_upgrades = false
 	g.show_quests = false
@@ -369,7 +374,7 @@ game_update :: proc(g: ^Game, dt: f32) {
 		return
 	}
 	if g.show_bag {
-		update_bag(g)
+		update_inventory(g)
 		return
 	}
 	if g.show_upgrades {
@@ -380,10 +385,7 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_quests(g)
 		return
 	}
-	if g.show_relics {
-		update_relics(g)
-		return
-	}
+
 	if g.show_graveyard {
 		update_graveyard(g)
 		return
@@ -445,7 +447,10 @@ game_update :: proc(g: ^Game, dt: f32) {
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.J) {
-		g.show_relics = true
+		// Relics live in the inventory now, alongside items.
+		g.show_bag = true
+		g.bag_index = 0
+		g.bag_first = 0
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.Z) {
@@ -567,6 +572,26 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		}
 		return
 	}
+	// Relic placement: a relic is in hand; click a Relic Tower to slot it.
+	if g.relic_place_active {
+		if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.RIGHT) {
+			g.relic_place_active = false
+			set_status(g, "Relic placement cancelled.")
+			return
+		}
+		if rl.IsMouseButtonPressed(.LEFT) {
+			h := hex_renderer_hovered(&g.renderer)
+			t := tile_at(&g.colony, h)
+			if place_relic(&g.colony, t, g.relic_place) {
+				g.relic_place_active = false
+			} else {
+				set_status(g, "Relic Towers only, and they need a free slot.")
+			}
+			return
+		}
+		return
+	}
+
 	if g.build_mode {
 		update_build(g)
 		return
@@ -998,7 +1023,7 @@ game_draw :: proc(g: ^Game) {
 		draw_moves(g)
 	}
 	if g.show_bag {
-		draw_bag(g)
+		draw_inventory(g)
 	}
 	if g.show_upgrades {
 		draw_upgrades(g)
@@ -1006,9 +1031,7 @@ game_draw :: proc(g: ^Game) {
 	if g.show_quests {
 		draw_quests(g)
 	}
-	if g.show_relics {
-		draw_relics(g)
-	}
+
 	if g.show_graveyard {
 		draw_graveyard(g)
 	}

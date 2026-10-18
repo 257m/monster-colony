@@ -719,7 +719,22 @@ draw_colony_hud :: proc(g: ^Game) {
 		}
 		rl.DrawText(info, 236, 130, 16, rl.Color{180, 180, 200, 255})
 
-		oy := i32(152)
+		// Special tiles: say what you can actually do standing here.
+		special := i32(0)
+		#partial switch t.terrain {
+		case .ARENA:
+			rl.DrawText("Arena: stand a monster here, then press T to challenge it (gold in, crystals out).", 236, 148, 14, rl.Color{235, 205, 130, 255})
+			special = 18
+		case .TRADING_POST:
+			rl.DrawText("Trading Post: stand a monster here, then press T to heal, recruit or buy capture cards.", 236, 148, 14, rl.Color{200, 220, 160, 255})
+			special = 18
+		case .BOSS_ROOM:
+			rl.DrawText("Boss Room: a boss pack lairs here - beat it for crystals and a relic.", 236, 148, 14, rl.Color{235, 150, 150, 255})
+			special = 18
+		case:
+		}
+
+		oy := i32(152) + special
 		// Improvement production status (explains why it may be idle).
 		green := rl.Color{150, 220, 150, 255}
 		amber := rl.Color{235, 185, 120, 255}
@@ -747,6 +762,17 @@ draw_colony_hud :: proc(g: ^Game) {
 			}
 			rl.DrawText(line, 236, oy, 14, staffed ? green : amber)
 			oy += 18
+		case .RELIC_TOWER:
+			ht := tile_at(&g.colony, hovered)
+			if ht != nil {
+				line := fmt.ctprintf("Relic Tower: %d/%d slots, projecting %d tiles", int(ht.relic_count), RELIC_SLOTS, RELIC_RADIUS)
+				rl.DrawText(line, 236, oy, 14, rl.Color{235, 195, 110, 255})
+				oy += 18
+				for k in 0..<int(ht.relic_count) {
+					rl.DrawText(fmt.ctprintf("  %s", relic_name(ht.relics[k])), 236, oy, 14, rl.Color{220, 210, 180, 255})
+					oy += 16
+				}
+			}
 		case:
 		}
 
@@ -766,6 +792,16 @@ draw_colony_hud :: proc(g: ^Game) {
 				oy += 18
 			}
 		}
+	}
+
+	// Relic placement banner.
+	if g.relic_place_active {
+		msg := fmt.ctprintf("Placing %s  -  click a Relic Tower to slot it   (Esc cancels)", relic_name(g.relic_place))
+		mw := rl.MeasureText(msg, 20)
+		br := rl.Rectangle{sw / 2 - f32(mw) / 2 - 18, 150, f32(mw) + 36, 42}
+		rl.DrawRectangleRounded(br, 0.4, 6, rl.Color{32, 28, 16, 240})
+		rl.DrawRectangleRoundedLinesEx(br, 0.4, 6, 2, rl.Color{235, 195, 110, 255})
+		rl.DrawText(msg, i32(br.x) + 18, i32(br.y) + 10, 20, rl.Color{245, 220, 150, 255})
 	}
 
 	if g.show_key_hints {

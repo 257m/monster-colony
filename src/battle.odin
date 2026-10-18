@@ -67,6 +67,21 @@ Popup :: struct {
 	max_life: f32,
 }
 
+// One queued piece of per-hit feedback. Damage resolves instantly (so the game
+// logic never waits), but the feedback plays out in `wave`s: every event from
+// the same hit index fires together, and waves are spaced by HIT_FX_STAGGER. A
+// multi-hit card therefore reads as several impacts, while a spread (AoE) card
+// is a single wave — every victim hit at the same instant.
+Hit_Fx :: struct {
+	wave:   int,
+	kind:   Popup_Kind,
+	value:  int,
+	side:   Battle_Side,
+	target: ^Creature, // who flinches and sparks
+}
+
+HIT_FX_STAGGER :: f32(0.06)
+
 Actor :: struct {
 	side:  Battle_Side,
 	index: int, // party index (PLAYER) or enemy index (WILD)
@@ -96,6 +111,9 @@ Battle :: struct {
 	rng:           Rng,
 	log:           [dynamic]string,
 	popups:        [dynamic]Popup,
+	hit_fx:        [dynamic]Hit_Fx, // queued per-hit feedback (see Hit_Fx)
+	hit_fx_wave:   int,
+	hit_fx_t:      f32,
 	shake:         f32,
 	shake_mag:     f32,
 }
@@ -125,6 +143,8 @@ battle_free :: proc(b: ^Battle) {
 	for i in 0..<len(b.enemies) {
 		creature_free_piles(b.enemies[i])
 	}
+	delete(b.hit_fx)
+	b.hit_fx = make([dynamic]Hit_Fx, 0)
 	delete(b.party)
 	b.party = make([dynamic]^Creature, 0)
 	delete(b.party_done)
@@ -144,6 +164,7 @@ battle_free :: proc(b: ^Battle) {
 	b.log = make([dynamic]string, 0)
 	delete(b.popups)
 	b.popups = make([dynamic]Popup, 0)
+	b.hit_fx = make([dynamic]Hit_Fx, 0)
 }
 
 shuffle_cards :: proc(cards: ^[dynamic]Move_Id, rng: ^Rng) {
@@ -169,6 +190,7 @@ battle_start :: proc(defenders: []^Creature, enemies: []^Creature, enemy_ids: []
 	b.rng = rng_make(rng_next_u64(seed_rng))
 	b.log = make([dynamic]string, 0)
 	b.popups = make([dynamic]Popup, 0)
+	b.hit_fx = make([dynamic]Hit_Fx, 0)
 	b.party = make([dynamic]^Creature, 0)
 	b.party_done = make([dynamic]bool, 0)
 	b.enemies = make([dynamic]^Creature, 0)
@@ -323,13 +345,13 @@ creature_draw :: proc(c: ^Creature, n: int, rng: ^Rng) {
 creature_begin_round :: proc(b: ^Battle, c: ^Creature, rng: ^Rng) {
 	c.played = 0
 	c.attacked_this_turn = false
-	// Energy is generated each round and carries over up to the bank cap.
-	c.energy = min(c.energy + c.energy_regen, c.energy_max)
+	// Energy is generated each round and carries over up to the bank cap. Relic
+	// towers in range (Mana Shard) add a battle-only regen bonus.
+	c.energy = min(c.energy + c.energy_regen + c.energy_regen_buff, c.energy_max)
 	draw := 5
 	if c.ability == .Lucky {
 		draw += ABILITY_LUCKY_DRAW
 	}
-	draw += ITEM_DATA[c.item].draw
 	creature_draw(c, draw, rng)
 	if extra := draw - 5; extra > 0 {
 		spawn_popup(b, side_of(b, c), .DRAW, extra)
@@ -390,6 +412,19 @@ creature_end_round :: proc(b: ^Battle, c: ^Creature) {
 	}
 	if c.vulnerable > 0 {
 		c.vulnerable -= 1
+	}
+	// Ration Pouch: a trickle of healing each turn (the caller's heal popup covers
+	// it, since it diffs HP around this call).
+	if it := ITEM_DATA[c.item]; it.turn_heal_pct > 0 && c.hp > 0 {
+		c.hp = min(c.hp + max(int(f32(c.max_hp) * it.turn_heal_pct), 1), c.max_hp)
+	}
+	// Cleansing Bloom: shrug off Poison / Burn / Stun every turn.
+	if ITEM_DATA[c.item].cleanse_turn {
+		if n := creature_cleanse_status(c); n > 0 {
+			spawn_popup(b, side_of(b, c), .CLEAR, n)
+			creature_burst(c, popup_color(.HEAL), 0.6)
+			battle_log(b, "%s's Cleansing Bloom clears its status.", c.name)
+		}
 	}
 	if c.ability == .Regenerator && c.hp > 0 {
 		c.hp = min(c.hp + max(int(f32(c.max_hp)*ABILITY_REGENERATOR_PCT), 1), c.max_hp)
@@ -755,9 +790,11 @@ apply_damage :: proc(b: ^Battle, attacker: ^Creature, target: ^Creature, base: i
 	}
 	defense_mult := 10.0 / (10.0 + creature_defense(target))
 
-	// Ability multipliers: Predator (attacker) and Abyssal (target).
+	// Ability multipliers: Predator (attacker) and Abyssal (target). Held items
+	// add raw damage (Bloodstone) and type-advantage damage (Weakpoint Lens).
+	item_mult := item_damage_mult(attacker.item, type_mult > 1.0)
 	d := int(f32(base) * offense.stat * offense.mult * type_mult * stab_mult * vuln_mult * defense_mult *
-		(1.0 - burn_weaken(attacker)) * ability_attack_mult(attacker, target) * ability_defense_mult(target))
+		(1.0 - burn_weaken(attacker)) * ability_attack_mult(attacker, target) * ability_defense_mult(target) * item_mult)
 	absorbed := min(target.block, d)
 	target.block -= absorbed
 	d -= absorbed
@@ -766,7 +803,16 @@ apply_damage :: proc(b: ^Battle, attacker: ^Creature, target: ^Creature, base: i
 		target.shake = CREATURE_SHAKE_DUR
 		target.flash = 0.22
 		ability_on_hit_taken(b, target) // Vengeance
-		ability_try_survive(b, target)  // Resilient
+		// Grudge Idol: a super-effective hit hardens the victim.
+		if type_mult > 1.0 {
+			if w := ITEM_DATA[target.item].weakness_str; w > 0 {
+				target.strength += w
+				spawn_popup(b, side_of(b, target), .BUFF, w)
+				creature_burst(target, popup_color(.BUFF), 0.5)
+			}
+		}
+		ability_try_survive(b, target) // Resilient
+		item_try_save(b, target)       // Grit Charm / Amber Fruit
 		battle_sfx(.HIT, 0.8)
 	}
 	return d
@@ -1026,6 +1072,65 @@ spawn_popup :: proc(b: ^Battle, side: Battle_Side, kind: Popup_Kind, value: int)
 	append(&b.popups, Popup{value = value, kind = kind, side = side, life = 0.95, max_life = 0.95})
 }
 
+// Queue per-hit feedback. Events are grouped by `wave` (the hit index), so a
+// multi-hit card plays out one hit at a time while a spread (AoE) card — one
+// hit, many victims — fires every victim in the same wave.
+queue_hit_fx :: proc(b: ^Battle, wave: int, kind: Popup_Kind, value: int, side: Battle_Side, target: ^Creature) {
+	if value == 0 {
+		return
+	}
+	append(&b.hit_fx, Hit_Fx{wave = wave, kind = kind, value = value, side = side, target = target})
+}
+
+// Play one queued piece of feedback: popup, spark, flinch and cue.
+emit_hit_fx :: proc(b: ^Battle, fx: Hit_Fx) {
+	spawn_popup(b, fx.side, fx.kind, fx.value)
+	if fx.target != nil {
+		creature_burst(fx.target, popup_color(fx.kind), 0.45)
+		fx.target.shake = CREATURE_SHAKE_DUR * 0.6
+		fx.target.flash = 0.18
+	}
+	#partial switch fx.kind {
+	case .DAMAGE:
+		b.shake = SHAKE_DUR
+		b.shake_mag = clamp(3.0 + f32(fx.value) * 0.4, 3.0, 10.0)
+		battle_sfx(.HIT, 0.8)
+	case .HEAL:
+		battle_sfx(.HEAL, 0.6)
+	case .POISON, .BURN:
+		battle_sfx(.DOT, 0.5)
+	case .BLOCK, .DEFEND:
+		battle_sfx(.BLOCK, 0.5)
+	case .BUFF, .REGEN, .THORNS:
+		battle_sfx(.BUFF, 0.5)
+	case:
+	}
+}
+
+// Drain the feedback queue: every event in the current wave fires at once, then
+// the next wave waits HIT_FX_STAGGER.
+drain_hit_fx :: proc(b: ^Battle, dt: f32) {
+	if len(b.hit_fx) == 0 {
+		return
+	}
+	b.hit_fx_t -= dt
+	if b.hit_fx_t > 0 {
+		return
+	}
+	for len(b.hit_fx) > 0 && b.hit_fx[0].wave == b.hit_fx_wave {
+		fx := b.hit_fx[0]
+		ordered_remove(&b.hit_fx, 0)
+		emit_hit_fx(b, fx)
+	}
+	b.hit_fx_wave += 1
+	if len(b.hit_fx) > 0 {
+		b.hit_fx_t = HIT_FX_STAGGER
+	} else {
+		b.hit_fx_wave = 0
+		b.hit_fx_t = 0
+	}
+}
+
 // Fire a battle cue, unless the engine is running silently (headless skirmish).
 battle_sfx :: proc(cue: Sfx, volume := f32(0.7)) {
 	if !battle_silent {
@@ -1089,25 +1194,24 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 	}
 	benef_side := side_of(b, benef)
 
-	if move_has_damage(m) && victim != nil {
-		bonus := 0
-		if m.vuln_bonus > 0 && victim.vulnerable > 0 {
-			bonus += m.vuln_bonus
+	// Who gets hurt: the chosen victim, or every living foe for an AoE card.
+	victims: [24]^Creature
+	nvictims := 0
+	if m.aoe {
+		foes := self_side == .PLAYER ? b.enemies[:] : b.party[:]
+		for f in foes {
+			if f.hp > 0 && nvictims < len(victims) {
+				victims[nvictims] = f
+				nvictims += 1
+			}
 		}
-		if m.block_bonus > 0 && c.block > 0 {
-			bonus += m.block_bonus
-		}
-		if m.combo_bonus > 0 && c.played > 0 {
-			bonus += m.combo_bonus
-		}
-		// Execute: extra damage against a badly hurt foe.
-		if m.execute_bonus > 0 && m.execute_pct > 0 && f32(victim.hp) < m.execute_pct * f32(victim.max_hp) {
-			bonus += m.execute_bonus
-		}
-		// Teamwork: extra damage for every other ally still standing.
-		if m.ally_bonus > 0 {
-			bonus += m.ally_bonus * other_allies_alive(b, c)
-		}
+	} else if victim != nil {
+		victims[0] = victim
+		nvictims = 1
+	}
+
+	// --- Damage. One victim, or every foe at once for an AoE card. ---
+	if move_has_damage(m) && nvictims > 0 {
 		// On-hit effects resolve per hit, which is what gives multi-hit moves an
 		// identity: lifesteal drains in several bites, and thorns bite back once
 		// per hit, so many small hits heal more but hurt more too.
@@ -1115,65 +1219,90 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 		if c.ability == .Vampiric {
 			leech += ABILITY_VAMPIRIC_PCT
 		}
-		leech += ITEM_DATA[c.item].on_hit_leech_pct
+		// Siphon Gland: drain and lifesteal heal more.
+		if dm := ITEM_DATA[c.item].drain_mult; dm > 0 {
+			leech *= 1.0 + dm
+		}
 
-		total := 0
 		scaled := move_scaled_damage(m, c)
 		mult := move_damage_mult(m, c)
 		offense := move_offense(m, c)
 		hits := max(m.hits, 1)
-		// Aftershock: the first Attack each turn hits twice.
+		// Ricochet Charm: multi-hit Attacks land one extra hit.
+		if m.hits > 1 {
+			hits += ITEM_DATA[c.item].extra_hits
+		}
+		// Aftershock: the first Attack each turn hits twice. (Once per card, not
+		// once per victim.)
 		if m.kind == .ATTACK && ability_first_attack_doubles(c) && !c.attacked_this_turn {
 			hits *= 2
 		}
 		if m.kind == .ATTACK {
 			c.attacked_this_turn = true
 		}
-		for hit in 0..<hits {
-			base := int(f32(dmg_base + scaled) * mult) + (hit == 0 ? bonus : 0)
-			hit_dmg := apply_damage(b, c, victim, base, m.element, offense)
-			total += hit_dmg
-			if hit_dmg <= 0 {
-				continue
+
+		for vi in 0..<nvictims {
+			victim := victims[vi]
+			victim_side := side_of(b, victim)
+			// Flat damage bonuses from this card's synergies, per victim.
+			bonus := 0
+			if m.vuln_bonus > 0 && victim.vulnerable > 0 {
+				bonus += m.vuln_bonus
 			}
-			if leech > 0 {
-				heal := max(int(f32(hit_dmg) * leech), 1)
-				before := c.hp
-				c.hp = min(c.hp + heal, c.max_hp)
-				if c.hp > before {
-					creature_burst(c, popup_color(.HEAL), 0.5)
-					spawn_popup(b, self_side, .HEAL, c.hp - before)
+			if m.block_bonus > 0 && c.block > 0 {
+				bonus += m.block_bonus
+			}
+			if m.combo_bonus > 0 && c.played > 0 {
+				bonus += m.combo_bonus
+			}
+			// Execute: extra damage against a badly hurt foe.
+			if m.execute_bonus > 0 && m.execute_pct > 0 && f32(victim.hp) < m.execute_pct * f32(victim.max_hp) {
+				bonus += m.execute_bonus
+			}
+			// Teamwork: extra damage for every other ally still standing.
+			if m.ally_bonus > 0 {
+				bonus += m.ally_bonus * other_allies_alive(b, c)
+			}
+
+			total := 0
+			for hit in 0..<hits {
+				base := int(f32(dmg_base + scaled) * mult) + (hit == 0 ? bonus : 0)
+				hit_dmg := apply_damage(b, c, victim, base, m.element, offense)
+				total += hit_dmg
+				if hit_dmg <= 0 {
+					continue
+				}
+				// The damage has landed; the feedback is queued per hit so a
+				// multi-hit card reads as several impacts (see `queue_hit_fx`).
+				queue_hit_fx(b, hit, .DAMAGE, hit_dmg, victim_side, victim)
+				if leech > 0 {
+					heal := max(int(f32(hit_dmg) * leech), 1)
+					before := c.hp
+					c.hp = min(c.hp + heal, c.max_hp)
+					queue_hit_fx(b, hit, .HEAL, c.hp - before, self_side, c)
+				}
+				if victim.thorns > 0 {
+					back := max(int(f32(c.max_hp) * thorns_fraction(victim.thorns)), 1)
+					c.hp -= back
+					victim.thorns -= 1 // a stack is spent on each hit
+					queue_hit_fx(b, hit, .DAMAGE, back, self_side, c)
+					battle_log(b, "%s's thorns bite %s for %d.", victim.name, c.name, back)
+				}
+				// Sanguine: a flat heal per hit landed (multi-hit friendly).
+				if h := power_on_hit_heal(c); h > 0 {
+					before := c.hp
+					c.hp = min(c.hp + h, c.max_hp)
+					queue_hit_fx(b, hit, .HEAL, c.hp - before, self_side, c)
+				}
+				// Toxic (power) + Envenom (ability): every hit applies Poison.
+				if tp := power_toxic_poison(c) + ability_on_hit_poison(c); tp > 0 {
+					victim.poison += tp
+					queue_hit_fx(b, hit, .POISON, tp, victim_side, victim)
 				}
 			}
-			if victim.thorns > 0 {
-				back := max(int(f32(c.max_hp) * thorns_fraction(victim.thorns)), 1)
-				c.hp -= back
-				victim.thorns -= 1 // a stack is spent on each hit
-				spawn_popup(b, self_side, .DAMAGE, back)
-				creature_burst(c, popup_color(.DAMAGE), 0.4)
-				battle_log(b, "%s's thorns bite %s for %d.", victim.name, c.name, back)
+			if total > 0 {
+				c.shake = CREATURE_SHAKE_DUR * 0.4
 			}
-			// Sanguine: a flat heal per hit landed (multi-hit friendly).
-			if h := power_on_hit_heal(c); h > 0 {
-				before := c.hp
-				c.hp = min(c.hp + h, c.max_hp)
-				if c.hp > before {
-					creature_burst(c, popup_color(.HEAL), 0.5)
-					spawn_popup(b, self_side, .HEAL, c.hp - before)
-				}
-			}
-			// Toxic (power) + Envenom (ability): every hit applies Poison.
-			if tp := power_toxic_poison(c) + ability_on_hit_poison(c); tp > 0 {
-				victim.poison += tp
-				spawn_popup(b, victim_side, .POISON, tp)
-				creature_burst(victim, popup_color(.POISON), 0.4)
-			}
-		}
-		if total > 0 {
-			spawn_popup(b, victim_side, .DAMAGE, total)
-			creature_burst(victim, popup_color(.DAMAGE), 0.4)
-			b.shake = SHAKE_DUR
-			b.shake_mag = clamp(3.0 + f32(total) * 0.4, 3.0, 10.0)
 		}
 		c.shake = CREATURE_SHAKE_DUR * 0.4
 	}
@@ -1242,8 +1371,10 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 		spawn_popup(b, benef_side, .ENERGY, m.energy_give)
 		creature_burst(benef, popup_color(.ENERGY), 0.5)
 	}
-	// Hostile effects land on the victim.
-	if victim != nil {
+	// Hostile effects land on every victim (one, or all foes for an AoE card).
+	for vi in 0..<nvictims {
+		victim := victims[vi]
+		victim_side := side_of(b, victim)
 		if m.vulnerable > 0 {
 			victim.vulnerable += m.vulnerable
 			spawn_popup(b, victim_side, .DEBUFF, m.vulnerable)
@@ -1264,14 +1395,18 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 			spawn_popup(b, victim_side, .SHATTER, int(m.defense_down))
 			creature_burst(victim, popup_color(.SHATTER), 0.5)
 		}
+		// Venom Sac: this creature's Poison and Burn bite deeper.
+		status_bonus := ITEM_DATA[c.item].status_bonus
 		if m.poison > 0 {
-			victim.poison += m.poison
-			spawn_popup(b, victim_side, .POISON, m.poison)
+			applied := m.poison + status_bonus
+			victim.poison += applied
+			spawn_popup(b, victim_side, .POISON, applied)
 			creature_burst(victim, popup_color(.POISON), 0.5)
 		}
 		if m.burn > 0 {
-			victim.burn += m.burn
-			spawn_popup(b, victim_side, .BURN, m.burn)
+			applied := m.burn + status_bonus
+			victim.burn += applied
+			spawn_popup(b, victim_side, .BURN, applied)
 			creature_burst(victim, popup_color(.BURN), 0.5)
 		}
 		if m.double_poison && victim.poison > 0 {
@@ -1311,6 +1446,13 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 				battle_log(b, "%s burns away %d of %s's energy.", c.name, lost, victim.name)
 			}
 		}
+	}
+	// Bloodstone recoil: every Attack costs the holder a slice of its max HP.
+	if pct := ITEM_DATA[c.item].self_damage_pct; pct > 0 && m.kind == .ATTACK {
+		recoil := max(int(f32(c.max_hp) * pct), 1)
+		c.hp -= recoil
+		queue_hit_fx(b, 0, .DAMAGE, recoil, self_side, c)
+		battle_log(b, "%s's Bloodstone burns it for %d.", c.name, recoil)
 	}
 	// Self-costs: paid by the caster no matter the target.
 	if m.self_strength_down > 0 {
@@ -1657,6 +1799,9 @@ battle_update :: proc(b: ^Battle, dt: f32) {
 			i += 1
 		}
 	}
+
+	// Play out queued per-hit feedback (waves of one hit index at a time).
+	drain_hit_fx(b, dt)
 
 	if b.phase == .WON || b.phase == .LOST || b.phase == .CAPTURED {
 		b.timer += dt
