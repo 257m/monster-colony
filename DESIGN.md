@@ -1092,3 +1092,16 @@ it stored, is lost).
   drops you to floor 1 but **keeps your best floor** as the high score, and four
   new milestones reward reaching floors 10 / 25 / 50 / **100**. `SAVE_VERSION`
   is **9**.
+
+- Phase 54 ✅ **the Arena is a run**: one **flat** entry fee (40g) buys a chain
+  of floors that always starts at **floor 1**. Each cleared floor **banks** its
+  purse instead of paying it; the run ends when you **cash out** (banking the
+  winnings) or when your party **wipes** (losing them, and dropping you to
+  floor 1 — your best floor stays as the record). The payout is therefore a
+  function of how deep you got. Arenas **drop gold** too (25 + 2·floor per
+  cleared floor, on top of kill loot). And the tower gets **stingier as you
+  climb**: a between-floor party heal comes every **1 / 2 / 5 / 10 / 20** floors
+  (below 10, 30, 60, 120, then every 20), which is how difficulty scales without
+  a brutal level curve. New capstone milestone: **reach Arena floor 1000**
+  (+100 crystals), and the quest board is now three columns to hold it.
+  `SAVE_VERSION` is **10**.

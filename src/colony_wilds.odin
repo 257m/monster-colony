@@ -226,12 +226,40 @@ arena_species_for :: proc(floor: int, rng: ^Rng) -> Species_Id {
 	return pool[rng_below(rng, len(pool))]
 }
 
-arena_entry_cost :: proc(c: ^Colony) -> int {
-	return ARENA_ENTRY_COST + max(c.arena_floor, 1) * ARENA_ENTRY_PER_FLOOR
+// Crystals a single floor banks. The run's payout is the sum of these, so it is
+// a function of how deep you got.
+arena_floor_purse :: proc(floor: int) -> int {
+	return ARENA_CRYSTAL_REWARD + max(floor, 1) * ARENA_PURSE_PER_FLOOR
 }
 
-arena_purse :: proc(c: ^Colony) -> int {
-	return ARENA_CRYSTAL_REWARD + max(c.arena_floor, 1) * ARENA_PURSE_PER_FLOOR
+// Between floors your party patches up, but the tower gets stingier the higher
+// you climb: a heal per floor early, then per 2, per 5, per 10, per 20. That is
+// how the tower scales without needing a brutal level curve.
+arena_heal_interval :: proc(floor: int) -> int {
+	switch {
+	case floor < 10:  return 1
+	case floor < 30:  return 2
+	case floor < 60:  return 5
+	case floor < 120: return 10
+	case:             return 20
+	}
+}
+
+arena_heals_on :: proc(floor: int) -> bool {
+	return floor % arena_heal_interval(floor) == 0
+}
+
+// Clear any Arena challengers off the current battle tile.
+arena_reset :: proc(g: ^Game) {
+	i := 0
+	for i < len(g.colony.roster) {
+		m := &g.colony.roster[i]
+		if m.wild && hex_equal(m.pos, g.battle_hex) {
+			remove_monster_at(&g.colony, i, false)
+			continue
+		}
+		i += 1
+	}
 }
 
 colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {

@@ -617,16 +617,32 @@ resolve_won :: proc(g: ^Game) {
 	if t := tile_at(&g.colony, hex); t != nil {
 		bonus := upgrade_crystal_bonus(&g.colony) + relic_crystal_bonus_at(&g.colony, hex)
 		if t.terrain == .ARENA && was_arena {
-			purse := arena_purse(&g.colony) + bonus
-			g.colony.crystals += purse
-			g.colony.crystals_earned += purse
+			floor := max(g.colony.arena_floor, 1)
+			// The floor's purse is *banked*, not paid: the run pays out when you
+			// cash out, and a wipe loses it.
+			purse := arena_floor_purse(floor) + bonus
+			g.colony.arena_run_crystals += purse
 			res.crystals = purse
+			// Arenas drop gold too, on top of the kill loot.
+			res.gold += colony_deposit_gold(&g.colony, hex, ARENA_GOLD_PER_FLOOR + floor * 2)
 			// Climb a floor, and remember the high-water mark.
-			g.colony.arena_floor = max(g.colony.arena_floor, 1) + 1
+			g.colony.arena_floor = floor + 1
 			if g.colony.arena_floor > g.colony.arena_best_floor {
 				g.colony.arena_best_floor = g.colony.arena_floor
 			}
-			colony_notify(&g.colony, "Arena floor %d cleared!", g.colony.arena_floor - 1)
+			// The tower's spring: a party heal, but the tower gets stingier as
+			// you climb (every 1, 2, 5, 10, 20 floors).
+			if arena_heals_on(floor) {
+				for &m in g.colony.roster {
+					if m.wild || m.creature.hp <= 0 || !hex_equal(m.pos, hex) {
+						continue
+					}
+					m.creature.hp = min(m.creature.hp + max(int(f32(m.creature.max_hp) * ARENA_HEAL_PCT), 1), m.creature.max_hp)
+					m.creature.energy = m.creature.energy_max
+				}
+				colony_notify(&g.colony, "The tower's spring restores your party.")
+			}
+			colony_notify(&g.colony, "Arena floor %d cleared - %d crystals banked.", floor, purse)
 			audio_play(.CRYSTAL)
 		} else if boss_killed {
 			g.colony.crystals += BOSS_CRYSTAL_REWARD + bonus
@@ -722,10 +738,15 @@ resolve_lost :: proc(g: ^Game) {
 		}
 		i += 1
 	}
-	// A lost Arena match resets: the team leaves and you drop back to floor 1
-	// (your best floor is kept as the record to beat).
+	// A lost Arena match ends the run: the team leaves, the winnings are lost,
+	// and you start again from floor 1 (your best floor is kept as the record).
 	if t := tile_at(&g.colony, g.battle_hex); t != nil && t.terrain == .ARENA {
 		arena_reset(g)
+		if g.colony.arena_run && g.colony.arena_run_crystals > 0 {
+			colony_notify(&g.colony, "The run ends here - %d crystals lost.", g.colony.arena_run_crystals)
+		}
+		g.colony.arena_run = false
+		g.colony.arena_run_crystals = 0
 		g.colony.arena_floor = 1
 	}
 	g.mode = .MAP

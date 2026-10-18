@@ -94,14 +94,16 @@ ARENA_ENTRY_COST       :: 40
 ARENA_TEAM_SIZE        :: 6
 ARENA_LEVEL_BONUS      :: 2
 ARENA_CRYSTAL_REWARD   :: 12
-// The Arena is a tower: each win takes you a floor higher, and the challengers
-// (and the purse) grow with it.
+// The Arena is a *run*: one flat entry fee buys a chain of floors, starting at
+// floor 1 every time. Each cleared floor banks its purse; the run ends when you
+// cash out (keeping the winnings) or when your party wipes (losing them).
 ARENA_BASE_LEVEL      :: 4   // floor 1 challengers start around here
 ARENA_LEVEL_PER_FLOOR :: 1   // each floor adds a level
 ARENA_TEAM_BASE       :: 2   // challengers on floor 1
 ARENA_TEAM_PER_FLOOR  :: 8   // +1 challenger per this many floors (up to ARENA_TEAM_SIZE)
-ARENA_ENTRY_PER_FLOOR :: 4   // gold added to the entry fee per floor
-ARENA_PURSE_PER_FLOOR :: 2   // crystals added to the purse per floor
+ARENA_PURSE_PER_FLOOR :: 2   // crystals a floor banks per floor number
+ARENA_GOLD_PER_FLOOR  :: 25  // gold a cleared floor pays, on top of kill loot
+ARENA_HEAL_PCT        :: f32(0.25) // of max HP, when a heal floor comes round
 BOSS_CRYSTAL_REWARD    :: 6
 
 // Phase 10 — storage & breeding buildings.
@@ -557,9 +559,12 @@ Colony :: struct {
 	milestones:         [Milestone_Kind]bool,
 	goal_done:          bool,
 
-	// Arena tower (Phase 53): the floor you're on and your best ever.
-	arena_floor:      int,
-	arena_best_floor: int,
+	// Arena tower (Phase 53/54): the run, the floor you're on, your best ever,
+	// and the winnings banked so far this run.
+	arena_run:          bool,
+	arena_floor:        int,
+	arena_best_floor:   int,
+	arena_run_crystals: int,
 
 	// Boss relics you own but haven't slotted into a tower yet (Phase 25/44).
 	// Placed relics live on the tower tile itself; see `src/relics.odin`.

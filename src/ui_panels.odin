@@ -2037,36 +2037,31 @@ draw_upgrades :: proc(g: ^Game) {
 }
 
 // ----------------------------------------------------------------------------
-// Arena panel (pay gold -> fight a strong team for crystals)
+// Arena panel (the tower run)
+//
+// One flat entry fee buys a chain of floors starting at floor 1. Each cleared
+// floor banks its purse; cash out to keep the winnings, or wipe and lose them.
 // ----------------------------------------------------------------------------
 
 arena_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	return rl.Rectangle{sw / 2 - 260, sh / 2 - 170, 520, 340}
+	return rl.Rectangle{sw / 2 - 290, sh / 2 - 200, 580, 400}
 }
 
 arena_fight_rect :: proc() -> rl.Rectangle {
 	p := arena_panel_rect()
-	return rl.Rectangle{p.x + 30, p.y + 220, p.width - 60, 52}
+	return rl.Rectangle{p.x + 30, p.y + 250, p.width - 60, 52}
+}
+
+arena_cashout_rect :: proc() -> rl.Rectangle {
+	p := arena_panel_rect()
+	return rl.Rectangle{p.x + 30, p.y + 310, p.width - 60, 42}
 }
 
 arena_leave_rect :: proc() -> rl.Rectangle {
 	p := arena_panel_rect()
-	return rl.Rectangle{p.x + 30, p.y + 282, p.width - 60, 40}
-}
-
-// The Arena resets if you lose: the team leaves so you can try again.
-arena_reset :: proc(g: ^Game) {
-	i := 0
-	for i < len(g.colony.roster) {
-		m := &g.colony.roster[i]
-		if m.wild && hex_equal(m.pos, g.battle_hex) {
-			remove_monster_at(&g.colony, i, false)
-			continue
-		}
-		i += 1
-	}
+	return rl.Rectangle{p.x + 30, p.y + 358, p.width - 60, 32}
 }
 
 update_arena :: proc(g: ^Game) {
@@ -2082,17 +2077,37 @@ update_arena :: proc(g: ^Game) {
 		g.arena_open = false
 		return
 	}
+	// Cash out: bank everything the run has earned and end it.
+	if g.colony.arena_run && rl.CheckCollisionPointRec(mp, arena_cashout_rect()) {
+		banked := g.colony.arena_run_crystals
+		g.colony.crystals += banked
+		g.colony.crystals_earned += banked
+		colony_notify(&g.colony, "Cashed out: %d crystals banked.", banked)
+		audio_play(.CRYSTAL)
+		g.colony.arena_run = false
+		g.colony.arena_run_crystals = 0
+		g.colony.arena_floor = 1
+		g.arena_open = false
+		return
+	}
 	if rl.CheckCollisionPointRec(mp, arena_fight_rect()) {
-		if colony_total_gold(&g.colony) < arena_entry_cost(&g.colony) {
-			set_status(g, "Not enough gold to enter the Arena.")
-			return
+		// The fee is flat and only paid once, when the run starts.
+		if !g.colony.arena_run {
+			if colony_total_gold(&g.colony) < ARENA_ENTRY_COST {
+				set_status(g, "Not enough gold to enter the Arena.")
+				return
+			}
+			_ = colony_spend_gold(&g.colony, ARENA_ENTRY_COST)
+			g.colony.arena_run = true
+			g.colony.arena_floor = 1
+			g.colony.arena_run_crystals = 0
 		}
 		hex := g.colony.roster[g.selected].pos
-		_ = colony_spend_gold(&g.colony, arena_entry_cost(&g.colony))
 		colony_spawn_arena_team(&g.colony, hex)
 		g.arena_open = false
 		g.battle_hex = hex
 		g.battle_forced = true
+		g.battle_arena = true
 		build_attack(g, hex, 1)
 		g.battle_choice_open = true
 		set_status(g, "The Arena answers your challenge!")
@@ -2108,27 +2123,54 @@ draw_arena :: proc(g: ^Game) {
 	rl.DrawRectangleRounded(p, 0.05, 8, rl.Color{30, 24, 18, 248})
 	rl.DrawRectangleRoundedLinesEx(p, 0.05, 8, 3, rl.Color{210, 170, 90, 255})
 
-	rl.DrawText("THE ARENA", i32(p.x) + 28, i32(p.y) + 20, 30, rl.Color{240, 210, 130, 255})
 	floor := max(g.colony.arena_floor, 1)
+	running := g.colony.arena_run
+	rl.DrawText("THE ARENA", i32(p.x) + 28, i32(p.y) + 18, 30, rl.Color{240, 210, 130, 255})
+	rl.DrawText(fmt.ctprintf("FLOOR %d      best ever: %d", floor, g.colony.arena_best_floor),
+		i32(p.x) + 28, i32(p.y) + 60, 22, rl.Color{240, 215, 150, 255})
+
 	team := min(ARENA_TEAM_BASE + floor / ARENA_TEAM_PER_FLOOR, ARENA_TEAM_SIZE)
-	rl.DrawText(fmt.ctprintf("FLOOR %d   -   best ever: %d", floor, g.colony.arena_best_floor),
-		i32(p.x) + 28, i32(p.y) + 62, 20, rl.Color{240, 210, 130, 255})
-	rl.DrawText(fmt.ctprintf("%d challengers await, built to beat the team you bring.", team), i32(p.x) + 28, i32(p.y) + 90, 16, rl.Color{215, 200, 175, 255})
-	rl.DrawText(fmt.ctprintf("Entry %d gold  -  purse %d crystals. Win to climb a floor.", arena_entry_cost(&g.colony), arena_purse(&g.colony)), i32(p.x) + 28, i32(p.y) + 114, 16, rl.Color{210, 190, 150, 255})
-	rl.DrawText("Losing drops you back to floor 1. Your best floor is kept.", i32(p.x) + 28, i32(p.y) + 138, 15, rl.Color{190, 175, 150, 255})
-	rl.DrawText(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals), i32(p.x) + 28, i32(p.y) + 150, 18, rl.Color{235, 210, 120, 255})
+	heal_iv := arena_heal_interval(floor)
+	if running {
+		rl.DrawText(fmt.ctprintf("Winnings so far: %d crystals  -  cash out to keep them.", g.colony.arena_run_crystals),
+			i32(p.x) + 28, i32(p.y) + 96, 17, rl.Color{150, 225, 170, 255})
+		rl.DrawText("Lose the whole party and the run - and the winnings - are gone.",
+			i32(p.x) + 28, i32(p.y) + 120, 15, rl.Color{225, 165, 140, 255})
+	} else {
+		rl.DrawText(fmt.ctprintf("Entry: %d gold for one run. Floors start at 1, every time.", ARENA_ENTRY_COST),
+			i32(p.x) + 28, i32(p.y) + 96, 17, rl.Color{215, 200, 175, 255})
+		rl.DrawText("Climb as far as you can, then cash out - or wipe and lose it all.",
+			i32(p.x) + 28, i32(p.y) + 120, 15, rl.Color{200, 185, 160, 255})
+	}
+	rl.DrawText(fmt.ctprintf("Next: %d challengers, built to beat the team you bring.", team),
+		i32(p.x) + 28, i32(p.y) + 150, 16, rl.Color{215, 200, 175, 255})
+	rl.DrawText(fmt.ctprintf("A heal comes every %d floor%s here.", heal_iv, heal_iv == 1 ? "" : "s"),
+		i32(p.x) + 28, i32(p.y) + 174, 15, rl.Color{180, 210, 180, 255})
+	rl.DrawText(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals),
+		i32(p.x) + 28, i32(p.y) + 204, 18, rl.Color{235, 210, 120, 255})
 
 	mp := mouse_pos()
-	afford := colony_total_gold(&g.colony) >= ARENA_ENTRY_COST
-
+	// Fight / enter.
 	btn := arena_fight_rect()
+	afford := running || colony_total_gold(&g.colony) >= ARENA_ENTRY_COST
 	hover := afford && rl.CheckCollisionPointRec(mp, btn)
 	bg := afford ? (hover ? rl.Color{120, 60, 40, 255} : rl.Color{88, 46, 32, 255}) : rl.Color{40, 36, 34, 255}
 	rl.DrawRectangleRounded(btn, 0.22, 8, bg)
 	rl.DrawRectangleRoundedLinesEx(btn, 0.22, 8, 2, afford ? rl.Color{230, 150, 90, 255} : rl.Color{100, 90, 80, 255})
-	fl := fmt.ctprintf("Fight   (%d gold)", ARENA_ENTRY_COST)
+	fl := running ? fmt.ctprintf("Fight floor %d", floor) : fmt.ctprintf("Enter the tower   (%d gold)", ARENA_ENTRY_COST)
 	fw := rl.MeasureText(fl, 20)
 	rl.DrawText(fl, i32(btn.x + btn.width / 2) - fw / 2, i32(btn.y + btn.height / 2) - 11, 20, afford ? rl.Color{250, 235, 220, 255} : rl.Color{150, 140, 130, 255})
+
+	// Cash out.
+	if running {
+		cr := arena_cashout_rect()
+		chover := rl.CheckCollisionPointRec(mp, cr)
+		rl.DrawRectangleRounded(cr, 0.28, 8, chover ? rl.Color{52, 92, 66, 255} : rl.Color{38, 68, 50, 255})
+		rl.DrawRectangleRoundedLinesEx(cr, 0.28, 8, 2, rl.Color{140, 220, 170, 255})
+		cl := fmt.ctprintf("Cash out   (%d crystals)", g.colony.arena_run_crystals)
+		cw := rl.MeasureText(cl, 18)
+		rl.DrawText(cl, i32(cr.x + cr.width / 2) - cw / 2, i32(cr.y + cr.height / 2) - 9, 18, rl.Color{225, 250, 235, 255})
+	}
 
 	lr := arena_leave_rect()
 	lhover := rl.CheckCollisionPointRec(mp, lr)
@@ -2264,13 +2306,13 @@ draw_move_choice :: proc(g: ^Game) {
 // Quest board: milestones + the run goal (Phase 22)
 // ----------------------------------------------------------------------------
 
-QUEST_ROWS_PER_COL :: 12
+QUEST_ROWS_PER_COL :: 9
 
 quest_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	w := f32(1140)
-	h := f32(700)
+	w := f32(1256)
+	h := f32(560)
 	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
 }
 
@@ -2279,7 +2321,7 @@ quest_row_rect :: proc(i: int) -> rl.Rectangle {
 	p := quest_panel_rect()
 	col := i / QUEST_ROWS_PER_COL
 	row := i % QUEST_ROWS_PER_COL
-	cw := (p.width - 40) / 2
+	cw := (p.width - 40) / 3
 	return rl.Rectangle{p.x + 20 + f32(col) * cw, p.y + 92 + f32(row) * 47, cw - 12, 43}
 }
 
