@@ -99,6 +99,15 @@ draw_colony :: proc(g: ^Game) {
 			}
 			if t.improvement != .NONE {
 				draw_improvement_icon(t.improvement, cx + sx, cy + sy, g.renderer.zoom)
+				#partial switch t.improvement {
+				case .TURRET:
+					draw_charge_bar(t, cx + sx, cy + sy, g.renderer.zoom, TURRET_CAP + upgrade_turret_cap(&g.colony))
+				case .MENDER:
+					draw_charge_bar(t, cx + sx, cy + sy, g.renderer.zoom, MENDER_CAP)
+				case .BATTERY:
+					draw_charge_bar(t, cx + sx, cy + sy, g.renderer.zoom, BATTERY_CAP)
+				case:
+				}
 			}
 		}
 	}
@@ -477,6 +486,23 @@ draw_tile_floats :: proc(g: ^Game) {
 	}
 }
 
+// A tiny charge bar under an energy building (Turret / Mender / Battery), so you
+// can see at a glance whether it is full or running dry.
+draw_charge_bar :: proc(t: ^Tile, cx, cy, z: f32, cap: int) {
+	if cap <= 0 {
+		return
+	}
+	w := 22 * z
+	h := max(3 * z, 2)
+	x := cx - w / 2
+	y := cy + 16 * z
+	rl.DrawRectangleRounded(rl.Rectangle{x, y, w, h}, 0.5, 3, rl.Color{22, 22, 30, 210})
+	f := clamp(f32(t.stored) / f32(cap), 0, 1)
+	if f > 0 {
+		rl.DrawRectangleRounded(rl.Rectangle{x, y, w * f, h}, 0.5, 3, rl.Color{242, 200, 70, 255})
+	}
+}
+
 draw_hover_marker :: proc(r: ^Hex_Renderer, hex: Hex, active: bool) {
 	if !active {
 		return
@@ -508,6 +534,8 @@ improvement_rings :: proc(im: Improvement) -> ([2]Coverage_Ring, int) {
 		return {Coverage_Ring{SCARECROW_PANIC, rl.Color{255, 110, 110, 32}}, Coverage_Ring{SCARECROW_DETER, rl.Color{255, 175, 80, 42}}}, 2
 	case .FOUNTAIN:
 		return {Coverage_Ring{FOUNTAIN_RANGE, rl.Color{245, 220, 120, 34}}, Coverage_Ring{}}, 1
+	case .BATTERY:
+		return {Coverage_Ring{BATTERY_RANGE, rl.Color{242, 200, 70, 34}}, Coverage_Ring{}}, 1
 	case .TURRET:
 		return {Coverage_Ring{TURRET_RANGE, rl.Color{255, 200, 90, 34}}, Coverage_Ring{}}, 1
 	case .MARKETPLACE:

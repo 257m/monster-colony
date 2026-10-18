@@ -1080,7 +1080,7 @@ wild_monsters :: proc(c: ^Colony) -> int {
 BOSS_SPECIES := [?]Species_Id{.Boss_Leviathan, .Boss_Infernal, .Boss_Titan, .Boss_Sovereign, .Deep_One}
 BOSS_PACK_SIZE     :: 6
 BOSS_LEVEL_BONUS   :: 5
-BOSS_RESPAWN_TURNS :: 12
+BOSS_RESPAWN_TURNS :: 30
 BOSS_SPAWN_RANGE   :: 14
 
 boss_cronies :: proc(boss: Species_Id) -> [BOSS_PACK_SIZE - 1]Species_Id {

@@ -71,8 +71,8 @@ UPGRADES := [Upgrade]Upgrade_Info{
 	.NONE = {name = "-", desc = "", max_level = 0},
 
 	// --- roots ---
-	.Green_Thumb = {name = "Green Thumb", desc = "Farm/Well/Mill food: +8% per level. Uncapped.", max_level = 99, cost = 5, cost_step = 5, cost_growth = 1.20},
-	.Rich_Seams  = {name = "Rich Seams",  desc = "Mine/Quarry gold: +8% per level. Uncapped.", max_level = 99, cost = 5, cost_step = 5, cost_growth = 1.20},
+	.Green_Thumb = {name = "Green Thumb", desc = "Farm/Well/Mill food: +25% per level. Uncapped.", max_level = 99, cost = 5, cost_step = 5, cost_growth = 1.20},
+	.Rich_Seams  = {name = "Rich Seams",  desc = "Mine/Quarry gold: +25% per level. Uncapped.", max_level = 99, cost = 5, cost_step = 5, cost_growth = 1.20},
 	.Masonry     = {name = "Masonry",     desc = "Builds and repairs cost 5% less per level.", max_level = 3, cost = 4, cost_step = 4},
 	.Bounty      = {name = "Bounty",      desc = "Defeated wilds drop +12% gold per level.", max_level = 3, cost = 4, cost_step = 4},
 	.Vigilance   = {name = "Vigilance",   desc = "Watchtowers/Beacons: +1 reveal and deter.", max_level = 3, cost = 4, cost_step = 4},
@@ -170,9 +170,9 @@ colony_buy_upgrade :: proc(c: ^Colony, u: Upgrade) -> int {
 
 // Green Thumb and Rich Seams are *percentage* lines: they scale with the base
 // yield, so they stay meaningful as the colony grows (and they are uncapped).
-upgrade_food_mult :: proc(c: ^Colony) -> f32 { return 1.0 + 0.08 * f32(c.upgrades[.Green_Thumb]) }
+upgrade_food_mult :: proc(c: ^Colony) -> f32 { return 1.0 + 0.25 * f32(c.upgrades[.Green_Thumb]) }
 upgrade_farm_food_bonus :: proc(c: ^Colony) -> int { return c.upgrades[.Bumper_Crop] * 3 }
-upgrade_gold_mult :: proc(c: ^Colony) -> f32 { return 1.0 + 0.08 * f32(c.upgrades[.Rich_Seams]) }
+upgrade_gold_mult :: proc(c: ^Colony) -> f32 { return 1.0 + 0.25 * f32(c.upgrades[.Rich_Seams]) }
 upgrade_deep_core_bonus :: proc(c: ^Colony) -> int { return c.upgrades[.Deep_Core] * 3 }
 upgrade_masonry_mult :: proc(c: ^Colony) -> f32 { return max(1.0 - 0.05 * f32(c.upgrades[.Masonry]), 0.5) }
 upgrade_bounty_mult :: proc(c: ^Colony) -> f32 { return 1.0 + 0.12 * f32(c.upgrades[.Bounty]) }

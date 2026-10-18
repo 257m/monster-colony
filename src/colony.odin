@@ -1976,7 +1976,13 @@ colony_fountains :: proc(c: ^Colony) {
 		if best_struct >= 0 {
 			t := c.tiles[best_struct]
 			cap := t.improvement == .TURRET ? turret_cap : MENDER_CAP
+			before := t.stored
 			t.stored = min(cap, t.stored + output)
+			if t.stored > before {
+				// Show the charge actually landing (monsters and Batteries
+				// already float it).
+				colony_add_float(c, t.hex, .ENERGY, t.stored - before)
+			}
 		} else if best_monster >= 0 {
 			m := &c.roster[best_monster]
 			m.creature.energy = min(m.creature.energy_max, m.creature.energy + f32(output))
@@ -2071,6 +2077,7 @@ colony_turrets :: proc(c: ^Colony) {
 					drawn := min(need, b.stored)
 					b.stored -= drawn
 					t.stored += drawn
+					colony_add_float(c, t.hex, .ENERGY, drawn)
 					if t.stored >= TURRET_COST {
 						break
 					}

@@ -1043,14 +1043,18 @@ it stored, is lost).
   0/5/12/20) so Turrets can keep pace with the escalating threats. The panel
   caps its pips at 8 and shows a `Lv N` readout for those nodes.
 - Phase 50 ✅ **percentage lines, a Battery, and a reason to fight the Arena**:
-  **Green Thumb** and **Rich Seams** are now **percentage** lines (+8% food /
-  gold per level) instead of flat +2s, so they scale with the base yield as the
-  colony grows — verified a staffed Farm goes 6 → 8 food at 5 levels. New
+  **Green Thumb** and **Rich Seams** are now **percentage** lines (**+25%** food
+  / gold per level) instead of flat +2s, so they scale with the base yield as
+  the colony grows — verified a staffed Farm goes 6 → 12 food at 4 levels. New
   improvement **Battery**: when every Turret and Mender in a Fountain's reach is
   already full, the surplus pours into a Battery within 4 tiles instead of being
   wasted, and Turrets within 4 draw from it whenever their own cells run dry.
   Verified: a full Turret banked 3 charge, and a dry Turret drew 2 back to fire.
+  Energy transfers are now **visible**: charging a Turret / Mender / Battery
+  floats a `+N en`, a Turret drawing from a Battery floats what it took, and
+  Menders and Batteries carry a small **charge bar** under their icon (plus a
+  Battery link ring) so you can see a tank filling or running dry.
   Finally, the **Arena** is now worth entering: it is the hardest fight in the
   game, so it pays **12 crystals** (double a boss) and **always drops an item**,
-  making it the crystal farm while Boss Rooms stay the relic source. Bosses were
-  already farmable (they re-lair every 12 turns).
+  making it the crystal farm while Boss Rooms stay the relic source. Bosses
+  re-lair every **30** turns.
