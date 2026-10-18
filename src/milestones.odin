@@ -30,6 +30,11 @@ Milestone_Kind :: enum {
 	SLAY_TITAN,
 	SLAY_SOVEREIGN,
 	SLAY_DEEP_ONE,
+	// The Arena tower.
+	ARENA_FLOOR_10,
+	ARENA_FLOOR_25,
+	ARENA_FLOOR_50,
+	ARENA_FLOOR_100,
 	// The long haul.
 	FIFTY_FIGHTS,
 	SURVIVE_150,
@@ -61,6 +66,10 @@ MILESTONES := [Milestone_Kind]Milestone{
 	.SLAY_TITAN         = {"Slay the Boss Titan", 1, 6},
 	.SLAY_SOVEREIGN     = {"Slay the Boss Sovereign", 1, 6},
 	.SLAY_DEEP_ONE      = {"Slay the Deep One", 1, 6},
+	.ARENA_FLOOR_10     = {"Reach Arena floor 10", 10, 6},
+	.ARENA_FLOOR_25     = {"Reach Arena floor 25", 25, 8},
+	.ARENA_FLOOR_50     = {"Reach Arena floor 50", 50, 12},
+	.ARENA_FLOOR_100    = {"Reach Arena floor 100", 100, 25},
 	.FIFTY_FIGHTS       = {"Win 50 battles", 50, 6},
 	.SURVIVE_150        = {"Survive 150 turns", 150, 6},
 	.TEN_RAIDS          = {"Weather 10 raids", 10, 6},
@@ -95,6 +104,8 @@ milestone_progress :: proc(c: ^Colony, k: Milestone_Kind) -> int {
 	case .TEN_MONSTERS:      return player_monster_count(c)
 	case .SLAY_LEVIATHAN, .SLAY_INFERNAL, .SLAY_TITAN, .SLAY_SOVEREIGN, .SLAY_DEEP_ONE:
 		return c.bosses_slain[milestone_boss(k)] ? 1 : 0
+	case .ARENA_FLOOR_10, .ARENA_FLOOR_25, .ARENA_FLOOR_50, .ARENA_FLOOR_100:
+		return c.arena_best_floor
 	case .FIFTY_FIGHTS:      return c.fights_won
 	case .SURVIVE_150:       return c.turn
 	case .TEN_RAIDS:         return c.raids

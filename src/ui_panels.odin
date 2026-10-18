@@ -2083,12 +2083,12 @@ update_arena :: proc(g: ^Game) {
 		return
 	}
 	if rl.CheckCollisionPointRec(mp, arena_fight_rect()) {
-		if colony_total_gold(&g.colony) < ARENA_ENTRY_COST {
+		if colony_total_gold(&g.colony) < arena_entry_cost(&g.colony) {
 			set_status(g, "Not enough gold to enter the Arena.")
 			return
 		}
 		hex := g.colony.roster[g.selected].pos
-		_ = colony_spend_gold(&g.colony, ARENA_ENTRY_COST)
+		_ = colony_spend_gold(&g.colony, arena_entry_cost(&g.colony))
 		colony_spawn_arena_team(&g.colony, hex)
 		g.arena_open = false
 		g.battle_hex = hex
@@ -2109,9 +2109,13 @@ draw_arena :: proc(g: ^Game) {
 	rl.DrawRectangleRoundedLinesEx(p, 0.05, 8, 3, rl.Color{210, 170, 90, 255})
 
 	rl.DrawText("THE ARENA", i32(p.x) + 28, i32(p.y) + 20, 30, rl.Color{240, 210, 130, 255})
-	rl.DrawText(fmt.ctprintf("%d challengers await - skilled, and above your level.", ARENA_TEAM_SIZE), i32(p.x) + 28, i32(p.y) + 62, 17, rl.Color{215, 200, 175, 255})
-	rl.DrawText(fmt.ctprintf("Entry costs %d gold. Win and the crowd pays you %d crystals.", ARENA_ENTRY_COST, ARENA_CRYSTAL_REWARD), i32(p.x) + 28, i32(p.y) + 88, 16, rl.Color{210, 190, 150, 255})
-	rl.DrawText("Bring a full party - their numbers match yours only if you do.", i32(p.x) + 28, i32(p.y) + 114, 16, rl.Color{190, 175, 150, 255})
+	floor := max(g.colony.arena_floor, 1)
+	team := min(ARENA_TEAM_BASE + floor / ARENA_TEAM_PER_FLOOR, ARENA_TEAM_SIZE)
+	rl.DrawText(fmt.ctprintf("FLOOR %d   -   best ever: %d", floor, g.colony.arena_best_floor),
+		i32(p.x) + 28, i32(p.y) + 62, 20, rl.Color{240, 210, 130, 255})
+	rl.DrawText(fmt.ctprintf("%d challengers await, built to beat the team you bring.", team), i32(p.x) + 28, i32(p.y) + 90, 16, rl.Color{215, 200, 175, 255})
+	rl.DrawText(fmt.ctprintf("Entry %d gold  -  purse %d crystals. Win to climb a floor.", arena_entry_cost(&g.colony), arena_purse(&g.colony)), i32(p.x) + 28, i32(p.y) + 114, 16, rl.Color{210, 190, 150, 255})
+	rl.DrawText("Losing drops you back to floor 1. Your best floor is kept.", i32(p.x) + 28, i32(p.y) + 138, 15, rl.Color{190, 175, 150, 255})
 	rl.DrawText(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals), i32(p.x) + 28, i32(p.y) + 150, 18, rl.Color{235, 210, 120, 255})
 
 	mp := mouse_pos()
@@ -2260,13 +2264,13 @@ draw_move_choice :: proc(g: ^Game) {
 // Quest board: milestones + the run goal (Phase 22)
 // ----------------------------------------------------------------------------
 
-QUEST_ROWS_PER_COL :: 10
+QUEST_ROWS_PER_COL :: 12
 
 quest_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
 	w := f32(1140)
-	h := f32(620)
+	h := f32(700)
 	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
 }
 

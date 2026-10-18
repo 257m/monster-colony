@@ -17,7 +17,7 @@ import "core:time"
 // ============================================================================
 
 SAVE_MAGIC   :: "MCV1"
-SAVE_VERSION :: 8
+SAVE_VERSION :: 9
 SAVE_SLOTS   :: 3
 // The autosave is a 4th, special slot: the game writes it every so often and the
 // save panel only lets you load from it.
@@ -325,6 +325,8 @@ save_colony :: proc(w: ^Save_Writer, c: ^Colony) {
 	// Lifetime stats + quest board (Phase 22).
 	sw_int(w, c.fights_won)
 	sw_int(w, c.alphas_slain)
+	sw_int(w, c.arena_floor)
+	sw_int(w, c.arena_best_floor)
 	for sp in Species_Id {
 		sw_int(w, c.bosses_slain[sp] ? 1 : 0)
 	}
@@ -391,6 +393,8 @@ load_colony :: proc(r: ^Save_Reader, c: ^Colony) {
 	// Lifetime stats + quest board (Phase 22).
 	c.fights_won = sr_int(r)
 	c.alphas_slain = sr_int(r)
+	c.arena_floor = sr_int(r)
+	c.arena_best_floor = sr_int(r)
 	for sp in Species_Id {
 		c.bosses_slain[sp] = sr_int(r) != 0
 	}

@@ -617,9 +617,16 @@ resolve_won :: proc(g: ^Game) {
 	if t := tile_at(&g.colony, hex); t != nil {
 		bonus := upgrade_crystal_bonus(&g.colony) + relic_crystal_bonus_at(&g.colony, hex)
 		if t.terrain == .ARENA && was_arena {
-			g.colony.crystals += ARENA_CRYSTAL_REWARD + bonus
-			g.colony.crystals_earned += ARENA_CRYSTAL_REWARD + bonus
-			res.crystals = ARENA_CRYSTAL_REWARD + bonus
+			purse := arena_purse(&g.colony) + bonus
+			g.colony.crystals += purse
+			g.colony.crystals_earned += purse
+			res.crystals = purse
+			// Climb a floor, and remember the high-water mark.
+			g.colony.arena_floor = max(g.colony.arena_floor, 1) + 1
+			if g.colony.arena_floor > g.colony.arena_best_floor {
+				g.colony.arena_best_floor = g.colony.arena_floor
+			}
+			colony_notify(&g.colony, "Arena floor %d cleared!", g.colony.arena_floor - 1)
 			audio_play(.CRYSTAL)
 		} else if boss_killed {
 			g.colony.crystals += BOSS_CRYSTAL_REWARD + bonus
@@ -715,9 +722,11 @@ resolve_lost :: proc(g: ^Game) {
 		}
 		i += 1
 	}
-	// A lost Arena match resets: the team leaves so you can try again.
+	// A lost Arena match resets: the team leaves and you drop back to floor 1
+	// (your best floor is kept as the record to beat).
 	if t := tile_at(&g.colony, g.battle_hex); t != nil && t.terrain == .ARENA {
 		arena_reset(g)
+		g.colony.arena_floor = 1
 	}
 	g.mode = .MAP
 	if player_monster_count(&g.colony) == 0 {

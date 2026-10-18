@@ -1075,3 +1075,20 @@ it stored, is lost).
   `pick_card_target`, i.e. whoever the card would *actually* land on, so an
   enemy-only attack always shows its estimate while a self/ally card correctly
   shows none.
+
+- Phase 53 ✅ **heat drives difficulty, and the Arena becomes a tower**: wild and
+  boss level no longer uses turn escalation at all — `wild_threat_level` reads
+  **heat** (your footprint: improvements and monster levels), so a quiet colony
+  faces quiet wilds and a loud one draws monsters grown to match. Verified:
+  heat 0 at turn 5 and at turn 300 both give level 1, while heat 60 gives 21 —
+  camping no longer hardens the underground. The **Arena** is now a **ladder of
+  curated teams**: each win takes you a floor higher, teams grow (2 → 6) and
+  step through four species tiers (basics → mid forms → finals → the bosses),
+  and the level is `max(base + floor, the average level of the party you brought
+  +
+  floor/2)` — so the tower is built to beat *you*, which is what finally gives
+  breeding and late game deck-building something to aim at. The entry fee and
+  purse both climb with the floor (floor 100: 440g in, 212 crystals out). Losing
+  drops you to floor 1 but **keeps your best floor** as the high score, and four
+  new milestones reward reaching floors 10 / 25 / 50 / **100**. `SAVE_VERSION`
+  is **9**.

@@ -94,6 +94,14 @@ ARENA_ENTRY_COST       :: 40
 ARENA_TEAM_SIZE        :: 6
 ARENA_LEVEL_BONUS      :: 2
 ARENA_CRYSTAL_REWARD   :: 12
+// The Arena is a tower: each win takes you a floor higher, and the challengers
+// (and the purse) grow with it.
+ARENA_BASE_LEVEL      :: 4   // floor 1 challengers start around here
+ARENA_LEVEL_PER_FLOOR :: 1   // each floor adds a level
+ARENA_TEAM_BASE       :: 2   // challengers on floor 1
+ARENA_TEAM_PER_FLOOR  :: 8   // +1 challenger per this many floors (up to ARENA_TEAM_SIZE)
+ARENA_ENTRY_PER_FLOOR :: 4   // gold added to the entry fee per floor
+ARENA_PURSE_PER_FLOOR :: 2   // crystals added to the purse per floor
 BOSS_CRYSTAL_REWARD    :: 6
 
 // Phase 10 — storage & breeding buildings.
@@ -116,6 +124,7 @@ RAID_BASE_INTERVAL     :: 26   // turns between raids at low heat
 RAID_MIN_INTERVAL      :: 9    // fastest raid cadence at high heat
 RAID_MAX_SIZE          :: 14   // biggest raid at max heat
 RAID_LEVEL_PER_HEAT    :: 4    // raid monsters gain +1 level per this much heat
+HEAT_LEVEL_PER         :: 3    // wilds/bosses gain +1 level per this much heat
 
 terrain_name :: proc(t: Terrain) -> cstring {
 	switch t {
@@ -547,6 +556,10 @@ Colony :: struct {
 	improvements_built: int,
 	milestones:         [Milestone_Kind]bool,
 	goal_done:          bool,
+
+	// Arena tower (Phase 53): the floor you're on and your best ever.
+	arena_floor:      int,
+	arena_best_floor: int,
 
 	// Boss relics you own but haven't slotted into a tower yet (Phase 25/44).
 	// Placed relics live on the tower tile itself; see `src/relics.odin`.

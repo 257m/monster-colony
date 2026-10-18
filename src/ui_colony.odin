@@ -651,7 +651,7 @@ draw_colony_hud :: proc(g: ^Game) {
 
 	rl.DrawText("THE COLONY", 20, 16, 26, rl.Color{215, 215, 235, 255})
 	res := fmt.ctprintf("Floor %d    Turn %d    Threat %d    Milestones %d/%d    Relics %d",
-		g.colony.floor, g.colony.turn, colony_escalation(&g.colony), milestones_done_count(&g.colony), len(MILESTONES), relic_total(&g.colony))
+		g.colony.floor, g.colony.turn, wild_threat_level(&g.colony), milestones_done_count(&g.colony), len(MILESTONES), relic_total(&g.colony))
 	rl.DrawText(res, 20, 48, 18, rl.Color{140, 140, 165, 255})
 	if g.colony.goal_done {
 		gw := rl.MeasureText("OBJECTIVE COMPLETE", 18)

@@ -149,8 +149,12 @@ spawn_species_for :: proc(t: Terrain, rng: ^Rng) -> Species_Id {
 // Threats keep pace with the run: wilds and raiders gain levels over time, so
 // an over-levelled colony never trivialises the wilds near the entrance. This
 // is the single knob that makes the world get meaner the longer you survive.
-colony_escalation :: proc(c: ^Colony) -> int {
-	return c.turn / 20
+// How much tougher the world has become. **Heat is the driver**: it is your
+// footprint (improvements and monster levels), so a loud colony draws monsters
+// that have grown to match, while a quiet one stays easy. Turn count does not
+// feed it — camping does not make the underground harder.
+wild_threat_level :: proc(c: ^Colony) -> int {
+	return c.heat / HEAT_LEVEL_PER
 }
 
 // Highest level among your monsters — used to keep wilds relevant even in the
@@ -166,20 +170,77 @@ player_top_level :: proc(c: ^Colony) -> int {
 }
 
 spawn_level_for :: proc(c: ^Colony, hex: Hex) -> int {
-	// Weaker near the entrance, tougher the further out you are — and tougher
-	// the longer the run has gone on. Wilds never fall far behind your best
-	// monster, so there is always something worth fighting.
+	// Weaker near the entrance and tougher the further out you are, but the real
+	// driver is **heat**: the attention your colony has drawn. Build big and the
+	// underground grows to match; stay small and it stays quiet. Wilds never
+	// fall far behind your best monster, so there is always a fight worth having.
 	dist := hex_distance(c.start_hex, hex)
-	by_place := 1 + c.floor / 2 + dist / 4 + colony_escalation(c)
+	by_place := 1 + c.floor / 2 + dist / 4 + wild_threat_level(c)
 	by_player := player_top_level(c) * 2 / 3
 	return max(by_place, by_player) + rng_below(&c.rng, 2)
 }
 
 // The Arena sends a fresh, strong team onto its tile when challenged.
+// --- Arena tower (Phase 53) ---
+//
+// The Arena is a ladder of curated teams. Each win takes you a floor higher;
+// the teams get bigger, better and higher-levelled, and the purse grows. Losing
+// drops you back to floor 1, but your best floor is recorded for good — the
+// high score a bred and hand-built team is trying to beat.
+
+// Species each band of floors fields: starter basics, then their mid forms, then
+// their finals and the strong wilds, and finally the bosses themselves.
+ARENA_TIER_1 := [?]Species_Id{.Grubling, .Vesperling, .Rockmite, .Dustwing, .Thornkit, .Mossling, .Bubblet, .Ripjaw, .Snowpup, .Vinecat, .Magmite, .Sparkit}
+ARENA_TIER_2 := [?]Species_Id{.Cinderscale, .Ripfin, .Thornbud, .Bloomcap, .Barkhound, .Tidecaller, .Abyssal_Fry, .Hexling, .Frostmaw, .Glacierling, .Pouncer, .Venomtail, .Cinderwing, .Slagbeast, .Sandfang, .Crystalfin, .Capmaw, .Sentinel, .Relic_Hound, .Wispling, .Crypt_Rat, .Gloomling}
+ARENA_TIER_3 := [?]Species_Id{.Magmalisk, .Tidewyrm, .Blightbloom, .Rotshell, .Nightwing, .Thornmaw, .Bubblord, .Frostfang, .Magmaw, .Sporelord, .Voltail}
+ARENA_TIER_4 := [?]Species_Id{.Deep_One, .Boss_Leviathan, .Boss_Infernal, .Boss_Titan, .Boss_Sovereign}
+
+// The average level of the monsters you brought to this Arena tile. The tower is
+// built to beat *you*, so this is what sets the floor's difficulty — breed and
+// deck-build a strong team and the tower answers it.
+arena_party_level :: proc(c: ^Colony, hex: Hex) -> int {
+	sum := 0
+	n := 0
+	for m in c.roster {
+		if m.wild || m.creature.hp <= 0 || !hex_equal(m.pos, hex) {
+			continue
+		}
+		sum += m.creature.level
+		n += 1
+	}
+	if n == 0 {
+		return player_top_level(c)
+	}
+	return sum / n
+}
+
+arena_species_for :: proc(floor: int, rng: ^Rng) -> Species_Id {
+	pool := ARENA_TIER_1[:]
+	if floor >= 50 {
+		pool = ARENA_TIER_4[:]
+	} else if floor >= 25 {
+		pool = ARENA_TIER_3[:]
+	} else if floor >= 10 {
+		pool = ARENA_TIER_2[:]
+	}
+	return pool[rng_below(rng, len(pool))]
+}
+
+arena_entry_cost :: proc(c: ^Colony) -> int {
+	return ARENA_ENTRY_COST + max(c.arena_floor, 1) * ARENA_ENTRY_PER_FLOOR
+}
+
+arena_purse :: proc(c: ^Colony) -> int {
+	return ARENA_CRYSTAL_REWARD + max(c.arena_floor, 1) * ARENA_PURSE_PER_FLOOR
+}
+
 colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
-	lvl := spawn_level_for(c, hex) + ARENA_LEVEL_BONUS
-	for _ in 0..<ARENA_TEAM_SIZE {
-		sp := STARTER_SPECIES[rng_below(&c.rng, len(STARTER_SPECIES))]
+	floor := max(c.arena_floor, 1)
+	// At least the average level you brought, and it climbs with the floor.
+	lvl := max(ARENA_BASE_LEVEL + floor * ARENA_LEVEL_PER_FLOOR, arena_party_level(c, hex) + floor / 2)
+	n := min(ARENA_TEAM_BASE + floor / ARENA_TEAM_PER_FLOOR, ARENA_TEAM_SIZE)
+	for _ in 0..<n {
+		sp := arena_species_for(floor, &c.rng)
 		spawn_wild_at(c, hex, sp, lvl)
 	}
 }
@@ -430,7 +491,7 @@ colony_raids :: proc(c: ^Colony) {
 		} else {
 			// A growing share of the rank and file specialise as the run drags
 			// on: sieges tear down buildings, stalkers run down monsters.
-			spec := clamp(0.15 + f32(colony_escalation(c)) * 0.03, 0, 0.5)
+			spec := clamp(0.15 + f32(wild_threat_level(c)) * 0.03, 0, 0.5)
 			roll := rng_f32(&c.rng)
 			if roll < spec {
 				role = .SIEGE
@@ -591,7 +652,7 @@ TERRITORY_RADIUS :: 4
 // Capped a little above your best monster so it never runs away from you.
 colony_grow_wilds :: proc(c: ^Colony) {
 	cap := player_top_level(c) + 4
-	bump := WILD_GROW_CHANCE + f32(colony_escalation(c)) * 0.012
+	bump := WILD_GROW_CHANCE + f32(wild_threat_level(c)) * 0.012
 	for i in 0..<len(c.roster) {
 		m := &c.roster[i]
 		if !m.wild || m.role == .BOSS || m.role == .CRONY {
