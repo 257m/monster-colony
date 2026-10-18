@@ -1068,3 +1068,10 @@ it stored, is lost).
   Watchtower guard Block, no Drills, no Beacon mark, no Kitchen rations and
   no Scout capture edge. Only monsters, decks, abilities and items decide it.
   Verified: the same fight gives 22 Block outside the Arena and **0** inside.
+- Phase 52 ✅ **damage estimates always show**: the hover readout on an attack
+  card was gated on `Battle.sel_kind == .ENEMY`, and that flag is **sticky** —
+  once you targeted one of your own monsters to play a support card, every
+  attack card silently stopped showing its damage. The readout now follows
+  `pick_card_target`, i.e. whoever the card would *actually* land on, so an
+  enemy-only attack always shows its estimate while a self/ally card correctly
+  shows none.

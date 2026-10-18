@@ -2956,7 +2956,6 @@ draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rec
 draw_hand :: proc(b: ^Battle) {
 	mp := mouse_pos()
 	hand := b.party[b.active].hand
-	tgt := target_enemy(b)
 	for id, i in hand {
 		rec := hand_card_rect(i, len(hand))
 		playable := b.phase == .PLAYER_ACTION && move_playable(b.party[b.active], move_data(id))
@@ -2967,9 +2966,13 @@ draw_hand :: proc(b: ^Battle) {
 			if playable {
 				dr.y -= CARD_HOVER_LIFT // draw_card lifts hovered playable cards
 			}
-			// Offensive cards get a damage readout when an enemy is selected.
-			if .ENEMY in move_targets(move_data(id)) && b.sel_kind == .ENEMY {
-				draw_card_estimate(b.party[b.active], tgt, id, dr, other_allies_alive(b, b.party[b.active]))
+			// Offensive cards get a damage readout against whoever this card
+			// would actually land on. (Gating on `sel_kind` was wrong: that flag
+			// sticks after you target an ally, which silently hid the estimate on
+			// every attack card.)
+			card_target := pick_card_target(b, move_data(id))
+			if card_target != nil && side_of(b, card_target) == .WILD {
+				draw_card_estimate(b.party[b.active], card_target, id, dr, other_allies_alive(b, b.party[b.active]))
 			}
 		}
 	}
