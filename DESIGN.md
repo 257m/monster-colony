@@ -1105,3 +1105,27 @@ it stored, is lost).
   a brutal level curve. New capstone milestone: **reach Arena floor 1000**
   (+100 crystals), and the quest board is now three columns to hold it.
   `SAVE_VERSION` is **10**.
+- Phase 55 ✅ **full restores, two cadences**: the tower's between-floor rest is
+  now a **complete** heal (HP to max, and every ailment cleansed) rather than a
+  percentage, and the **energy refill is a separate, later cadence** — not a
+  change to in-battle regen. HP comes back every **1 / 2 / 5 / 10 / 20** floors
+  (below 10, 30, 60, 120, then every 20); energy refills after *every* floor at
+  first, and only thins below floors **20 / 50 / 100 / 200** (then every 20).
+  The gap between the two is the tower's curve: level numbers stay sane while
+  your team stops being topped up.
+
+- Phase 56 ✅ **Arena sets and a weighted roster** (`src/sets.odin`): the tower
+  no longer fields curated tier teams. Every species owns **three sets**, each a
+  loadout of **ability + item + deck** (generated from that species' own move
+  pool as a starting point, and meant to be hand-edited). The builder rolls a
+  set per challenger, so one species can turn up as a **Striker**, a
+  **Controller** or a **Bulwark**. Species are picked by a **soft band over
+  roster rank**: the power the tower wants lerps from the weakest species to the
+  strongest across `ARENA_RAMP_FLOORS` (250) floors, and a species' weight falls
+  off with its distance *in rank* from that target — rank, not raw power,
+  because two thirds of the roster is near-identical weak wilds that would
+  otherwise swamp any power-based band. So floor 1 is weak wilds, the middle is
+  the evolved lines, and the deep floors are the bosses. **Rarity plays no
+  part** (it governs findability, not strength), a species already on the team
+  is down-weighted rather than banned (`ARENA_REPEAT`), and challengers skip
+  wild maturation since the builder already picks by strength.

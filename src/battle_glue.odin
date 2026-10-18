@@ -630,17 +630,29 @@ resolve_won :: proc(g: ^Game) {
 			if g.colony.arena_floor > g.colony.arena_best_floor {
 				g.colony.arena_best_floor = g.colony.arena_floor
 			}
-			// The tower's spring: a party heal, but the tower gets stingier as
-			// you climb (every 1, 2, 5, 10, 20 floors).
-			if arena_heals_on(floor) {
+			// The tower's spring. HP is a **full** heal plus a cleanse, and it
+			// thins as you climb; energy is a full refill on its own, later
+			// cadence, so the top of the tower stops topping your team up.
+			healed := arena_heals_on(floor)
+			refilled := arena_energy_on(floor)
+			if healed || refilled {
 				for &m in g.colony.roster {
 					if m.wild || m.creature.hp <= 0 || !hex_equal(m.pos, hex) {
 						continue
 					}
-					m.creature.hp = min(m.creature.hp + max(int(f32(m.creature.max_hp) * ARENA_HEAL_PCT), 1), m.creature.max_hp)
-					m.creature.energy = m.creature.energy_max
+					if healed {
+						m.creature.hp = m.creature.max_hp
+						creature_cleanse_status(&m.creature)
+					}
+					if refilled {
+						m.creature.energy = m.creature.energy_max
+					}
 				}
-				colony_notify(&g.colony, "The tower's spring restores your party.")
+				switch {
+				case healed && refilled: colony_notify(&g.colony, "The tower's spring mends and refills your party.")
+				case healed:             colony_notify(&g.colony, "The tower's spring mends your party.")
+				case:                    colony_notify(&g.colony, "The tower's spring refills your party.")
+				}
 			}
 			colony_notify(&g.colony, "Arena floor %d cleared - %d crystals banked.", floor, purse)
 			audio_play(.CRYSTAL)

@@ -2,6 +2,7 @@ package main
 
 import rl "vendor:raylib"
 import "core:fmt"
+import "core:math"
 tile_prevents_spawn :: proc(t: ^Tile) -> bool {
 	return t.improvement == .FARM || t.improvement == .MINE
 }
@@ -180,20 +181,94 @@ spawn_level_for :: proc(c: ^Colony, hex: Hex) -> int {
 	return max(by_place, by_player) + rng_below(&c.rng, 2)
 }
 
-// The Arena sends a fresh, strong team onto its tile when challenged.
+// The Arena sends a fresh team onto its tile when challenged.
 // --- Arena tower (Phase 53) ---
 //
-// The Arena is a ladder of curated teams. Each win takes you a floor higher;
-// the teams get bigger, better and higher-levelled, and the purse grows. Losing
-// drops you back to floor 1, but your best floor is recorded for good — the
-// high score a bred and hand-built team is trying to beat.
+// The Arena is a run: one flat entry fee buys a chain of floors that always
+// starts at floor 1. Each win banks that floor's purse and takes you higher; the
+// teams get bigger and higher-levelled, and losing ends the run and forfeits the
+// winnings. Your best floor is recorded for good.
+//
+// The tower does not field curated teams. Every species in the game is on the
+// table, weighted by how tough it is and by how deep the floor is: floor 1 is
+// mostly the weak wilds, the middle is the evolved lines, and the deep floors
+// are the bosses themselves. A species' share comes from a soft band around the
+// "power" the tower wants at that floor, so the roster slides smoothly instead
+// of switching between fixed pools.
 
-// Species each band of floors fields: starter basics, then their mid forms, then
-// their finals and the strong wilds, and finally the bosses themselves.
-ARENA_TIER_1 := [?]Species_Id{.Grubling, .Vesperling, .Rockmite, .Dustwing, .Thornkit, .Mossling, .Bubblet, .Ripjaw, .Snowpup, .Vinecat, .Magmite, .Sparkit}
-ARENA_TIER_2 := [?]Species_Id{.Cinderscale, .Ripfin, .Thornbud, .Bloomcap, .Barkhound, .Tidecaller, .Abyssal_Fry, .Hexling, .Frostmaw, .Glacierling, .Pouncer, .Venomtail, .Cinderwing, .Slagbeast, .Sandfang, .Crystalfin, .Capmaw, .Sentinel, .Relic_Hound, .Wispling, .Crypt_Rat, .Gloomling}
-ARENA_TIER_3 := [?]Species_Id{.Magmalisk, .Tidewyrm, .Blightbloom, .Rotshell, .Nightwing, .Thornmaw, .Bubblord, .Frostfang, .Magmaw, .Sporelord, .Voltail}
-ARENA_TIER_4 := [?]Species_Id{.Deep_One, .Boss_Leviathan, .Boss_Infernal, .Boss_Titan, .Boss_Sovereign}
+// A rough strength score: bulk, offence, and the role it plays.
+arena_species_power :: proc(sp: Species_Id) -> f32 {
+	s := SPECIES[sp]
+	p := f32(s.base_hp) / 40.0 + s.base_power / 8.0
+	switch s.role {
+	case .STARTER: p += 0.5
+	case .WILD:    p += 0.0
+	case .ELITE:   p += 1.5
+	case .BOSS:    p += 3.0
+	}
+	return p
+}
+
+ARENA_RAMP_FLOORS :: 250  // floors to walk the whole roster, weakest to strongest
+ARENA_BAND        :: 0.05 // how tight the tower's band is, measured in ranks
+ARENA_REPEAT      :: 0.15 // weight multiplier for a species already on the team
+
+// The weakest and strongest species on the roster, so the ramp has no magic
+// numbers in it and follows the data if species are added or retuned.
+arena_power_range :: proc() -> (lo, hi: f32) {
+	lo, hi = 1e9, -1e9
+	for sp in Species_Id {
+		p := arena_species_power(sp)
+		lo = min(lo, p)
+		hi = max(hi, p)
+	}
+	return
+}
+
+// The power the tower is looking for at a floor: it lerps from the weakest
+// species to the strongest across the ramp, then stays at the top of the roster.
+arena_wanted_power :: proc(floor: int) -> f32 {
+	lo, hi := arena_power_range()
+	t := clamp(f32(floor) / f32(ARENA_RAMP_FLOORS), 0, 1)
+	return lo + (hi - lo) * t
+}
+
+// How many species are weaker than this power. The tower bands its picks by
+// *rank* rather than raw power, because the roster is very unevenly spread: two
+// thirds of it are near-identical weak wilds, so a band measured in power would
+// always be swamped by that crowd.
+arena_rank_below :: proc(p: f32) -> f32 {
+	r := f32(0)
+	for sp in Species_Id {
+		if arena_species_power(sp) < p {
+			r += 1
+		}
+	}
+	return r
+}
+
+// Rarity deliberately plays no part: it governs how hard a species is to find
+// and catch, not how hard it hits. The tower's picks are about strength alone.
+arena_species_weight :: proc(sp: Species_Id, floor: int) -> f32 {
+	d := arena_rank_below(arena_species_power(sp)) - arena_rank_below(arena_wanted_power(floor))
+	// The small constant keeps every species technically possible at any floor,
+	// but it is tiny, so the deep floors really are the deep roster.
+	return math.exp(-d * d * ARENA_BAND) + 0.0005
+}
+
+// Weight of a species for a team that already has `avoid` on it. A repeat is
+// heavily down-weighted rather than banned: a wide roster still produces varied
+// lineups, while a narrow one — the top of the tower is only a handful of bosses
+// — doubles up instead of scraping the bottom of the roster.
+arena_team_weight :: proc(sp: Species_Id, floor: int, avoid: []Species_Id) -> f32 {
+	w := arena_species_weight(sp, floor)
+	for a in avoid {
+		if a == sp {
+			return w * ARENA_REPEAT
+		}
+	}
+	return w
+}
 
 // The average level of the monsters you brought to this Arena tile. The tower is
 // built to beat *you*, so this is what sets the floor's difficulty — breed and
@@ -214,16 +289,39 @@ arena_party_level :: proc(c: ^Colony, hex: Hex) -> int {
 	return sum / n
 }
 
-arena_species_for :: proc(floor: int, rng: ^Rng) -> Species_Id {
-	pool := ARENA_TIER_1[:]
-	if floor >= 50 {
-		pool = ARENA_TIER_4[:]
-	} else if floor >= 25 {
-		pool = ARENA_TIER_3[:]
-	} else if floor >= 10 {
-		pool = ARENA_TIER_2[:]
+// Roll a species for a floor, favouring ones not already on the team.
+arena_species_for :: proc(floor: int, rng: ^Rng, avoid: []Species_Id = nil) -> Species_Id {
+	total := f32(0)
+	for sp in Species_Id {
+		total += arena_team_weight(sp, floor, avoid)
 	}
-	return pool[rng_below(rng, len(pool))]
+	if total <= 0 {
+		return .Grubling
+	}
+	roll := rng_f32(rng) * total
+	for sp in Species_Id {
+		roll -= arena_team_weight(sp, floor, avoid)
+		if roll <= 0 {
+			return sp
+		}
+	}
+	return .Grubling
+}
+
+// Give an Arena monster one of its species' sets: the ability it fights with,
+// the item it holds, and the deck that set is built around.
+arena_apply_set :: proc(c: ^Creature, set: Species_Set) {
+	c.ability = set.ability
+	c.item = set.item
+	clear(&c.deck)
+	for m in set.deck {
+		append(&c.deck, m)
+	}
+	// The item may move stats, so settle everything and come in fully charged.
+	creature_recompute_stats(c)
+	c.hp = c.max_hp
+	c.energy = c.energy_max
+	c.block = 0
 }
 
 // Crystals a single floor banks. The run's payout is the sum of these, so it is
@@ -232,9 +330,16 @@ arena_floor_purse :: proc(floor: int) -> int {
 	return ARENA_CRYSTAL_REWARD + max(floor, 1) * ARENA_PURSE_PER_FLOOR
 }
 
-// Between floors your party patches up, but the tower gets stingier the higher
-// you climb: a heal per floor early, then per 2, per 5, per 10, per 20. That is
-// how the tower scales without needing a brutal level curve.
+// Between floors the tower mends your team — but the higher you climb, the
+// stingier it gets. Two separate cadences, and they are **full** restores:
+//
+//   HP   — a complete heal plus a cleanse of every ailment, every 1 / 2 / 5 /
+//          10 / 20 floors.
+//   Energy — a complete refill, which you get after *every* floor early on and
+//          only later starts to thin out (20 / 50 / 100 / 200, then 20).
+//
+// That gap is the tower's difficulty curve: the level numbers stay sane, but
+// your team stops being topped up between fights.
 arena_heal_interval :: proc(floor: int) -> int {
 	switch {
 	case floor < 10:  return 1
@@ -245,8 +350,22 @@ arena_heal_interval :: proc(floor: int) -> int {
 	}
 }
 
+arena_energy_interval :: proc(floor: int) -> int {
+	switch {
+	case floor < 20:  return 1
+	case floor < 50:  return 2
+	case floor < 100: return 5
+	case floor < 200: return 10
+	case:             return 20
+	}
+}
+
 arena_heals_on :: proc(floor: int) -> bool {
 	return floor % arena_heal_interval(floor) == 0
+}
+
+arena_energy_on :: proc(floor: int) -> bool {
+	return floor % arena_energy_interval(floor) == 0
 }
 
 // Clear any Arena challengers off the current battle tile.
@@ -267,9 +386,15 @@ colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
 	// At least the average level you brought, and it climbs with the floor.
 	lvl := max(ARENA_BASE_LEVEL + floor * ARENA_LEVEL_PER_FLOOR, arena_party_level(c, hex) + floor / 2)
 	n := min(ARENA_TEAM_BASE + floor / ARENA_TEAM_PER_FLOOR, ARENA_TEAM_SIZE)
+	avoid := make([dynamic]Species_Id, 0, context.temp_allocator)
 	for _ in 0..<n {
-		sp := arena_species_for(floor, &c.rng)
-		spawn_wild_at(c, hex, sp, lvl)
+		sp := arena_species_for(floor, &c.rng, avoid[:])
+		append(&avoid, sp)
+		spawn_wild_at(c, hex, sp, lvl, mature = false)
+		m := &c.roster[len(c.roster) - 1]
+		// A challenger arrives as one of its species' sets, not a stock wild.
+		sets := SPECIES_SETS[m.creature.species]
+		arena_apply_set(&m.creature, sets[rng_below(&c.rng, MAX_SETS)])
 	}
 }
 
@@ -295,9 +420,14 @@ wild_mature_species :: proc(id: Species_Id, level: int, rng: ^Rng) -> Species_Id
 	return cur
 }
 
-spawn_wild_at :: proc(c: ^Colony, hex: Hex, species_in: Species_Id, level: int, role: Wild_Role = .WILD, pack: int = 0) {
-	// Spawns past an evolve level have a chance to arrive already evolved.
-	species := wild_mature_species(species_in, level, &c.rng)
+spawn_wild_at :: proc(c: ^Colony, hex: Hex, species_in: Species_Id, level: int, role: Wild_Role = .WILD, pack: int = 0, mature: bool = true) {
+	// Spawns past an evolve level have a chance to arrive already evolved. The
+	// Arena opts out: it picks the species it wants by strength, so maturing
+	// would only double-dip.
+	species := species_in
+	if mature {
+		species = wild_mature_species(species_in, level, &c.rng)
+	}
 	m := Monster{
 		id       = c.next_id,
 		creature = creature_make(species, level, SPECIES[species].name, &c.rng),

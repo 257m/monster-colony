@@ -103,7 +103,7 @@ ARENA_TEAM_BASE       :: 2   // challengers on floor 1
 ARENA_TEAM_PER_FLOOR  :: 8   // +1 challenger per this many floors (up to ARENA_TEAM_SIZE)
 ARENA_PURSE_PER_FLOOR :: 2   // crystals a floor banks per floor number
 ARENA_GOLD_PER_FLOOR  :: 25  // gold a cleared floor pays, on top of kill loot
-ARENA_HEAL_PCT        :: f32(0.25) // of max HP, when a heal floor comes round
+ARENA_HEAL_PCT        :: f32(0.25) // (unused: heals are full; kept for tuning)
 BOSS_CRYSTAL_REWARD    :: 6
 
 // Phase 10 — storage & breeding buildings.
