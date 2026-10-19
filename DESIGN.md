@@ -1368,10 +1368,10 @@ it stored, is lost).
 - Phase 82 ✅ **active effects get a real panel**: the chip rows are deliberately
   tiny, and a buffed monster overflows them fast (the panel row fits about
   four, then collapses into a `+N`). **`S` in battle** now opens a scrollable
-  **ACTIVE EFFECTS** panel — every living creature on both sides, every effect it
-  is carrying, each with the same explanation its chip's tooltip gives, laid out
-  in two columns and clipped to the panel with a self-correcting scroll. It is
-  modal, so nothing else takes input while it is up.
+  **ACTIVE EFFECTS** panel — every living creature on both sides, every effect
+  it is carrying, each with the same explanation its chip's tooltip gives, laid
+  out in two columns and clipped to the panel with a self-correcting scroll. It
+  is modal, so nothing else takes input while it is up.
 
 - Phase 83 ✅ **the XP readout stopped colliding with the piles counter**: both
   lived in the same corner of the player panel at a fixed offset. The XP bar is
