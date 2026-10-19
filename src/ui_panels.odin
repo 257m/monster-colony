@@ -2,6 +2,7 @@ package main
 
 import rl "vendor:raylib"
 import "core:fmt"
+import "core:math"
 build_panel_rect :: proc() -> rl.Rectangle {
 	return rl.Rectangle{20, 150, 360, 540}
 }
@@ -350,20 +351,19 @@ update_deck_viewer :: proc(g: ^Game, dt: f32) {
 		return
 	}
 	m := &g.colony.roster[g.view_index]
-	// Item slot: equip-from-bag / unequip (your monsters only).
+	// Item slot: the old button silently took `items[0]`, which is why gearing
+	// read as "there is just an Equip option". It hands off to the inventory
+	// instead, where the item is actually chosen.
 	if !m.wild && rl.IsMouseButtonPressed(.LEFT) {
 		mp := mouse_pos()
-		if rl.CheckCollisionPointRec(mp, deck_equip_rect()) && len(g.colony.items) > 0 {
-			old := m.creature.item
-			next := g.colony.items[0]
-			ordered_remove(&g.colony.items, 0)
-			creature_equip_item(&m.creature, next)
-			if old != .NONE {
-				append(&g.colony.items, old)
-			}
+		if rl.CheckCollisionPointRec(mp, deck_equip_rect()) {
+			g.selected = g.view_index
+			open_inventory(g, arena = g.mode == .ARENA)
+			return
 		}
 		if rl.CheckCollisionPointRec(mp, deck_unequip_rect()) && m.creature.item != .NONE {
-			append(&g.colony.items, m.creature.item)
+			bag := g.mode == .ARENA ? &g.colony.arena_items : &g.colony.items
+			append(bag, m.creature.item)
 			creature_equip_item(&m.creature, .NONE)
 		}
 	}
@@ -433,7 +433,11 @@ draw_deck_viewer :: proc(g: ^Game) {
 	// Item slot + bag.
 	m := &g.colony.roster[g.view_index]
 	can_gear := !m.wild
-	draw_button(deck_equip_rect(), fmt.ctprintf("Equip item   (bag: %d)", len(g.colony.items)), can_gear && len(g.colony.items) > 0)
+	bag_n := len(g.colony.items)
+	if g.mode == .ARENA {
+		bag_n = len(g.colony.arena_items)
+	}
+	draw_button(deck_equip_rect(), fmt.ctprintf("Change item   (bag: %d)", bag_n), can_gear)
 	draw_button(deck_unequip_rect(), cstring("Unequip"), can_gear && c.item != .NONE)
 
 	n := len(c.deck)
@@ -1008,61 +1012,139 @@ draw_save_panel :: proc(g: ^Game) {
 }
 
 // ----------------------------------------------------------------------------
-// Monster encyclopedia
+// The dex
+//
+// One reference for the whole game: monsters, cards, abilities and items. Opened
+// with L from the map, the tower or mid-battle (looking a species up while a
+// fight is on is exactly when you want it), and with M straight to the monster
+// tab. Tab or Left/Right switches, Up/Down or the wheel browses.
 // ----------------------------------------------------------------------------
 
-ENCY_ROWS :: 21
+// Width of one build-column slot in the encyclopedia learnset grid.
+LEARN_COL_W :: 128
 
-ENCYCLOPEDIA_LIST :: List_View{rows = ENCY_ROWS, row_h = 26, x = 40, y = 120, w = 300}
+DEX_MONSTERS  :: 0
+DEX_CARDS     :: 1
+DEX_ABILITIES :: 2
+DEX_ITEMS     :: 3
+DEX_TABS      :: 4
 
-update_encyclopedia :: proc(g: ^Game) {
-	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.M) {
-		g.show_encyclopedia = false
-		return
+// Every tab uses the same list chrome, so the scrollbar and pager are identical
+// everywhere they appear.
+DEX_ROWS :: 19
+DEX_LIST :: List_View{rows = DEX_ROWS, row_h = 26, x = 40, y = 152, w = 326}
+
+// The tabs sit below the title and subtitle, not on top of them.
+DEX_TAB_Y :: f32(104)
+
+dex_ability_count :: proc() -> int {
+	n := 0
+	for a in Ability {
+		if a != .NONE {
+			n += 1
+		}
 	}
-	v := ENCYCLOPEDIA_LIST
-	v.index = g.encyclopedia_index
-	v.first = g.encyclopedia_first
-	list_navigate(&v, len(SPECIES))
-	g.encyclopedia_index = v.index
-	g.encyclopedia_first = v.first
+	return n
 }
 
-draw_encyclopedia :: proc(g: ^Game) {
-	sh := f32(screen_h())
-	draw_list_screen_header("MONSTER ENCYCLOPEDIA", "Up/Down, wheel or click to browse   |   M / Esc to close")
-
-	n := len(SPECIES)
-
-	// Left: the list.
-	v := ENCYCLOPEDIA_LIST
-	v.index = g.encyclopedia_index
-	v.first = g.encyclopedia_first
-	panel := rl.Rectangle{30, 108, 320, f32(ENCY_ROWS) * 26 + 12}
-	draw_list_chrome(v, n, panel)
-	mp := mouse_pos()
-	for row in 0..<v.rows {
-		i := v.first + row
-		if i >= n {
-			break
+dex_ability_at :: proc(k: int) -> Ability {
+	n := 0
+	for a in Ability {
+		if a == .NONE {
+			continue
 		}
-		rec := list_row_rect(v, row)
-		sel := i == v.index
-		draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
-		sp := SPECIES[Species_Id(i)]
-		rl.DrawCircleV(rl.Vector2{rec.x + 14, rec.y + 12}, 8, sp.color)
-		rl.DrawText(fmt.ctprintf("%s", sp.name), i32(rec.x) + 30, i32(rec.y) + 4, 16, sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 200, 215, 255})
-		label := elements_label(sp.elements)
-		ew := rl.MeasureText(label, 13)
-		rl.DrawText(label, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 6, 13, element_color(sp.elements[0]))
+		if n == k {
+			return a
+		}
+		n += 1
 	}
+	return .NONE
+}
 
-	if g.encyclopedia_index < 0 || g.encyclopedia_index >= n {
+dex_item_count :: proc() -> int {
+	n := 0
+	for it in Item {
+		if it != .NONE {
+			n += 1
+		}
+	}
+	return n
+}
+
+dex_item_at :: proc(k: int) -> Item {
+	n := 0
+	for it in Item {
+		if it == .NONE {
+			continue
+		}
+		if n == k {
+			return it
+		}
+		n += 1
+	}
+	return .NONE
+}
+
+// Entries in the tab on show.
+dex_count :: proc(g: ^Game) -> int {
+	switch g.dex_tab {
+	case DEX_MONSTERS:  return len(SPECIES)
+	case DEX_ABILITIES: return dex_ability_count()
+	case DEX_ITEMS:     return dex_item_count()
+	case:               return len(Move_Id)
+	}
+}
+
+dex_tab_rect :: proc(i: int) -> rl.Rectangle {
+	return rl.Rectangle{30 + f32(i) * 132, DEX_TAB_Y, 124, 34}
+}
+
+// Open the dex on a tab, keeping the cursor where it was for that tab.
+open_dex :: proc(g: ^Game, tab: int) {
+	g.show_dex = true
+	g.dex_tab = clamp(tab, 0, DEX_TABS - 1)
+	g.dex_first = 0
+}
+
+update_dex :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.L) || rl.IsKeyPressed(.M) {
+		g.show_dex = false
 		return
 	}
-	sp := SPECIES[Species_Id(g.encyclopedia_index)]
-	dx := f32(390)
-	dy := f32(120)
+	if rl.IsKeyPressed(.TAB) || rl.IsKeyPressed(.RIGHT) {
+		g.dex_tab = (g.dex_tab + 1) % DEX_TABS
+		g.dex_index = 0
+		g.dex_first = 0
+	}
+	if rl.IsKeyPressed(.LEFT) {
+		g.dex_tab = (g.dex_tab + DEX_TABS - 1) % DEX_TABS
+		g.dex_index = 0
+		g.dex_first = 0
+	}
+	if rl.IsMouseButtonPressed(.LEFT) {
+		mp := mouse_pos()
+		for i in 0..<DEX_TABS {
+			if rl.CheckCollisionPointRec(mp, dex_tab_rect(i)) {
+				g.dex_tab = i
+				g.dex_index = 0
+				g.dex_first = 0
+				return
+			}
+		}
+	}
+	v := DEX_LIST
+	v.index = g.dex_index
+	v.first = g.dex_first
+	list_navigate(&v, dex_count(g))
+	g.dex_index = v.index
+	g.dex_first = v.first
+}
+
+// One species, in full: portrait, typing, evolution line, stats, starter deck,
+// learnset and the ability pool it rolls from.
+draw_species_detail :: proc(index: int, dx, dy: f32) {
+	sh := f32(screen_h())
+	sp := SPECIES[Species_Id(index)]
 
 	rl.DrawCircleV(rl.Vector2{dx + 40, dy + 40}, 38, sp.color)
 	rl.DrawCircleLinesV(rl.Vector2{dx + 40, dy + 40}, 38, rl.Color{235, 235, 245, 255})
@@ -1076,6 +1158,31 @@ draw_encyclopedia :: proc(g: ^Game) {
 	rl.DrawText(fmt.ctprintf("Role: %s", role_name(sp.role)), i32(dx + 96), i32(dy) + 70, 16, rl.Color{170, 170, 190, 255})
 	rl.DrawText(rarity_name(sp.rarity), i32(dx + 210), i32(dy) + 70, 16, rarity_color(sp.rarity))
 
+	// Evolution chain: the whole line at a glance, current stage highlighted.
+	{
+		chain, levels, count := evolution_line(Species_Id(index))
+		cx := i32(dx)
+		cy := i32(dy) + 92
+		if count > 1 {
+			for i in 0 ..< count {
+				stage := SPECIES[chain[i]]
+				cur := chain[i] == Species_Id(index)
+				nm := fmt.ctprintf("%s", stage.name)
+				w := rl.MeasureText(nm, 15)
+				rl.DrawText(nm, cx, cy, 15, cur ? rl.Color{255, 255, 255, 255} : rl.Color{150, 220, 180, 255})
+				cx += w
+				if i < count - 1 {
+					arrow := fmt.ctprintf("  >%d  ", levels[i + 1])
+					aw := rl.MeasureText(arrow, 15)
+					rl.DrawText(arrow, cx, cy, 15, rl.Color{150, 150, 170, 255})
+					cx += aw
+				}
+			}
+		} else {
+			rl.DrawText("No evolution line", cx, cy, 15, rl.Color{120, 120, 140, 255})
+		}
+	}
+
 	// Stats (drawn one at a time; ctprintf shares one buffer).
 	sx := i32(dx)
 	sy := i32(dy) + 112
@@ -1084,7 +1191,7 @@ draw_encyclopedia :: proc(g: ^Game) {
 	rl.DrawText(fmt.ctprintf("PWR x%s", fmt_num(sp.base_power)), sx, sy + step, 18, rl.Color{205, 205, 220, 255})
 	rl.DrawText(fmt.ctprintf("DEF %s", fmt_num(sp.base_defense)), sx, sy + step * 2, 18, rl.Color{205, 205, 220, 255})
 	rl.DrawText(fmt.ctprintf("SPD %s", fmt_num(sp.base_speed)), sx, sy + step * 3, 18, rl.Color{205, 205, 220, 255})
-	rl.DrawText(fmt.ctprintf("Energy %d regen / %d max", sp.base_energy, sp.base_energy_max), sx, sy + step * 4, 18, rl.Color{205, 205, 220, 255})
+	rl.DrawText(fmt.ctprintf("Energy %s regen / %d max", fmt_num(sp.base_energy), sp.base_energy_max), sx, sy + step * 4, 18, rl.Color{205, 205, 220, 255})
 	rl.DrawText(fmt.ctprintf("Satiety %d   Upkeep %d", sp.base_satiety, sp.base_upkeep), sx, sy + step * 5, 18, rl.Color{205, 205, 220, 255})
 
 	// Starter deck (unique moves with counts).
@@ -1105,25 +1212,244 @@ draw_encyclopedia :: proc(g: ^Game) {
 		cy += 20
 	}
 
-	// Learnset by level.
+	// Learnset by level. The three cards offered at a level are the build
+	// columns, so they share a row — the whole menu fits in a few lines.
 	lx := i32(760)
 	ly := i32(dy) + 112
-	rl.DrawText("LEARNSET", lx, ly - 28, 16, rl.Color{150, 150, 170, 255})
-	for e in sp.learnset {
-		rl.DrawText(fmt.ctprintf("Lvl %d   %s", e.level, MOVE_DATA[e.move].name), lx, ly, 15, element_color(MOVE_DATA[e.move].element))
-		ly += 20
+	rl.DrawText("LEARNSET  (one per level)", lx, ly - 28, 16, rl.Color{150, 150, 170, 255})
+	{
+		i := 0
+		for i < len(sp.learnset) {
+			lvl := sp.learnset[i].level
+			rl.DrawText(fmt.ctprintf("Lvl %d", lvl), lx, ly, 15, rl.Color{150, 150, 170, 255})
+			cx := lx + LEARN_COL_W / 2
+			for i < len(sp.learnset) && sp.learnset[i].level == lvl {
+				mv := sp.learnset[i].move
+				rl.DrawText(fmt.ctprintf("%s", MOVE_DATA[mv].name), cx, ly, 15, element_color(MOVE_DATA[mv].element))
+				cx += LEARN_COL_W
+				i += 1
+			}
+			ly += 20
+		}
 	}
 
 	// Ability pool: a creature rolls one of these at spawn.
 	ly += 12
 	rl.DrawText("ABILITIES  (one rolled at spawn)", lx, ly, 16, rl.Color{150, 150, 170, 255})
 	ly += 24
-	for a in species_abilities(Species_Id(g.encyclopedia_index)) {
+	for a in species_abilities(Species_Id(index)) {
 		rl.DrawText(fmt.ctprintf("%s - %s", ability_name(a), ability_desc(a)), lx, ly, 15, rl.Color{200, 180, 240, 255})
 		ly += 20
 	}
 
-	rl.DrawText(fmt.ctprintf("%d species in the underground", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
+	// Dex blurb, under the detail column so it can never collide with the list.
+	draw_text_wrapped(fmt.ctprintf("%s", sp.desc), i32(dx), i32(sh) - 96, 16, i32(f32(screen_w()) - dx - 40), rl.Color{190, 190, 212, 255})
+}
+
+draw_dex :: proc(g: ^Game) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	draw_list_screen_header("DEX", "Tab / Left-Right to switch   |   Up/Down or wheel to browse   |   L, M or Esc to close")
+
+	// Tabs.
+	mp := mouse_pos()
+	labels := [DEX_TABS]cstring{"MONSTERS", "CARDS", "ABILITIES", "ITEMS"}
+	for i in 0..<DEX_TABS {
+		r := dex_tab_rect(i)
+		on := i == g.dex_tab
+		hover := rl.CheckCollisionPointRec(mp, r)
+		bg := rl.Color{24, 26, 34, 240}
+		if on {
+			bg = rl.Color{40, 52, 46, 240}
+		} else if hover {
+			bg = rl.Color{32, 34, 46, 240}
+		}
+		rl.DrawRectangleRounded(r, 0.24, 6, bg)
+		rl.DrawRectangleRoundedLinesEx(r, 0.24, 6, on ? 3 : 2, on ? rl.Color{150, 230, 180, 255} : rl.Color{60, 64, 80, 255})
+		lw := rl.MeasureText(labels[i], 15)
+		rl.DrawText(labels[i], i32(r.x + r.width / 2) - lw / 2, i32(r.y + r.height / 2) - 8, 15,
+			on ? rl.Color{225, 245, 230, 255} : rl.Color{170, 175, 195, 255})
+	}
+
+	n := dex_count(g)
+	v := DEX_LIST
+	v.index = clamp(g.dex_index, 0, max(n - 1, 0))
+	v.first = g.dex_first
+	panel := rl.Rectangle{30, 140, 350, f32(DEX_ROWS) * v.row_h + 12}
+	draw_list_chrome(v, n, panel)
+	for row in 0..<v.rows {
+		i := v.first + row
+		if i >= n {
+			break
+		}
+		rec := list_row_rect(v, row)
+		sel := i == v.index
+		draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
+		switch g.dex_tab {
+		case DEX_MONSTERS:
+			sp := SPECIES[Species_Id(i)]
+			rl.DrawCircleV(rl.Vector2{rec.x + 14, rec.y + 13}, 8, sp.color)
+			rl.DrawText(fmt.ctprintf("%s", sp.name), i32(rec.x) + 30, i32(rec.y) + 5, 16,
+				sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 200, 215, 255})
+			label := elements_label(sp.elements)
+			ew := rl.MeasureText(label, 13)
+			rl.DrawText(label, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 7, 13, element_color(sp.elements[0]))
+		case DEX_ABILITIES:
+			a := dex_ability_at(i)
+			rl.DrawText(fmt.ctprintf("%s", ability_name(a)), i32(rec.x) + 12, i32(rec.y) + 5, 16,
+				sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 180, 240, 255})
+		case DEX_ITEMS:
+			it := dex_item_at(i)
+			rl.DrawText(fmt.ctprintf("%s", item_name(it)), i32(rec.x) + 12, i32(rec.y) + 5, 16,
+				sel ? rl.Color{235, 245, 235, 255} : item_color(it))
+		case:
+			m := MOVE_DATA[Move_Id(i)]
+			rl.DrawText(fmt.ctprintf("%s", m.name), i32(rec.x) + 12, i32(rec.y) + 5, 16,
+				sel ? rl.Color{235, 245, 235, 255} : element_color(m.element))
+			cost := m.x_cost ? cstring("X") : fmt.ctprintf("%s", fmt_num(m.cost))
+			cw := rl.MeasureText(cost, 14)
+			rl.DrawText(cost, i32(rec.x + rec.width) - 14 - cw, i32(rec.y) + 7, 14, rl.Color{240, 210, 130, 255})
+		}
+	}
+	rl.DrawText(fmt.ctprintf("%d entries", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
+
+	if v.index < 0 || v.index >= n {
+		return
+	}
+
+	// ---- the detail ----
+	dx := f32(410)
+	dy := f32(152)
+	right := f32(sw) - 40
+
+	if g.dex_tab == DEX_MONSTERS {
+		draw_species_detail(v.index, 390, dy)
+		return
+	}
+
+	if g.dex_tab == DEX_ABILITIES {
+		a := dex_ability_at(v.index)
+		rl.DrawText(ability_name(a), i32(dx), i32(dy) + 2, 30, rl.Color{225, 210, 250, 255})
+		cy := dy + 48
+		cx := dx
+		cx += draw_effect_chip(cx, cy, cstring("PASSIVE"), rl.Color{200, 180, 240, 255}) + 8
+		cy += 34
+		cy = f32(draw_text_wrapped(ability_desc(a), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
+		cy += 20
+		rl.DrawText("SPECIES WITH IT", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
+		cy += 24
+		buf: [1024]u8
+		used, shown, total := 0, 0, 0
+		for sid in Species_Id {
+			has := false
+			for pool in species_abilities(sid) {
+				if pool == a {
+					has = true
+					break
+				}
+			}
+			if !has { continue }
+			total += 1
+			if shown >= 18 { continue }
+			name := SPECIES[sid].name
+			if used + len(name) + 3 >= len(buf) { break }
+			if shown > 0 {
+				buf[used] = ','; buf[used+1] = ' '
+				used += 2
+			}
+			for ch in name {
+				buf[used] = u8(ch)
+				used += 1
+			}
+			shown += 1
+		}
+		buf[used] = 0
+		text: cstring
+		if total == 0 {
+			text = "nothing - boss-only, or unused"
+		} else if total > shown {
+			text = fmt.ctprintf("%s and %d more", cstring(&buf[0]), total - shown)
+		} else {
+			text = cstring(&buf[0])
+		}
+		draw_text_wrapped(text, i32(dx), i32(cy), 15, i32(right - dx), rl.Color{170, 180, 200, 255})
+		return
+	}
+
+	if g.dex_tab == DEX_ITEMS {
+		it := dex_item_at(v.index)
+		col := item_color(it)
+		draw_item_icon(it, dx + 20, dy + 20, 1.4)
+		rl.DrawText(item_name(it), i32(dx) + 58, i32(dy) + 2, 30, rl.Color{235, 235, 245, 255})
+		cy := dy + 48
+		rl.DrawText("Held item  -  one per monster", i32(dx), i32(cy), 15, col)
+		cy += 32
+		cy = f32(draw_text_wrapped(item_desc(it), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
+		cy += 12
+		rl.DrawText("EFFECTS", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
+		cy += 24
+		draw_item_effects(it, i32(dx), i32(cy), 15)
+		return
+	}
+
+	// ---- cards ----
+	id := Move_Id(v.index)
+	m := MOVE_DATA[id]
+	rl.DrawText(fmt.ctprintf("%s", m.name), i32(dx), i32(dy) + 2, 30, rl.Color{235, 235, 245, 255})
+	cy := dy + 44
+	cx := dx
+	cx += draw_effect_chip(cx, cy, element_name(m.element), element_color(m.element)) + 8
+	cx += draw_effect_chip(cx, cy, card_rarity_name(m.rarity), card_rarity_color(m.rarity)) + 8
+	cx += draw_effect_chip(cx, cy, card_kind_name(m.kind), card_kind_color(m.kind)) + 8
+	cy += 34
+	cy = f32(draw_text_wrapped(fmt.ctprintf("%s", m.desc), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
+	cy += 12
+	rl.DrawText("EFFECTS", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
+	cy += 24
+	ml := move_lines(m)
+	for i in 0 ..< ml.n {
+		if cy > f32(sh) - 60 { break }
+		rl.DrawText(cstring(&ml.bufs[i][0]), i32(dx), i32(cy), 15, rl.Color{195, 200, 215, 255})
+		cy += 20
+	}
+	{
+		buf: [768]u8
+		used, shown, total := 0, 0, 0
+		for sid in Species_Id {
+			knows := false
+			for mid in SPECIES[sid].move_pool {
+				if mid == id {
+					knows = true
+					break
+				}
+			}
+			if !knows { continue }
+			total += 1
+			if shown >= 14 { continue }
+			name := SPECIES[sid].name
+			if used + len(name) + 3 >= len(buf) { break }
+			if shown > 0 {
+				buf[used] = ','; buf[used+1] = ' '
+				used += 2
+			}
+			for ch in name {
+				buf[used] = u8(ch)
+				used += 1
+			}
+			shown += 1
+		}
+		buf[used] = 0
+		text: cstring
+		if total == 0 {
+			text = "nobody - it only comes from junk cards"
+		} else if total > shown {
+			text = fmt.ctprintf("%s and %d more", cstring(&buf[0]), total - shown)
+		} else {
+			text = cstring(&buf[0])
+		}
+		rl.DrawText("LEARNED BY", i32(dx), i32(sh) - 84, 15, rl.Color{150, 150, 170, 255})
+		draw_text_wrapped(text, i32(dx), i32(sh) - 62, 15, i32(right - dx), rl.Color{170, 180, 200, 255})
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -1140,6 +1466,28 @@ cstring_bytes :: proc(cs: cstring) -> []u8 {
 		}
 	}
 	return p[:n]
+}
+
+// A string clipped to a pixel width, with an ellipsis, so a long name can never
+// run into the numbers drawn beside it.
+fit_text :: proc(text: string, size: i32, max_w: i32) -> cstring {
+	if rl.MeasureText(fmt.ctprintf("%s", text), size) <= max_w {
+		return fmt.ctprintf("%s", text)
+	}
+	n := len(text)
+	for n > 1 {
+		n -= 1
+		cand := fmt.ctprintf("%s...", text[:n])
+		if rl.MeasureText(cand, size) <= max_w {
+			return cand
+		}
+	}
+	return cstring("...")
+}
+
+// `fit_text` for a line built with fmt.
+fit_textf :: proc(size: i32, max_w: i32, format: string, args: ..any) -> cstring {
+	return fit_text(string(fmt.ctprintf(format, ..args)), size, max_w)
 }
 
 draw_text_wrapped :: proc(cs: cstring, x, y: i32, size: i32, max_w: i32, col: rl.Color) -> i32 {
@@ -1302,157 +1650,558 @@ draw_improvements :: proc(g: ^Game) {
 }
 
 // ----------------------------------------------------------------------------
-// Item bag viewer
-// ----------------------------------------------------------------------------
-
-BAG_ROWS :: 20
-
-BAG_LIST :: List_View{rows = BAG_ROWS, row_h = 24, x = 40, y = 120, w = 320}
-
-bag_equip_rect :: proc() -> rl.Rectangle {
-	sh := f32(screen_h())
-	return rl.Rectangle{390, sh - 96, 320, 46}
-}
-
 // Draw one line per active effect field. Returns the next y.
 draw_item_effects :: proc(it: Item, x, y: i32, size: i32) -> i32 {
 	info := ITEM_DATA[it]
 	yy := y
 	step := size + 6
-	if info.strength != 0 { rl.DrawText(fmt.ctprintf("Battle start:   +%d Strength", info.strength), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
-	if info.defense != 0 { rl.DrawText(fmt.ctprintf("Battle start:   +%s Defense", fmt_num(info.defense)), x, yy, size, rl.Color{120, 220, 190, 255}); yy += step }
-	if info.speed != 0 { rl.DrawText(fmt.ctprintf("Battle start:   +%s Speed", fmt_num(info.speed)), x, yy, size, rl.Color{140, 190, 250, 255}); yy += step }
-	if info.block != 0 { rl.DrawText(fmt.ctprintf("Battle start:   +%d Block", info.block), x, yy, size, rl.Color{130, 180, 245, 255}); yy += step }
-	if info.draw != 0 { rl.DrawText(fmt.ctprintf("Each turn:   draw +%d card", info.draw), x, yy, size, rl.Color{140, 190, 250, 255}); yy += step }
-	if info.on_hit_leech_pct != 0 { rl.DrawText(fmt.ctprintf("On dealing damage:   drain %d%%", int(info.on_hit_leech_pct * 100)), x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
+	if info.damage_mult != 0 { rl.DrawText(fmt.ctprintf("Damage dealt:   +%d%%", int(info.damage_mult * 100)), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
+	if info.self_damage_pct != 0 { rl.DrawText(fmt.ctprintf("Recoil:   %d%% of max HP per Attack", int(info.self_damage_pct * 100)), x, yy, size, rl.Color{240, 130, 130, 255}); yy += step }
+	if info.super_mult != 0 { rl.DrawText(fmt.ctprintf("Super-effective hits:   +%d%% damage", int(info.super_mult * 100)), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
+	if info.extra_hits != 0 { rl.DrawText(fmt.ctprintf("Multi-hit Attacks:   +%d hit", info.extra_hits), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
+	if info.drain_mult != 0 { rl.DrawText(fmt.ctprintf("Drain and lifesteal:   +%d%% healing", int(info.drain_mult * 100)), x, yy, size, rl.Color{200, 150, 240, 255}); yy += step }
+	if info.status_bonus != 0 { rl.DrawText(fmt.ctprintf("Poison and Burn:   +%d stack", info.status_bonus), x, yy, size, rl.Color{200, 150, 240, 255}); yy += step }
+	if info.thorns != 0 { rl.DrawText(fmt.ctprintf("Battle start:   +%d Thorns", info.thorns), x, yy, size, rl.Color{150, 220, 150, 255}); yy += step }
+	if info.turn_heal_pct != 0 { rl.DrawText(fmt.ctprintf("Each turn:   heal %d%% of max HP", int(info.turn_heal_pct * 100)), x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
+	if info.low_hp_heal_pct != 0 { rl.DrawText(fmt.ctprintf("Below half HP:   heal %d%% (once per battle)", int(info.low_hp_heal_pct * 100)), x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
+	if info.sash { rl.DrawText("Lethal blow:   survive at 1 HP (once per battle)", x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
+	if info.weakness_str != 0 { rl.DrawText(fmt.ctprintf("Hit super-effectively:   +%d Strength", info.weakness_str), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
+	if info.cleanse_turn { rl.DrawText("Each turn:   cleanse Poison / Burn / Stun", x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
 	if info.energy_regen != 0 { rl.DrawText(fmt.ctprintf("Each turn:   +%s energy regen", fmt_num(info.energy_regen)), x, yy, size, rl.Color{240, 210, 110, 255}); yy += step }
-	if info.energy_max != 0 { rl.DrawText(fmt.ctprintf("Energy bank:   +%s", fmt_num(info.energy_max)), x, yy, size, rl.Color{240, 210, 110, 255}); yy += step }
-	if info.hp_pct != 0 { rl.DrawText(fmt.ctprintf("Max HP:   +%d%%", int(info.hp_pct * 100)), x, yy, size, rl.Color{140, 230, 150, 255}); yy += step }
-	if info.power != 0 { rl.DrawText(fmt.ctprintf("Power:   +%s", fmt_num(info.power)), x, yy, size, rl.Color{240, 170, 120, 255}); yy += step }
 	if info.gold_per_turn != 0 { rl.DrawText(fmt.ctprintf("Each turn:   +%d gold", info.gold_per_turn), x, yy, size, rl.Color{240, 205, 90, 255}); yy += step }
 	if info.capture_pct != 0 { rl.DrawText(fmt.ctprintf("Capture chance:   +%d%%", int(info.capture_pct * 100)), x, yy, size, rl.Color{180, 220, 255, 255}); yy += step }
 	return yy
 }
 
-// Move a bagged item onto the currently selected monster (old item returns to
-// the bag). Returns true on success.
-equip_bag_item :: proc(g: ^Game, bag_index: int) -> bool {
-	s := g.selected
-	if s < 0 || s >= len(g.colony.roster) || g.colony.roster[s].wild {
+// ----------------------------------------------------------------------------
+// Inventory (items + relics)
+//
+// Two columns: your monsters on the left, your bag on the right. Pick a monster,
+// then pick an item, and it is worn — a swap sends whatever it was wearing back
+// to the bag, and Unequip strips it. Relics slot into a Relic Tower instead.
+//
+// Opened from the Arena screen it shows something else entirely: only the
+// monsters standing on the tower tile, and only the run's own pack
+// (`Colony.arena_items`), which is unbounded and dies with the run. The colony's
+// bag is out of reach mid-climb.
+// ----------------------------------------------------------------------------
+
+INV_COLS :: 7
+INV_SLOT :: f32(74)
+INV_GAP  :: f32(10)
+
+inv_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	w := f32(1020)
+	h := f32(700)
+	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
+}
+
+// --- the monster column ---
+INV_MON_W       :: f32(330)
+INV_MON_ROW     :: f32(44)
+INV_MON_VISIBLE :: 10
+
+// The monster column is a `List_View`, so its scrollbar and pager are the same
+// ones every other list screen uses. x/y are filled in from the panel.
+INV_MON_LIST :: List_View{rows = INV_MON_VISIBLE, row_h = INV_MON_ROW, w = INV_MON_W}
+
+inv_mon_x :: proc() -> f32 {
+	return inv_panel_rect().x + 24
+}
+
+inv_mon_rect :: proc(v: List_View, row: int) -> rl.Rectangle {
+	return list_row_rect(v, row)
+}
+
+// The tile the Arena party is standing on (the selected monster's).
+arena_inv_hex :: proc(g: ^Game) -> Hex {
+	if g.selected >= 0 && g.selected < len(g.colony.roster) {
+		return g.colony.roster[g.selected].pos
+	}
+	return g.colony.start_hex
+}
+
+inv_mon_count :: proc(g: ^Game) -> int {
+	if g.bag_arena {
+		_, n := arena_party_members(&g.colony, arena_inv_hex(g))
+		return n
+	}
+	n := 0
+	for m in g.colony.roster {
+		if !m.wild {
+			n += 1
+		}
+	}
+	return n
+}
+
+// The roster index of the Nth monster in the list (-1 if there is none).
+inv_mon_roster :: proc(g: ^Game, i: int) -> int {
+	if g.bag_arena {
+		party, n := arena_party_members(&g.colony, arena_inv_hex(g))
+		if i < 0 || i >= n {
+			return -1
+		}
+		return party[i]
+	}
+	n := 0
+	for m, j in g.colony.roster {
+		if m.wild {
+			continue
+		}
+		if n == i {
+			return j
+		}
+		n += 1
+	}
+	return -1
+}
+
+// The monster column's geometry for this frame.
+inv_mon_view :: proc(g: ^Game) -> List_View {
+	p := inv_panel_rect()
+	v := INV_MON_LIST
+	v.x = inv_mon_x()
+	v.y = p.y + 122
+	v.index = g.bag_mon
+	v.first = g.bag_mon_first
+	return v
+}
+
+// --- the bag column ---
+inv_bag_x :: proc() -> f32 {
+	return inv_panel_rect().x + 384
+}
+
+inv_bag_w :: proc() -> f32 {
+	p := inv_panel_rect()
+	return p.x + p.width - 24 - inv_bag_x()
+}
+
+inv_slot_rect :: proc(i: int) -> rl.Rectangle {
+	p := inv_panel_rect()
+	col := i % INV_COLS
+	row := i / INV_COLS
+	return rl.Rectangle{
+		inv_bag_x() + f32(col) * (INV_SLOT + INV_GAP),
+		p.y + 122 + f32(row) * (INV_SLOT + INV_GAP),
+		INV_SLOT,
+		INV_SLOT,
+	}
+}
+
+inv_detail_rect :: proc() -> rl.Rectangle {
+	p := inv_panel_rect()
+	return rl.Rectangle{inv_bag_x(), p.y + 466, inv_bag_w(), 140}
+}
+
+inv_action_rect :: proc() -> rl.Rectangle {
+	p := inv_panel_rect()
+	return rl.Rectangle{inv_bag_x(), p.y + p.height - 84, inv_bag_w(), 30}
+}
+
+inv_unequip_rect :: proc() -> rl.Rectangle {
+	p := inv_panel_rect()
+	return rl.Rectangle{inv_bag_x(), p.y + p.height - 46, inv_bag_w(), 30}
+}
+
+// A slot in the grid is either an item or a relic.
+Inv_Entry :: struct {
+	is_relic: bool,
+	item:     Item,
+	relic:    Relic,
+}
+
+// The bag on show: the run's pack, or the colony's items and relics.
+inv_count :: proc(g: ^Game) -> int {
+	if g.bag_arena {
+		return len(g.colony.arena_items)
+	}
+	return len(g.colony.items) + len(g.colony.relic_bag)
+}
+
+inv_entry_at :: proc(g: ^Game, i: int) -> (Inv_Entry, bool) {
+	if i < 0 {
+		return {}, false
+	}
+	if g.bag_arena {
+		if i < len(g.colony.arena_items) {
+			return Inv_Entry{item = g.colony.arena_items[i]}, true
+		}
+		return {}, false
+	}
+	if i < len(g.colony.items) {
+		return Inv_Entry{item = g.colony.items[i]}, true
+	}
+	j := i - len(g.colony.items)
+	if j < len(g.colony.relic_bag) {
+		return Inv_Entry{is_relic = true, relic = g.colony.relic_bag[j]}, true
+	}
+	return {}, false
+}
+
+// The list position of the monster selected on the map, if it is in the list.
+inv_focus_monster :: proc(g: ^Game) -> int {
+	for i in 0..<inv_mon_count(g) {
+		if inv_mon_roster(g, i) == g.selected {
+			return i
+		}
+	}
+	return 0
+}
+
+// Open the inventory. `arena` shows the run's pack and the tower party instead.
+open_inventory :: proc(g: ^Game, arena := false) {
+	g.show_bag = true
+	g.bag_arena = arena
+	g.bag_index = 0
+	g.bag_first = 0
+	g.bag_mon_first = 0
+	g.bag_mon = inv_focus_monster(g)
+}
+
+// Equip a bag item onto the Nth monster in the list. A swap returns the old item
+// to the same bag it came from.
+equip_bag_item_to :: proc(g: ^Game, bag_index, list_pos: int) -> bool {
+	s := inv_mon_roster(g, list_pos)
+	if s < 0 {
 		return false
 	}
-	if bag_index < 0 || bag_index >= len(g.colony.items) {
+	c := &g.colony
+	bag := g.bag_arena ? &c.arena_items : &c.items
+	if bag_index < 0 || bag_index >= len(bag) {
 		return false
 	}
-	item := g.colony.items[bag_index]
-	ordered_remove(&g.colony.items, bag_index)
-	old := g.colony.roster[s].creature.item
-	creature_equip_item(&g.colony.roster[s].creature, item)
+	item := bag[bag_index]
+	ordered_remove(bag, bag_index)
+	old := c.roster[s].creature.item
+	creature_equip_item(&c.roster[s].creature, item)
 	if old != .NONE {
-		append(&g.colony.items, old)
+		append(bag, old)
 	}
 	return true
 }
 
-update_bag :: proc(g: ^Game) {
-	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.G) {
+// Take whatever the Nth monster is wearing back into the bag.
+unequip_monster :: proc(g: ^Game, list_pos: int) -> bool {
+	s := inv_mon_roster(g, list_pos)
+	if s < 0 || g.colony.roster[s].creature.item == .NONE {
+		return false
+	}
+	c := &g.colony
+	bag := g.bag_arena ? &c.arena_items : &c.items
+	append(bag, c.roster[s].creature.item)
+	creature_equip_item(&c.roster[s].creature, .NONE)
+	return true
+}
+
+// The name of the monster the inventory is pointed at, for button labels.
+inv_target_name :: proc(g: ^Game) -> cstring {
+	s := inv_mon_roster(g, g.bag_mon)
+	if s < 0 {
+		return cstring("nobody")
+	}
+	return fmt.ctprintf("%s", g.colony.roster[s].creature.name)
+}
+
+update_inventory :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.G) || rl.IsKeyPressed(.J) {
 		g.show_bag = false
 		return
 	}
-	n := len(g.colony.items)
-	v := BAG_LIST
-	v.index = g.bag_index
-	v.first = g.bag_first
-	list_navigate(&v, n)
-	g.bag_index = v.index
-	g.bag_first = v.first
+	nmon := inv_mon_count(g)
+	// Pick a monster through the shared list (Up/Down, wheel, or a click).
+	v := inv_mon_view(g)
+	list_navigate(&v, nmon)
+	g.bag_mon = clamp(v.index, 0, max(nmon - 1, 0))
+	g.bag_mon_first = v.first
+	n := inv_count(g)
+	g.bag_index = clamp(g.bag_index, 0, max(n - 1, 0))
+	if !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := mouse_pos()
 
-	// Equip the selected item onto the map-selected monster (bag-specific).
-	if n > 0 && rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos(), bag_equip_rect()) {
-		if equip_bag_item(g, g.bag_index) {
-			set_status(g, "Item equipped.")
-			g.bag_index = clamp(g.bag_index, 0, max(len(g.colony.items) - 1, 0))
-		} else {
-			set_status(g, "Select one of your monsters on the map first.")
+	// Pick a bag slot.
+	for i in 0..<n {
+		if i >= INV_COLS * 4 {
+			break
 		}
+		if rl.CheckCollisionPointRec(mp, inv_slot_rect(i)) {
+			g.bag_index = i
+			return
+		}
+	}
+
+	entry, ok := inv_entry_at(g, g.bag_index)
+	// The action button: wear the selected item, or arm relic placement.
+	if rl.CheckCollisionPointRec(mp, inv_action_rect()) {
+		if !ok {
+			return
+		}
+		if entry.is_relic {
+			g.relic_place = entry.relic
+			g.relic_place_active = true
+			g.show_bag = false
+			set_status(g, "Click a Relic Tower to slot it. Esc cancels.")
+		} else if equip_bag_item_to(g, g.bag_index, g.bag_mon) {
+			set_status(g, fmt.ctprintf("Equipped to %s.", inv_target_name(g)))
+			g.bag_index = clamp(g.bag_index, 0, max(inv_count(g) - 1, 0))
+		} else {
+			set_status(g, "No monster to equip.")
+		}
+		return
+	}
+	// The second button: pull a relic out of a tower, or strip the monster. It
+	// works with an empty bag, which is exactly when you want it.
+	if rl.CheckCollisionPointRec(mp, inv_unequip_rect()) {
+		if ok && entry.is_relic {
+			if !remove_relic_nearest(&g.colony, g.colony.start_hex, entry.relic) {
+				set_status(g, "No tower holds that relic.")
+			}
+		} else if unequip_monster(g, g.bag_mon) {
+			set_status(g, fmt.ctprintf("%s is no longer wearing anything.", inv_target_name(g)))
+		} else {
+			set_status(g, "That monster has nothing equipped.")
+		}
+		return
 	}
 }
 
-draw_bag :: proc(g: ^Game) {
+draw_inventory :: proc(g: ^Game) {
+	sw := f32(screen_w())
 	sh := f32(screen_h())
-	draw_list_screen_header(fmt.ctprintf("ITEM BAG   (%d / %d)", len(g.colony.items), colony_item_cap(&g.colony)), "Up/Down, wheel or click to browse   |   G / Esc to close")
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 246})
 
-	n := len(g.colony.items)
+	p := inv_panel_rect()
+	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
+	title := g.bag_arena ? cstring("THE PACK") : cstring("INVENTORY")
+	rl.DrawText(title, i32(p.x) + 24, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
+	sub := g.bag_arena ? cstring("This run's pack. Click a monster, then an item, then Equip. It comes home if you cash out.") : cstring("Click a monster, then an item, then Equip.")
+	rl.DrawText(fit_text(string(sub), 15, i32(p.width) - 48), i32(p.x) + 24, i32(p.y) + 56, 15, rl.Color{170, 180, 200, 255})
 
-	// Left: the list.
-	v := BAG_LIST
-	v.index = g.bag_index
-	v.first = g.bag_first
-	panel := rl.Rectangle{30, 108, 320, f32(BAG_ROWS) * 24 + 12}
-	draw_list_chrome(v, n, panel)
 	mp := mouse_pos()
-	for row in 0 ..< v.rows {
-		i := v.first + row
-		if i >= n {
+
+	// ---- left: the monsters ----
+	mon_head := g.bag_arena ? cstring("AT THE TOWER") : cstring("YOUR MONSTERS")
+	rl.DrawText(mon_head, i32(inv_mon_x()), i32(p.y) + 96, 15, rl.Color{150, 160, 180, 255})
+	nmon := inv_mon_count(g)
+	v := inv_mon_view(g)
+	v.index = clamp(g.bag_mon, 0, max(nmon - 1, 0))
+	draw_list_chrome(v, nmon, rl.Rectangle{v.x - 8, v.y - 8, v.w + 26, f32(INV_MON_VISIBLE) * v.row_h + 16})
+	for k in 0..<v.rows {
+		i := v.first + k
+		if i >= nmon {
 			break
 		}
-		it := g.colony.items[i]
-		rec := list_row_rect(v, row)
-		sel := i == v.index
-		draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
-		rl.DrawCircleV(rl.Vector2{rec.x + 11, rec.y + 11}, 6, item_color(it))
-		rl.DrawText(item_name(it), i32(rec.x) + 26, i32(rec.y) + 3, 16, sel ? rl.Color{240, 240, 250, 255} : rl.Color{200, 200, 215, 255})
+		s := inv_mon_roster(g, i)
+		if s < 0 {
+			continue
+		}
+		cr := &g.colony.roster[s].creature
+		rec := inv_mon_rect(v, k)
+		sel := i == g.bag_mon
+		hover := rl.CheckCollisionPointRec(mp, rec)
+		bg := rl.Color{26, 28, 38, 240}
+		if sel {
+			bg = rl.Color{34, 48, 40, 240}
+		} else if hover {
+			bg = rl.Color{32, 34, 46, 240}
+		}
+		rl.DrawRectangleRounded(rec, 0.14, 6, bg)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.14, 6, sel ? 2 : 1, sel ? rl.Color{150, 230, 180, 255} : rl.Color{54, 58, 74, 255})
+		rl.DrawText(fit_textf(15, i32(INV_MON_W) - 150, "%s   Lvl %d", cr.name, cr.level),
+			i32(rec.x) + 10, i32(rec.y) + 11, 15, rl.Color{225, 228, 240, 255})
+		worn := cr.item == .NONE ? cstring("-") : item_name(cr.item)
+		ww := rl.MeasureText(worn, 13)
+		rl.DrawText(worn, i32(rec.x + rec.width) - ww - 10, i32(rec.y) + 13, 13,
+			cr.item == .NONE ? rl.Color{120, 120, 140, 255} : item_color(cr.item))
+	}
+	if nmon == 0 {
+		rl.DrawText(g.bag_arena ? "Nobody is at the tower." : "No monsters yet.",
+			i32(inv_mon_x()), i32(p.y) + 130, 15, rl.Color{150, 150, 170, 255})
 	}
 
-	rl.DrawText(fmt.ctprintf("%d item%s in the bag", n, n == 1 ? "" : "s"), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
-
-	dx := f32(390)
-	dy := f32(120)
-	if n == 0 {
-		rl.DrawText("Your bag is empty.", i32(dx), i32(dy), 22, rl.Color{170, 170, 190, 255})
-		rl.DrawText("Items drop from winning battles - equip them in the deck viewer (V).", i32(dx), i32(dy) + 34, 16, rl.Color{140, 140, 160, 255})
-		return
+	// ---- right: the bag ----
+	n := inv_count(g)
+	head := g.bag_arena ? fmt.ctprintf("PACK   (%d items - unbounded)", len(g.colony.arena_items)) : fmt.ctprintf("BAG   (%d items, %d relics)", len(g.colony.items), len(g.colony.relic_bag))
+	rl.DrawText(head, i32(inv_bag_x()), i32(p.y) + 96, 15, rl.Color{150, 160, 180, 255})
+	for i in 0..<n {
+		if i >= INV_COLS * 4 {
+			break
+		}
+		entry, _ := inv_entry_at(g, i)
+		rec := inv_slot_rect(i)
+		sel := i == g.bag_index
+		hover := rl.CheckCollisionPointRec(mp, rec)
+		col := entry.is_relic ? rl.Color{235, 195, 110, 255} : item_color(entry.item)
+		bg := rl.Color{26, 28, 38, 255}
+		if sel {
+			bg = rl.Color{38, 46, 42, 255}
+		} else if hover {
+			bg = rl.Color{32, 34, 46, 255}
+		}
+		rl.DrawRectangleRounded(rec, 0.18, 6, bg)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 6, sel ? 3 : 2, sel ? rl.Color{150, 230, 180, 255} : col)
+		cx := rec.x + rec.width / 2
+		cy := rec.y + rec.height / 2 - 4
+		if entry.is_relic {
+			draw_relic_icon(entry.relic, cx, cy, 1.0)
+		} else {
+			draw_item_icon(entry.item, cx, cy, 1.0)
+		}
+		name := entry.is_relic ? relic_name(entry.relic) : item_name(entry.item)
+		nw := rl.MeasureText(name, 11)
+		rl.DrawText(name, i32(cx) - nw / 2, i32(rec.y + rec.height) - 16, 11, rl.Color{205, 210, 225, 255})
 	}
 
-	idx := clamp(g.bag_index, 0, n - 1)
-	it := g.colony.items[idx]
+	// ---- the selected slot's breakdown ----
+	dr := inv_detail_rect()
+	entry, ok := inv_entry_at(g, g.bag_index)
+	if ok {
+		col := entry.is_relic ? rl.Color{235, 195, 110, 255} : item_color(entry.item)
+		rl.DrawRectangleRounded(dr, 0.03, 8, rl.Color{22, 24, 32, 255})
+		rl.DrawRectangleRoundedLinesEx(dr, 0.03, 8, 2, rl.Color{54, 58, 74, 255})
+		if entry.is_relic {
+			draw_relic_icon(entry.relic, dr.x + 34, dr.y + 50, 1.1)
+		} else {
+			draw_item_icon(entry.item, dr.x + 34, dr.y + 50, 1.1)
+		}
+		name := entry.is_relic ? relic_name(entry.relic) : item_name(entry.item)
+		kind := entry.is_relic ? cstring("Relic  -  slot into a Relic Tower") : cstring("Held item  -  one per monster")
+		rl.DrawText(name, i32(dr.x) + 70, i32(dr.y) + 10, 20, rl.Color{235, 235, 245, 255})
+		rl.DrawText(kind, i32(dr.x) + 70, i32(dr.y) + 34, 14, col)
+		if entry.is_relic {
+			draw_text_wrapped(relic_desc(entry.relic), i32(dr.x) + 70, i32(dr.y) + 56, 15, i32(dr.width) - 90,
+				rl.Color{200, 205, 220, 255})
+			placed := relics_placed(&g.colony)
+			rl.DrawText(fmt.ctprintf("In the bag: %d    slotted in towers: %d    (copies stack)",
+				relics_unplaced(&g.colony, entry.relic), placed[entry.relic]),
+				i32(dr.x) + 70, i32(dr.y) + 112, 14, rl.Color{180, 185, 205, 255})
+		} else {
+			draw_item_effects(entry.item, i32(dr.x) + 70, i32(dr.y) + 56, 15)
+		}
+	} else {
+		msg := g.bag_arena ? cstring("The pack is empty. Trial floors are where a run hands out gear.") : cstring("The bag is empty. Items drop from battles; relics from bosses.")
+		rl.DrawText(msg, i32(dr.x), i32(dr.y) + 40, 15, rl.Color{150, 150, 170, 255})
+	}
 
-	// Icon (coloured disc with the initial).
+	// ---- actions (drawn even with an empty bag: that is when Unequip matters) ----
+	s := inv_mon_roster(g, g.bag_mon)
+	worn: cstring = "nothing"
+	if s >= 0 && g.colony.roster[s].creature.item != .NONE {
+		worn = item_name(g.colony.roster[s].creature.item)
+	}
+	if ok && entry.is_relic {
+		draw_button(inv_action_rect(), "Place in a Relic Tower", true, BUTTON_PANEL, 16)
+		if rl.CheckCollisionPointRec(mp, inv_action_rect()) {
+			tooltip_set("Close the inventory and click a Relic Tower to slot this relic into it.")
+		}
+		draw_button(inv_unequip_rect(), "Take back (nearest tower)", relics_placed(&g.colony)[entry.relic] > 0, BUTTON_PANEL, 16)
+	} else {
+		draw_button(inv_action_rect(), fmt.ctprintf("Equip to %s", inv_target_name(g)), ok && s >= 0, BUTTON_PANEL, 16)
+		draw_button(inv_unequip_rect(), fmt.ctprintf("Unequip %s  (wearing: %s)", inv_target_name(g), worn),
+			s >= 0 && g.colony.roster[s].creature.item != .NONE, BUTTON_PANEL, 16)
+	}
+	rl.DrawText("G / Esc to close", i32(p.x) + 24, i32(p.y + p.height) - 30, 15, rl.Color{150, 150, 170, 255})
+}
+
+// A little procedural icon per item and per relic, so the grid reads at a
+// glance without any art assets.
+draw_item_icon :: proc(it: Item, cx, cy, s: f32) {
 	col := item_color(it)
-	rl.DrawCircleV(rl.Vector2{dx + 44, dy + 40}, 36, rl.Color{col[0] / 3, col[1] / 3, col[2] / 3, 255})
-	rl.DrawCircleLinesV(rl.Vector2{dx + 44, dy + 40}, 36, rl.Color{235, 235, 245, 255})
-	initial := fmt.ctprintf("%c", item_info(it).name[0])
-	iw := rl.MeasureText(initial, 34)
-	rl.DrawText(initial, i32(dx + 44) - iw / 2, i32(dy + 40) - 17, 34, rl.Color{255, 255, 255, 255})
-
-	rl.DrawText(item_name(it), i32(dx + 100), i32(dy) + 4, 30, rl.Color{235, 235, 245, 255})
-	rl.DrawText(item_desc(it), i32(dx + 100), i32(dy) + 42, 17, col)
-
-	// Effect breakdown.
-	ey := i32(dy) + 96
-	rl.DrawText("EFFECTS", i32(dx), ey, 15, rl.Color{150, 150, 170, 255})
-	draw_item_effects(it, i32(dx), ey + 24, 17)
-
-	// Equip target.
-	target_name: cstring = "select a monster on the map"
-	can_equip := false
-	s := g.selected
-	if s >= 0 && s < len(g.colony.roster) && !g.colony.roster[s].wild {
-		m := &g.colony.roster[s]
-		can_equip = m.creature.hp > 0
-		cur := m.creature.item != .NONE ? item_name(m.creature.item) : cstring("nothing")
-		target_name = fmt.ctprintf("%s  (wearing: %s)", m.creature.name, cur)
+	dark := rl.Color{col[0] / 3, col[1] / 3, col[2] / 3, 255}
+	white := rl.Color{240, 240, 250, 255}
+	switch it {
+	case .Bloodstone:
+		rl.DrawTriangle(rl.Vector2{cx, cy - 11 * s}, rl.Vector2{cx - 11 * s, cy + 2 * s}, rl.Vector2{cx + 11 * s, cy + 2 * s}, col)
+		rl.DrawTriangle(rl.Vector2{cx - 11 * s, cy + 2 * s}, rl.Vector2{cx + 11 * s, cy + 2 * s}, rl.Vector2{cx, cy + 12 * s}, dark)
+		rl.DrawCircleV(rl.Vector2{cx, cy + 14 * s}, 2.4 * s, rl.Color{220, 60, 60, 255})
+	case .Weakpoint_Lens:
+		rl.DrawCircleV(rl.Vector2{cx, cy}, 11 * s, dark)
+		rl.DrawCircleLinesV(rl.Vector2{cx, cy}, 11 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx - 16 * s, cy}, rl.Vector2{cx + 16 * s, cy}, 1.6 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx, cy - 16 * s}, rl.Vector2{cx, cy + 16 * s}, 1.6 * s, col)
+		rl.DrawCircleV(rl.Vector2{cx, cy}, 3.2 * s, white)
+	case .Ricochet_Charm:
+		rl.DrawRectangleRounded(rl.Rectangle{cx - 12 * s, cy - 12 * s, 24 * s, 24 * s}, 0.25, 4, dark)
+		rl.DrawRectangleRoundedLinesEx(rl.Rectangle{cx - 12 * s, cy - 12 * s, 24 * s, 24 * s}, 0.25, 4, 1.6 * s, col)
+		for dy in -1..=1 {
+			for dx in -1..=1 {
+				rl.DrawCircleV(rl.Vector2{cx + f32(dx) * 6 * s, cy + f32(dy) * 6 * s}, 2.1 * s, white)
+			}
+		}
+	case .Siphon_Gland:
+		rl.DrawTriangle(rl.Vector2{cx, cy - 13 * s}, rl.Vector2{cx - 10 * s, cy + 4 * s}, rl.Vector2{cx + 10 * s, cy + 4 * s}, col)
+		rl.DrawCircleV(rl.Vector2{cx, cy + 4 * s}, 10 * s, col)
+		rl.DrawCircleV(rl.Vector2{cx - 3 * s, cy}, 2.6 * s, white)
+	case .Venom_Sac:
+		rl.DrawCircleV(rl.Vector2{cx, cy - 2 * s}, 11 * s, col)
+		rl.DrawTriangle(rl.Vector2{cx - 5 * s, cy + 8 * s}, rl.Vector2{cx + 5 * s, cy + 8 * s}, rl.Vector2{cx, cy + 16 * s}, col)
+		rl.DrawCircleV(rl.Vector2{cx - 4 * s, cy - 5 * s}, 3 * s, dark)
+	case .Spiked_Carapace:
+		rl.DrawCircleV(rl.Vector2{cx, cy}, 10 * s, dark)
+		rl.DrawCircleLinesV(rl.Vector2{cx, cy}, 10 * s, col)
+		for k in 0..<6 {
+			a := f32(k) / 6 * 6.28318
+			rl.DrawTriangle(
+				rl.Vector2{cx + math.cos(a) * 10 * s, cy + math.sin(a) * 10 * s},
+				rl.Vector2{cx + math.cos(a + 0.5) * 10 * s, cy + math.sin(a + 0.5) * 10 * s},
+				rl.Vector2{cx + math.cos(a + 0.25) * 18 * s, cy + math.sin(a + 0.25) * 18 * s},
+				col,
+			)
+		}
+	case .Ration_Pouch:
+		rl.DrawRectangleRounded(rl.Rectangle{cx - 12 * s, cy - 6 * s, 24 * s, 20 * s}, 0.35, 5, dark)
+		rl.DrawRectangleRoundedLinesEx(rl.Rectangle{cx - 12 * s, cy - 6 * s, 24 * s, 20 * s}, 0.35, 5, 1.6 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx - 9 * s, cy - 6 * s}, rl.Vector2{cx + 9 * s, cy - 6 * s}, 3 * s, col)
+		rl.DrawCircleV(rl.Vector2{cx, cy + 4 * s}, 3.2 * s, white)
+	case .Amber_Fruit:
+		rl.DrawCircleV(rl.Vector2{cx, cy + 2 * s}, 11 * s, col)
+		rl.DrawCircleV(rl.Vector2{cx - 3 * s, cy - 2 * s}, 3 * s, rl.Color{255, 235, 200, 200})
+		rl.DrawLineEx(rl.Vector2{cx, cy - 9 * s}, rl.Vector2{cx + 2 * s, cy - 16 * s}, 2 * s, rl.Color{110, 90, 60, 255})
+		rl.DrawEllipse(i32(cx + 7 * s), i32(cy - 14 * s), 6 * s, 3 * s, rl.Color{120, 200, 120, 255})
+	case .Cleansing_Bloom:
+		for k in 0..<5 {
+			a := f32(k) / 5 * 6.28318
+			rl.DrawCircleV(rl.Vector2{cx + math.cos(a) * 8 * s, cy + math.sin(a) * 8 * s}, 6 * s, col)
+		}
+		rl.DrawCircleV(rl.Vector2{cx, cy}, 4.5 * s, rl.Color{255, 245, 190, 255})
+	case .Grit_Charm:
+		rl.DrawRectangleRounded(rl.Rectangle{cx - 10 * s, cy - 12 * s, 20 * s, 22 * s}, 0.35, 5, dark)
+		rl.DrawTriangle(rl.Vector2{cx - 10 * s, cy + 8 * s}, rl.Vector2{cx + 10 * s, cy + 8 * s}, rl.Vector2{cx, cy + 16 * s}, dark)
+		rl.DrawRectangleRoundedLinesEx(rl.Rectangle{cx - 10 * s, cy - 12 * s, 20 * s, 22 * s}, 0.35, 5, 1.6 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx, cy - 6 * s}, rl.Vector2{cx, cy + 4 * s}, 2.6 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx - 5 * s, cy - 1 * s}, rl.Vector2{cx + 5 * s, cy - 1 * s}, 2.6 * s, col)
+	case .Grudge_Idol:
+		rl.DrawRectangleRounded(rl.Rectangle{cx - 7 * s, cy - 12 * s, 14 * s, 24 * s}, 0.25, 4, dark)
+		rl.DrawRectangleRoundedLinesEx(rl.Rectangle{cx - 7 * s, cy - 12 * s, 14 * s, 24 * s}, 0.25, 4, 1.6 * s, col)
+		rl.DrawCircleV(rl.Vector2{cx - 3 * s, cy - 5 * s}, 1.8 * s, col)
+		rl.DrawCircleV(rl.Vector2{cx + 3 * s, cy - 5 * s}, 1.8 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx - 3 * s, cy + 4 * s}, rl.Vector2{cx + 3 * s, cy + 4 * s}, 2 * s, col)
+	case .Snare_Kit:
+		rl.DrawCircleLinesV(rl.Vector2{cx, cy}, 11 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx - 11 * s, cy - 6 * s}, rl.Vector2{cx + 11 * s, cy + 6 * s}, 1.4 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx - 11 * s, cy + 6 * s}, rl.Vector2{cx + 11 * s, cy - 6 * s}, 1.4 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx - 11 * s, cy}, rl.Vector2{cx + 11 * s, cy}, 1.4 * s, col)
+		rl.DrawLineEx(rl.Vector2{cx, cy - 11 * s}, rl.Vector2{cx, cy + 11 * s}, 1.4 * s, col)
+		rl.DrawCircleV(rl.Vector2{cx, cy}, 2.6 * s, white)
+	case .NONE:
 	}
-	rl.DrawText(fmt.ctprintf("Equip to: %s", target_name), i32(dx), i32(sh) - 138, 16, rl.Color{180, 180, 200, 255})
+}
 
-	btn := bag_equip_rect()
-	hover := can_equip && rl.CheckCollisionPointRec(mp, btn)
-	bg := can_equip ? (hover ? rl.Color{60, 100, 78, 255} : rl.Color{44, 74, 58, 255}) : rl.Color{34, 34, 42, 255}
-	rl.DrawRectangleRounded(btn, 0.24, 8, bg)
-	rl.DrawRectangleRoundedLinesEx(btn, 0.24, 8, 2, can_equip ? rl.Color{150, 220, 180, 255} : rl.Color{80, 80, 92, 255})
-	lab := cstring("Equip to selected monster")
-	lw := rl.MeasureText(lab, 18)
-	rl.DrawText(lab, i32(btn.x + btn.width / 2) - lw / 2, i32(btn.y + btn.height / 2) - 9, 18, can_equip ? rl.Color{235, 250, 240, 255} : rl.Color{130, 130, 142, 255})
+// A relic's mark: a small faceted core (relics share one icon; the colour and
+// label carry the identity).
+draw_relic_icon :: proc(r: Relic, cx, cy, s: f32) {
+	col := rl.Color{235, 195, 110, 255}
+	dark := rl.Color{78, 62, 26, 255}
+	rl.DrawTriangle(rl.Vector2{cx, cy - 13 * s}, rl.Vector2{cx - 11 * s, cy + 3 * s}, rl.Vector2{cx + 11 * s, cy + 3 * s}, col)
+	rl.DrawTriangle(rl.Vector2{cx - 11 * s, cy + 3 * s}, rl.Vector2{cx + 11 * s, cy + 3 * s}, rl.Vector2{cx, cy + 14 * s}, dark)
+	rl.DrawTriangleLines(rl.Vector2{cx, cy - 13 * s}, rl.Vector2{cx - 11 * s, cy + 3 * s}, rl.Vector2{cx + 11 * s, cy + 3 * s}, rl.Color{255, 235, 170, 255})
+	rl.DrawCircleV(rl.Vector2{cx, cy}, 3 * s, rl.Color{255, 245, 200, 255})
+	_ = r
 }
 
 // ----------------------------------------------------------------------------
@@ -1563,12 +2312,17 @@ draw_upgrades :: proc(g: ^Game) {
 		name_col := unlocked ? rl.Color{235, 232, 250, 255} : rl.Color{130, 128, 145, 255}
 		rl.DrawText(upgrade_name(u), i32(rec.x + indent) + 14, i32(rec.y) + 5, 15, name_col)
 
-		// Level pips after the name.
+		// Level pips after the name. Uncapped nodes show at most 8 pips plus a
+		// numeric level, so the row never overruns its cell.
 		nw := rl.MeasureText(upgrade_name(u), 15)
-		for lv in 0..<info.max_level {
+		pips := min(info.max_level, 8)
+		for lv in 0..<pips {
 			cx := rec.x + indent + 14 + f32(nw) + 12 + f32(lv) * 13
 			col := lv < level ? rl.Color{170, 140, 245, 255} : rl.Color{58, 56, 74, 255}
 			rl.DrawCircleV(rl.Vector2{cx, rec.y + 12}, 4.5, col)
+		}
+		if info.max_level > 8 {
+			rl.DrawText(fmt.ctprintf("Lv %d", level), i32(rec.x + indent + 14 + f32(nw) + 12 + f32(pips) * 13), i32(rec.y) + 5, 13, rl.Color{200, 185, 245, 255})
 		}
 
 		if unlocked {
@@ -1610,105 +2364,419 @@ draw_upgrades :: proc(g: ^Game) {
 	}
 	scissor_end()
 
+	// The same scrollbar every list screen uses.
+	visible_rows := max(int(clip.height / 62), 1)
+	draw_scrollbar(rl.Rectangle{p.x + p.width - 12, clip.y, 6, clip.height},
+		int(g.upgrade_scroll / 62), visible_rows, UPGRADE_ROWS)
+
 	rl.DrawText("U / Esc to close   -   wheel to scroll   -   children unlock when their parent reaches the shown level", i32(p.x) + 24, i32(p.y + p.height) - 24, 13, rl.Color{140, 140, 160, 255})
 }
 
 // ----------------------------------------------------------------------------
-// Arena panel (pay gold -> fight a strong team for crystals)
+// The Arena screen
+//
+// A run has its own screen, not the colony map. One flat entry fee buys a chain
+// of floors starting at floor 1; each cleared floor banks its purse; cash out to
+// keep the winnings, or wipe and lose them. While a run is on, this is where you
+// are — the colony is out of reach until you settle up, so the party you brought
+// is the party you climb with.
 // ----------------------------------------------------------------------------
 
 arena_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	return rl.Rectangle{sw / 2 - 260, sh / 2 - 170, 520, 340}
+	return rl.Rectangle{sw / 2 - 450, sh / 2 - 260, 900, 520}
 }
+
+// The left column runs from p.x + 28 to the party column at p.x + 460.
+ARENA_COL_W :: f32(430)
 
 arena_fight_rect :: proc() -> rl.Rectangle {
 	p := arena_panel_rect()
-	return rl.Rectangle{p.x + 30, p.y + 220, p.width - 60, 52}
+	return rl.Rectangle{p.x + 28, p.y + 380, p.width - 56, 46}
+}
+
+arena_cashout_rect :: proc() -> rl.Rectangle {
+	p := arena_panel_rect()
+	w := (p.width - 56 - 48) / 5
+	return rl.Rectangle{p.x + 28, p.y + 434, w, 34}
+}
+
+arena_save_rect :: proc() -> rl.Rectangle {
+	r := arena_cashout_rect()
+	return rl.Rectangle{r.x + r.width + 12, r.y, r.width, r.height}
+}
+
+arena_items_rect :: proc() -> rl.Rectangle {
+	r := arena_save_rect()
+	return rl.Rectangle{r.x + r.width + 12, r.y, r.width, r.height}
+}
+
+arena_decks_rect :: proc() -> rl.Rectangle {
+	r := arena_items_rect()
+	return rl.Rectangle{r.x + r.width + 12, r.y, r.width, r.height}
 }
 
 arena_leave_rect :: proc() -> rl.Rectangle {
-	p := arena_panel_rect()
-	return rl.Rectangle{p.x + 30, p.y + 282, p.width - 60, 40}
+	r := arena_decks_rect()
+	return rl.Rectangle{r.x + r.width + 12, r.y, r.width, r.height}
 }
 
-// The Arena resets if you lose: the team leaves so you can try again.
-arena_reset :: proc(g: ^Game) {
-	i := 0
-	for i < len(g.colony.roster) {
-		m := &g.colony.roster[i]
-		if m.wild && hex_equal(m.pos, g.battle_hex) {
-			remove_monster_at(&g.colony, i, false)
-			continue
-		}
-		i += 1
-	}
-}
-
+// Where a run begins: settle up, or (with no run on) walk back out to the colony.
 update_arena :: proc(g: ^Game) {
-	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.T) {
-		g.arena_open = false
+	c := &g.colony
+	// Esc only lets you out when there is nothing at stake; mid-run you settle
+	// up or abandon, so the party can't be rearranged between floors.
+	if rl.IsKeyPressed(.ESCAPE) && !c.arena_run {
+		g.mode = .MAP
 		return
 	}
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
 	mp := mouse_pos()
-	if rl.CheckCollisionPointRec(mp, arena_leave_rect()) {
-		g.arena_open = false
+	if !c.arena_run && rl.CheckCollisionPointRec(mp, arena_leave_rect()) {
+		g.mode = .MAP
+		return
+	}
+	// Cash out: bank everything the run has earned and end it.
+	if c.arena_run && rl.CheckCollisionPointRec(mp, arena_cashout_rect()) {
+		banked := c.arena_run_crystals
+		c.crystals += banked
+		c.crystals_earned += banked
+		colony_notify(c, "Cashed out: %d crystals banked.", banked)
+		audio_play(.CRYSTAL)
+		arena_keep_pack(c)
+		c.arena_run = false
+		c.arena_run_crystals = 0
+		c.arena_floor = 1
+		clear(&c.arena_boons)
+		g.mode = .MAP
+		return
+	}
+	if c.arena_run && rl.CheckCollisionPointRec(mp, arena_save_rect()) {
+		set_status(g, save_game(g, AUTOSAVE_SLOT) ? "Run saved." : "Could not save.")
+		return
+	}
+	// Re-gear between floors: the inventory opens right over the tower screen,
+	// showing only this run's pack and the monsters on the tile.
+	if rl.CheckCollisionPointRec(mp, arena_items_rect()) {
+		open_inventory(g, arena = true)
+		return
+	}
+	// And look at what the party is actually carrying into the next floor.
+	if rl.CheckCollisionPointRec(mp, arena_decks_rect()) {
+		g.show_deck = true
+		g.view_index = clamp(g.selected, 0, max(len(c.roster) - 1, 0))
+		g.view_scroll = 0
+		return
+	}
+	// Abandon: the same as a wipe, but on your own terms.
+	if c.arena_run && rl.CheckCollisionPointRec(mp, arena_leave_rect()) {
+		colony_notify(c, "Run abandoned - %d crystals and the pack are lost.", c.arena_run_crystals)
+		c.arena_run = false
+		c.arena_run_crystals = 0
+		c.arena_floor = 1
+		clear(&c.arena_boons)
+		clear(&c.arena_items)
+		g.mode = .MAP
 		return
 	}
 	if rl.CheckCollisionPointRec(mp, arena_fight_rect()) {
-		if colony_total_gold(&g.colony) < ARENA_ENTRY_COST {
-			set_status(g, "Not enough gold to enter the Arena.")
+		hex := c.roster[g.selected].pos
+		// The fee is flat and only paid once, when the run starts.
+		if !c.arena_run {
+			if colony_total_gold(c) < ARENA_ENTRY_COST {
+				set_status(g, "Not enough gold to enter the Arena.")
+				return
+			}
+			_ = colony_spend_gold(c, ARENA_ENTRY_COST)
+			c.arena_run = true
+			c.arena_floor = 1
+			c.arena_run_crystals = 0
+			// Everything the tower fields is scaled off the party you walked in
+			// with, so it neither drifts up under you nor responds to how you
+			// level while you're inside.
+			c.arena_base_level = arena_party_level(c, hex)
+			// Each run gets its own seed: its gym order and its event offers are
+			// derived from it, so they hold for the whole climb and differ next
+			// time out.
+			c.arena_run_seed = rng_next_u64(&c.rng)
+			clear(&c.arena_boons)
+			// Walking here spent energy from the same pool the fights draw on.
+			// Starting the climb tops everyone back up, so travel costs nothing.
+			arena_refill_party(c, hex)
+		}
+		// A trial floor that is an event is settled by a decision, not a fight.
+		if arena_is_event_floor(max(c.arena_floor, 1)) {
+			arena_make_event(c, hex, max(c.arena_floor, 1))
+			g.arena_event_open = true
 			return
 		}
-		hex := g.colony.roster[g.selected].pos
-		_ = colony_spend_gold(&g.colony, ARENA_ENTRY_COST)
-		colony_spawn_arena_team(&g.colony, hex)
-		g.arena_open = false
+		colony_spawn_arena_team(c, hex)
 		g.battle_hex = hex
 		g.battle_forced = true
-		build_attack(g, hex, 1)
+		g.battle_arena = true
+		// The Arena is a formal challenge: only the monsters standing on the tile
+		// come in, so the party is capped at six and nobody is dragged in from a
+		// neighbouring hex.
+		build_attack(g, hex, 0)
 		g.battle_choice_open = true
 		set_status(g, "The Arena answers your challenge!")
+	}
+}
+
+// Your party, as brought.
+// A party row, laid out in three clear bands so nothing overlaps: name and
+// ability on top, then the HP bar with its number inside it, then a short energy
+// bar with the held item to its right.
+ARENA_ROW_H :: f32(50)
+
+draw_arena_party :: proc(g: ^Game, x, y, w: f32) {
+	rl.DrawText("YOUR PARTY", i32(x), i32(y), 15, rl.Color{150, 160, 180, 255})
+	hex := g.colony.roster[g.selected].pos
+	row := y + 26
+	for i in 0 ..< len(g.colony.roster) {
+		m := &g.colony.roster[i]
+		if m.wild || !hex_equal(m.pos, hex) {
+			continue
+		}
+		cr := &m.creature
+		rl.DrawRectangleRounded(rl.Rectangle{x, row, w, ARENA_ROW_H}, 0.12, 6, rl.Color{26, 28, 36, 240})
+		rl.DrawRectangleRoundedLinesEx(rl.Rectangle{x, row, w, ARENA_ROW_H}, 0.12, 6, 1, rl.Color{58, 60, 74, 255})
+		// Band 1: name and ability.
+		rl.DrawText(fit_textf(15, i32(w) - 120, "%s   Lvl %d", cr.name, cr.level),
+			i32(x) + 10, i32(row) + 4, 15, rl.Color{225, 228, 240, 255})
+		ab := ability_name(cr.ability)
+		aw := rl.MeasureText(ab, 12)
+		rl.DrawText(ab, i32(x + w) - aw - 10, i32(row) + 6, 12, rl.Color{200, 180, 240, 255})
+		// Band 2: the HP bar, with its number centred inside it (shadowed so it
+		// stays readable over the fill).
+		hp_rec := rl.Rectangle{x + 10, row + 23, w - 20, 12}
+		draw_bar(hp_rec, cr.hp, cr.max_hp, COL_HP)
+		hp_txt := fmt.ctprintf("%d/%d", cr.hp, cr.max_hp)
+		hw := rl.MeasureText(hp_txt, 10)
+		rl.DrawText(hp_txt, i32(hp_rec.x + hp_rec.width / 2) - hw / 2 + 1, i32(hp_rec.y) + 2, 10, rl.Color{0, 0, 0, 200})
+		rl.DrawText(hp_txt, i32(hp_rec.x + hp_rec.width / 2) - hw / 2, i32(hp_rec.y) + 1, 10, rl.Color{245, 245, 250, 255})
+		// Band 3: a short energy bar, with the held item to its right.
+		draw_bar(rl.Rectangle{x + 10, row + 40, 120, 6}, int(cr.energy * 100), int(max(cr.energy_max, 0.01) * 100), COL_ENERGY)
+		en_txt := fmt.ctprintf("En %s/%s", fmt_num(cr.energy), fmt_num(cr.energy_max))
+		rl.DrawText(en_txt, i32(x) + 138, i32(row) + 36, 11, rl.Color{150, 190, 235, 255})
+		it := item_name(cr.item)
+		iw := rl.MeasureText(it, 11)
+		rl.DrawText(it, i32(x + w) - iw - 10, i32(row) + 36, 11, rl.Color{190, 190, 205, 255})
+		row += ARENA_ROW_H + 4
 	}
 }
 
 draw_arena :: proc(g: ^Game) {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 165})
+	rl.ClearBackground(rl.Color{10, 10, 14, 255})
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 90})
 
 	p := arena_panel_rect()
-	rl.DrawRectangleRounded(p, 0.05, 8, rl.Color{30, 24, 18, 248})
-	rl.DrawRectangleRoundedLinesEx(p, 0.05, 8, 3, rl.Color{210, 170, 90, 255})
+	rl.DrawRectangleRounded(p, 0.04, 8, rl.Color{30, 24, 18, 250})
+	rl.DrawRectangleRoundedLinesEx(p, 0.04, 8, 3, rl.Color{210, 170, 90, 255})
 
-	rl.DrawText("THE ARENA", i32(p.x) + 28, i32(p.y) + 20, 30, rl.Color{240, 210, 130, 255})
-	rl.DrawText(fmt.ctprintf("%d challengers await - skilled, and above your level.", ARENA_TEAM_SIZE), i32(p.x) + 28, i32(p.y) + 62, 17, rl.Color{215, 200, 175, 255})
-	rl.DrawText(fmt.ctprintf("Entry costs %d gold. Win and the crowd pays you %d crystals.", ARENA_ENTRY_COST, ARENA_CRYSTAL_REWARD), i32(p.x) + 28, i32(p.y) + 88, 16, rl.Color{210, 190, 150, 255})
-	rl.DrawText("Bring a full party - their numbers match yours only if you do.", i32(p.x) + 28, i32(p.y) + 114, 16, rl.Color{190, 175, 150, 255})
-	rl.DrawText(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals), i32(p.x) + 28, i32(p.y) + 150, 18, rl.Color{235, 210, 120, 255})
+	floor := max(g.colony.arena_floor, 1)
+	running := g.colony.arena_run
+	rl.DrawText("THE ARENA", i32(p.x) + 28, i32(p.y) + 16, 30, rl.Color{240, 210, 130, 255})
+	rl.DrawText(fmt.ctprintf("FLOOR %d      best ever: %d", floor, g.colony.arena_best_floor),
+		i32(p.x) + 28, i32(p.y) + 56, 22, rl.Color{240, 215, 150, 255})
+
+	heal_iv := arena_heal_interval(floor)
+	if running {
+		rl.DrawText(fit_textf(17, i32(ARENA_COL_W), "Winnings: %d crystals banked.", g.colony.arena_run_crystals),
+			i32(p.x) + 28, i32(p.y) + 88, 17, rl.Color{150, 225, 170, 255})
+		rl.DrawText(fit_text("Lose the party and the run - and the winnings - are gone.", 14, i32(ARENA_COL_W)),
+			i32(p.x) + 28, i32(p.y) + 110, 14, rl.Color{225, 165, 140, 255})
+	} else {
+		rl.DrawText(fit_textf(17, i32(ARENA_COL_W), "Entry: %d gold for one run.", ARENA_ENTRY_COST),
+			i32(p.x) + 28, i32(p.y) + 88, 17, rl.Color{215, 200, 175, 255})
+		rl.DrawText(fit_text("Climb as far as you can, then cash out.", 14, i32(ARENA_COL_W)),
+			i32(p.x) + 28, i32(p.y) + 110, 14, rl.Color{200, 185, 160, 255})
+	}
+	if arena_is_event_floor(floor) {
+		rl.DrawText(fit_text("A trial floor: no fight, but a choice to make.", 15, i32(ARENA_COL_W)),
+			i32(p.x) + 28, i32(p.y) + 134, 15, rl.Color{225, 210, 150, 255})
+	} else if arena_is_trial_floor(floor) {
+		rl.DrawText(fit_textf(15, i32(ARENA_COL_W), "A trial floor: the gym %s.", arena_gym_for(&g.colony, floor).name),
+			i32(p.x) + 28, i32(p.y) + 134, 15, rl.Color{225, 210, 150, 255})
+	} else {
+		rl.DrawText(fit_textf(15, i32(ARENA_COL_W), "Next: %d challengers around level %d.",
+			arena_team_size_for(floor), arena_challenger_level(&g.colony, g.colony.roster[g.selected].pos)),
+			i32(p.x) + 28, i32(p.y) + 134, 15, rl.Color{215, 200, 175, 255})
+	}
+	rl.DrawText(fit_text(string(arena_trials_ahead(&g.colony, floor)), 13, i32(ARENA_COL_W)),
+		i32(p.x) + 28, i32(p.y) + 156, 13, rl.Color{190, 195, 215, 255})
+	rl.DrawText(fit_textf(14, i32(ARENA_COL_W), "A heal every %d floor%s.   Gold %d   Crystals %d",
+		heal_iv, heal_iv == 1 ? "" : "s", colony_total_gold(&g.colony), g.colony.crystals),
+		i32(p.x) + 28, i32(p.y) + 178, 14, rl.Color{210, 205, 175, 255})
+	if boons := arena_boons_label(&g.colony); len(boons) > 0 {
+		rl.DrawText(fit_text(string(boons), 13, i32(ARENA_COL_W)), i32(p.x) + 28, i32(p.y) + 198, 13, rl.Color{200, 185, 235, 255})
+	}
+	draw_arena_party(g, p.x + 468, p.y + 16, p.width - 496)
 
 	mp := mouse_pos()
-	afford := colony_total_gold(&g.colony) >= ARENA_ENTRY_COST
-
+	// Fight / enter.
 	btn := arena_fight_rect()
+	afford := running || colony_total_gold(&g.colony) >= ARENA_ENTRY_COST
 	hover := afford && rl.CheckCollisionPointRec(mp, btn)
 	bg := afford ? (hover ? rl.Color{120, 60, 40, 255} : rl.Color{88, 46, 32, 255}) : rl.Color{40, 36, 34, 255}
 	rl.DrawRectangleRounded(btn, 0.22, 8, bg)
 	rl.DrawRectangleRoundedLinesEx(btn, 0.22, 8, 2, afford ? rl.Color{230, 150, 90, 255} : rl.Color{100, 90, 80, 255})
-	fl := fmt.ctprintf("Fight   (%d gold)", ARENA_ENTRY_COST)
+	fl := fmt.ctprintf("Enter the tower   (%d gold)", ARENA_ENTRY_COST)
+	if running {
+		switch {
+		case arena_is_event_floor(floor):
+			fl = fmt.ctprintf("Floor %d  -  a decision", floor)
+		case arena_is_trial_floor(floor):
+			fl = fmt.ctprintf("Floor %d  -  the gym %s", floor, arena_gym_for(&g.colony, floor).name)
+		case:
+			fl = fmt.ctprintf("Fight floor %d", floor)
+		}
+	}
 	fw := rl.MeasureText(fl, 20)
 	rl.DrawText(fl, i32(btn.x + btn.width / 2) - fw / 2, i32(btn.y + btn.height / 2) - 11, 20, afford ? rl.Color{250, 235, 220, 255} : rl.Color{150, 140, 130, 255})
 
+	// The row beneath: settle up, save, and get out.
+	cr := arena_cashout_rect()
+	if running {
+		chover := rl.CheckCollisionPointRec(mp, cr)
+		rl.DrawRectangleRounded(cr, 0.28, 8, chover ? rl.Color{52, 92, 66, 255} : rl.Color{38, 68, 50, 255})
+		rl.DrawRectangleRoundedLinesEx(cr, 0.28, 8, 2, rl.Color{140, 220, 170, 255})
+		cl := fmt.ctprintf("Cash out  (%d crystals)", g.colony.arena_run_crystals)
+		cw := rl.MeasureText(cl, 16)
+		rl.DrawText(cl, i32(cr.x + cr.width / 2) - cw / 2, i32(cr.y + cr.height / 2) - 8, 16, rl.Color{225, 250, 235, 255})
+	}
+	sr := arena_save_rect()
+	if running {
+		shover := rl.CheckCollisionPointRec(mp, sr)
+		rl.DrawRectangleRounded(sr, 0.28, 8, shover ? rl.Color{44, 50, 66, 255} : rl.Color{32, 36, 48, 255})
+		rl.DrawRectangleRoundedLinesEx(sr, 0.28, 8, 2, rl.Color{130, 160, 220, 255})
+		sl := cstring("Save the run")
+		sw2 := rl.MeasureText(sl, 16)
+		rl.DrawText(sl, i32(sr.x + sr.width / 2) - sw2 / 2, i32(sr.y + sr.height / 2) - 8, 16, rl.Color{200, 215, 240, 255})
+	}
+	dr := arena_decks_rect()
+	dhover := rl.CheckCollisionPointRec(mp, dr)
+	rl.DrawRectangleRounded(dr, 0.28, 8, dhover ? rl.Color{44, 52, 62, 255} : rl.Color{32, 38, 46, 255})
+	rl.DrawRectangleRoundedLinesEx(dr, 0.28, 8, 2, rl.Color{150, 210, 220, 255})
+	dl := cstring("Decks")
+	dlw := rl.MeasureText(dl, 16)
+	rl.DrawText(dl, i32(dr.x + dr.width / 2) - dlw / 2, i32(dr.y + dr.height / 2) - 8, 16, rl.Color{205, 235, 240, 255})
+
+	ir := arena_items_rect()
+	ihover := rl.CheckCollisionPointRec(mp, ir)
+	rl.DrawRectangleRounded(ir, 0.28, 8, ihover ? rl.Color{52, 48, 66, 255} : rl.Color{38, 36, 48, 255})
+	rl.DrawRectangleRoundedLinesEx(ir, 0.28, 8, 2, rl.Color{190, 175, 235, 255})
+	il := cstring("Items")
+	iw := rl.MeasureText(il, 16)
+	rl.DrawText(il, i32(ir.x + ir.width / 2) - iw / 2, i32(ir.y + ir.height / 2) - 8, 16, rl.Color{215, 205, 245, 255})
+
 	lr := arena_leave_rect()
 	lhover := rl.CheckCollisionPointRec(mp, lr)
-	rl.DrawRectangleRounded(lr, 0.3, 8, lhover ? rl.Color{46, 44, 52, 255} : rl.Color{34, 32, 38, 255})
-	ll := cstring("Walk away")
+	rl.DrawRectangleRounded(lr, 0.28, 8, lhover ? rl.Color{46, 44, 52, 255} : rl.Color{34, 32, 38, 255})
+	ll := running ? cstring("Abandon") : cstring("Walk away")
 	lw := rl.MeasureText(ll, 16)
 	rl.DrawText(ll, i32(lr.x + lr.width / 2) - lw / 2, i32(lr.y + lr.height / 2) - 8, 16, rl.Color{190, 185, 200, 255})
+
+	hint := running ? cstring("The colony is out of reach until this run is settled - but Items re-gears the party.") : cstring("Esc or Walk away returns to the colony.")
+	hw := rl.MeasureText(hint, 14)
+	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 32, 14, rl.Color{140, 140, 160, 255})
+}
+
+// ----------------------------------------------------------------------------
+// Arena trial: the event floor
+//
+// A decision floor. Three concrete offers, each a change to the team you
+// brought, and always the option to walk on unchanged.
+// ----------------------------------------------------------------------------
+
+arena_event_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	return rl.Rectangle{sw / 2 - 330, sh / 2 - 200, 660, 400}
+}
+
+arena_event_option_rect :: proc(i: int) -> rl.Rectangle {
+	p := arena_event_panel_rect()
+	return rl.Rectangle{p.x + 30, p.y + 168 + f32(i) * 56, p.width - 60, 48}
+}
+
+arena_event_skip_rect :: proc() -> rl.Rectangle {
+	p := arena_event_panel_rect()
+	return rl.Rectangle{p.x + 30, p.y + 344, p.width - 60, 34}
+}
+
+update_arena_event :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) {
+		g.arena_event_open = false
+		return
+	}
+	if !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := mouse_pos()
+	ev := &g.colony.arena_event
+	for i in 0..<ev.count {
+		if rl.CheckCollisionPointRec(mp, arena_event_option_rect(i)) {
+			hex := g.colony.roster[g.selected].pos
+			arena_apply_event_option(&g.colony, hex, ev.options[i])
+			_, gold := arena_clear_floor(&g.colony, hex, max(ev.floor, 1))
+			colony_notify(&g.colony, "The trial is settled. %d gold.", gold)
+			g.arena_event_open = false
+			// A run is a long thing; bank it after every floor.
+			if g.autosave_on && save_supported() {
+				_ = save_game(g, AUTOSAVE_SLOT)
+			}
+			return
+		}
+	}
+	if rl.CheckCollisionPointRec(mp, arena_event_skip_rect()) {
+		hex := g.colony.roster[g.selected].pos
+		_, gold := arena_clear_floor(&g.colony, hex, max(ev.floor, 1))
+		colony_notify(&g.colony, "You walk on. %d gold.", gold)
+		g.arena_event_open = false
+		if g.autosave_on && save_supported() {
+			_ = save_game(g, AUTOSAVE_SLOT)
+		}
+		return
+	}
+}
+
+draw_arena_event :: proc(g: ^Game) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 180})
+
+	p := arena_event_panel_rect()
+	rl.DrawRectangleRounded(p, 0.05, 8, rl.Color{28, 24, 20, 250})
+	rl.DrawRectangleRoundedLinesEx(p, 0.05, 8, 3, rl.Color{210, 180, 110, 255})
+
+	ev := &g.colony.arena_event
+	rl.DrawText(fmt.ctprintf("FLOOR %d  -  %s", ev.floor, ev.title),
+		i32(p.x) + 28, i32(p.y) + 18, 24, rl.Color{240, 215, 140, 255})
+	draw_text_wrapped(fmt.ctprintf("%s", ev.text), i32(p.x) + 28, i32(p.y) + 56, 16, i32(p.width) - 56,
+		rl.Color{205, 200, 190, 255})
+
+	mp := mouse_pos()
+	for i in 0..<ev.count {
+		r := arena_event_option_rect(i)
+		hover := rl.CheckCollisionPointRec(mp, r)
+		rl.DrawRectangleRounded(r, 0.18, 8, hover ? rl.Color{70, 60, 40, 255} : rl.Color{44, 40, 32, 255})
+		rl.DrawRectangleRoundedLinesEx(r, 0.18, 8, 2, hover ? rl.Color{240, 200, 120, 255} : rl.Color{140, 124, 88, 255})
+		label := event_option_label(&g.colony, ev.options[i])
+		rl.DrawText(label, i32(r.x) + 16, i32(r.y + r.height / 2) - 9, 17, rl.Color{245, 235, 215, 255})
+	}
+
+	sr := arena_event_skip_rect()
+	shover := rl.CheckCollisionPointRec(mp, sr)
+	rl.DrawRectangleRounded(sr, 0.3, 8, shover ? rl.Color{46, 44, 52, 255} : rl.Color{34, 32, 38, 255})
+	sl := cstring("Walk on unchanged")
+	sw2 := rl.MeasureText(sl, 16)
+	rl.DrawText(sl, i32(sr.x + sr.width / 2) - sw2 / 2, i32(sr.y + sr.height / 2) - 8, 16, rl.Color{190, 185, 200, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -1735,7 +2803,13 @@ move_choice_card_rect :: proc(i, n: int) -> rl.Rectangle {
 move_choice_skip_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	return rl.Rectangle{sw / 2 - 90, sh / 2 + CHOICE_CARD_H / 2 + 28, 180, 44}
+	return rl.Rectangle{sw / 2 - 194, sh / 2 + CHOICE_CARD_H / 2 + 28, 180, 44}
+}
+
+// "What do I already run?" — the deck is right there while you pick.
+move_choice_deck_rect :: proc() -> rl.Rectangle {
+	r := move_choice_skip_rect()
+	return rl.Rectangle{r.x + r.width + 16, r.y, r.width, r.height}
 }
 
 // Learns the chosen option and pops the front choice.
@@ -1768,6 +2842,12 @@ update_move_choice :: proc(g: ^Game) {
 				audio_play(.CONFIRM)
 				return
 			}
+		}
+		if rl.CheckCollisionPointRec(mp, move_choice_deck_rect()) {
+			g.show_deck = true
+			g.view_index = clamp(monster_by_id(&g.colony, ch.monster_id), 0, max(len(g.colony.roster)-1, 0))
+			g.view_scroll = 0
+			return
 		}
 		if rl.CheckCollisionPointRec(mp, move_choice_skip_rect()) {
 			ordered_remove(&g.colony.choices, 0)
@@ -1828,7 +2908,8 @@ draw_move_choice :: proc(g: ^Game) {
 	}
 
 	draw_button(move_choice_skip_rect(), cstring("Skip"), true, BUTTON_PANEL, 18)
-	hint := cstring("Click a card or press 1-3 to learn it")
+	draw_button(move_choice_deck_rect(), cstring("View deck"), true, BUTTON_PANEL, 18)
+	hint := cstring("Click a card or press 1-3 to learn it   -   View deck shows what it already runs")
 	hw := rl.MeasureText(hint, 15)
 	rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 44, 15, rl.Color{140, 140, 160, 255})
 }
@@ -1837,12 +2918,23 @@ draw_move_choice :: proc(g: ^Game) {
 // Quest board: milestones + the run goal (Phase 22)
 // ----------------------------------------------------------------------------
 
+QUEST_ROWS_PER_COL :: 9
+
 quest_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	w := f32(700)
-	h := f32(min(sh - 60, 640))
+	w := f32(1256)
+	h := f32(560)
 	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
+}
+
+// The board runs to 20 entries, so it is laid out in two columns.
+quest_row_rect :: proc(i: int) -> rl.Rectangle {
+	p := quest_panel_rect()
+	col := i / QUEST_ROWS_PER_COL
+	row := i % QUEST_ROWS_PER_COL
+	cw := (p.width - 40) / 3
+	return rl.Rectangle{p.x + 20 + f32(col) * cw, p.y + 92 + f32(row) * 47, cw - 12, 43}
 }
 
 update_quests :: proc(g: ^Game) {
@@ -1863,63 +2955,58 @@ draw_quests :: proc(g: ^Game) {
 	done := milestones_done_count(&g.colony)
 	total := len(MILESTONES)
 	rl.DrawText("COLONY JOURNAL", i32(p.x) + 24, i32(p.y) + 16, 28, rl.Color{180, 235, 200, 255})
-	rl.DrawText(fmt.ctprintf("Milestones %d / %d  -  each pays a small crystal bounty; finish them all to complete the run", done, total),
+	rl.DrawText(fmt.ctprintf("Milestones %d / %d  -  each pays a crystal bounty; the board runs all the way to the five bosses", done, total),
 		i32(p.x) + 24, i32(p.y) + 52, 15, rl.Color{180, 190, 200, 255})
 
-	row_h := f32(42)
-	y := p.y + 88
-	for k in Milestone_Kind {
+	for k, i in Milestone_Kind {
+		rec := quest_row_rect(i)
 		is_done := g.colony.milestones[k]
 		prog := min(milestone_progress(&g.colony, k), MILESTONES[k].target)
 		tgt := MILESTONES[k].target
-		rec := rl.Rectangle{p.x + 20, y, p.width - 40, row_h - 6}
 		bg := is_done ? rl.Color{26, 40, 30, 255} : rl.Color{24, 24, 32, 255}
 		rl.DrawRectangleRounded(rec, 0.12, 6, bg)
 		rl.DrawRectangleRoundedLinesEx(rec, 0.12, 6, 2, is_done ? rl.Color{120, 210, 150, 255} : rl.Color{56, 56, 70, 255})
 
-		rl.DrawText(MILESTONES[k].desc, i32(rec.x) + 46, i32(rec.y) + 5, 17,
+		rl.DrawText(MILESTONES[k].desc, i32(rec.x) + 44, i32(rec.y) + 5, 16,
 			is_done ? rl.Color{190, 240, 205, 255} : rl.Color{225, 225, 235, 255})
-		bar := rl.Rectangle{rec.x + 46, rec.y + 26, rec.width - 210, 5}
+
+		bar := rl.Rectangle{rec.x + 44, rec.y + 27, rec.width - 200, 5}
 		rl.DrawRectangleRounded(bar, 0.5, 3, rl.Color{40, 40, 50, 255})
 		f := tgt > 0 ? clamp(f32(prog) / f32(tgt), 0, 1) : 0
 		if f > 0 {
 			rl.DrawRectangleRounded(rl.Rectangle{bar.x, bar.y, bar.width * f, bar.height}, 0.5, 3,
 				is_done ? rl.Color{120, 210, 150, 255} : rl.Color{120, 170, 235, 255})
 		}
+
 		mark := is_done ? cstring("DONE") : fmt.ctprintf("%d/%d", prog, tgt)
 		rew := fmt.ctprintf("+%d cr", MILESTONES[k].reward)
 		rew_w := rl.MeasureText(rew, 14)
 		mark_w := rl.MeasureText(mark, 15)
 		rew_x := i32(rec.x + rec.width) - 12 - rew_w
-		mark_x := rew_x - 14 - mark_w
+		mark_x := rew_x - 12 - mark_w
 		rl.DrawText(mark, mark_x, i32(rec.y) + 8, 15,
 			is_done ? rl.Color{150, 230, 175, 255} : rl.Color{170, 175, 190, 255})
 		rl.DrawText(rew, rew_x, i32(rec.y) + 8, 14, rl.Color{180, 150, 240, 255})
 
-		cx, cy := rec.x + 24, rec.y + 16
+		cx, cy := rec.x + 22, rec.y + 21
 		if is_done {
 			rl.DrawCircleV(rl.Vector2{cx, cy}, 9, rl.Color{80, 170, 110, 255})
 			rl.DrawText("v", i32(cx) - 4, i32(cy) - 9, 16, rl.Color{235, 255, 240, 255})
 		} else {
 			rl.DrawCircleLinesV(rl.Vector2{cx, cy}, 9, rl.Color{90, 90, 105, 255})
 		}
-		y += row_h
 	}
 
 	if g.colony.goal_done {
 		banner := cstring("OBJECTIVE COMPLETE - the colony is ascendant")
 		bw := rl.MeasureText(banner, 20)
-		rl.DrawText(banner, i32(p.x + p.width / 2) - bw / 2, i32(p.y + p.height) - 60, 20, rl.Color{255, 225, 130, 255})
+		rl.DrawText(banner, i32(p.x + p.width / 2) - bw / 2, i32(p.y + p.height) - 58, 20, rl.Color{255, 225, 130, 255})
 	}
 
 	hint := cstring("Q / Esc to close")
 	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
+	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
 }
-
-// ----------------------------------------------------------------------------
-// Hall of the Fallen: the graveyard, with revive + item salvage (Phase 22)
-// ----------------------------------------------------------------------------
 
 GRAVE_ROWS :: 8
 
@@ -2147,16 +3234,20 @@ HELP_LEFT := [?]Help_Line{
 	{"B", "build mode (click a tile, then pick)"},
 	{"T", "Trading Post / Arena on the tile"},
 	{"F", "quick-save to slot 1"},
+	{"S (in battle)", "active effects, in full (Esc closes)"},
+	{"D (in battle)", "draw / discard piles"},
+	{"C (in battle)", "throw a capture card"},
 }
 
 HELP_RIGHT := [?]Help_Line{
 	{"V", "deck viewer (right-click a card to forget it)"},
 	{"M", "monster encyclopedia"},
+	{"L", "dex: cards, abilities, items"},
 	{"I", "improvements reference"},
-	{"G", "item bag"},
+	{"G", "inventory (held items and boss relics)"},
 	{"U", "crystal progression tree"},
 	{"Q", "quest journal / milestones"},
-	{"J", "relics (boss-dropped passives)"},
+	{"J", "inventory (same as G)"},
 	{"Y", "Hall of the Fallen (graveyard)"},
 	{"C", "Nursery (breeding)"},
 	{"H", "monster storage (Dens)"},
@@ -2165,12 +3256,30 @@ HELP_RIGHT := [?]Help_Line{
 	{"K", "this help"},
 	{"P", "settings (sound, display, last turn)"},
 	{"X", "mute / unmute sound"},
+	{"`", "sample team (for testing the Arena tower)"},
 	{"Esc", "close the current panel"},
+}
+
+help_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	return rl.Rectangle{sw / 2 - 500, sh / 2 - 300, 1000, 600}
+}
+
+help_tips_rect :: proc() -> rl.Rectangle {
+	p := help_panel_rect()
+	return rl.Rectangle{p.x + 26, p.y + p.height - 66, 260, 42}
 }
 
 update_help :: proc(g: ^Game) {
 	if rl.IsKeyPressed(.K) || rl.IsKeyPressed(.ESCAPE) {
 		g.show_help = false
+		return
+	}
+	// The tips window holds the opening hints again, in order.
+	if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos(), help_tips_rect()) {
+		g.show_help = false
+		g.show_tips = true
 	}
 }
 
@@ -2179,7 +3288,7 @@ draw_help :: proc(g: ^Game) {
 	sh := f32(screen_h())
 	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 246})
 
-	p := rl.Rectangle{sw / 2 - 500, sh / 2 - 300, 1000, 600}
+	p := help_panel_rect()
 	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
 	rl.DrawText("CONTROLS", i32(p.x) + 26, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
 	rl.DrawText("Most panels close with their key or Esc. Esc never quits.", i32(p.x) + 26, i32(p.y) + 54, 15, rl.Color{170, 180, 200, 255})
@@ -2194,6 +3303,59 @@ draw_help :: proc(g: ^Game) {
 		draw_help_row(p.x + 500, y0 + f32(i) * row_h, key_w, line)
 	}
 
+	hint := cstring("K / Esc to close")
+	hw := rl.MeasureText(hint, 16)
+	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
+	draw_button(help_tips_rect(), "Tutorial tips", true, BUTTON_PANEL, 16)
+}
+
+// ----------------------------------------------------------------------------
+// Tutorial tips window
+//
+// The opening hints again, in order, so they can be re-read (or turned off)
+// once the first-turns box has gone.
+// ----------------------------------------------------------------------------
+TIPS_PANEL_H :: f32(500)
+
+tips_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	return rl.Rectangle{sw / 2 - 450, sh / 2 - TIPS_PANEL_H / 2, 900, TIPS_PANEL_H}
+}
+
+tips_toggle_rect :: proc() -> rl.Rectangle {
+	p := tips_panel_rect()
+	return rl.Rectangle{p.x + 26, p.y + p.height - 68, 330, 42}
+}
+
+update_tips :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.K) {
+		g.show_tips = false
+		return
+	}
+	if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos(), tips_toggle_rect()) {
+		g.tutorial_done = !g.tutorial_done
+	}
+}
+
+draw_tips :: proc(g: ^Game) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 246})
+
+	p := tips_panel_rect()
+	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{140, 190, 235, 255})
+	rl.DrawText("TIPS", i32(p.x) + 26, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
+	rl.DrawText("The opening hints, in order - one per turn for the first eight turns.", i32(p.x) + 26, i32(p.y) + 54, 15, rl.Color{170, 180, 200, 255})
+
+	y := p.y + 94
+	for text, i in TUTORIAL_HINTS {
+		rl.DrawText(fmt.ctprintf("%d.", i + 1), i32(p.x) + 26, i32(y), 16, rl.Color{140, 190, 235, 255})
+		y = f32(draw_text_wrapped(fmt.ctprintf("%s", text), i32(p.x) + 54, i32(y), 16, i32(p.width) - 104, rl.Color{212, 220, 238, 255}))
+		y += 8
+	}
+
+	draw_button(tips_toggle_rect(), g.tutorial_done ? cstring("Show tips at start: OFF") : cstring("Show tips at start: ON"), true, BUTTON_PANEL, 16)
 	hint := cstring("K / Esc to close")
 	hw := rl.MeasureText(hint, 16)
 	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 30, 16, rl.Color{150, 150, 170, 255})
@@ -2435,61 +3597,6 @@ draw_settings :: proc(g: ^Game) {
 	rl.DrawText(fmt.ctprintf("every %d turns", AUTOSAVE_EVERY), i32(p.x) + 384, i32(p.y) + 574, 14, rl.Color{150, 150, 170, 255})
 
 	hint := cstring("P / Esc to close")
-	hw := rl.MeasureText(hint, 16)
-	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
-}
-
-// ----------------------------------------------------------------------------
-// Relics panel (Phase 25)
-// ----------------------------------------------------------------------------
-
-relic_panel_rect :: proc() -> rl.Rectangle {
-	sw := f32(screen_w())
-	sh := f32(screen_h())
-	w := f32(780)
-	h := f32(584)
-	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
-}
-
-relic_row_rect :: proc(i: int) -> rl.Rectangle {
-	p := relic_panel_rect()
-	return rl.Rectangle{p.x + 20, p.y + 96 + f32(i) * 44, p.width - 40, 40}
-}
-
-update_relics :: proc(g: ^Game) {
-	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.J) {
-		g.show_relics = false
-	}
-}
-
-draw_relics :: proc(g: ^Game) {
-	sw := f32(screen_w())
-	sh := f32(screen_h())
-	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 245})
-
-	p := relic_panel_rect()
-	rl.DrawRectangleRounded(p, 0.03, 8, rl.Color{20, 18, 26, 248})
-	rl.DrawRectangleRoundedLinesEx(p, 0.03, 8, 3, rl.Color{235, 195, 110, 255})
-	rl.DrawText("RELICS", i32(p.x) + 24, i32(p.y) + 16, 30, rl.Color{245, 220, 150, 255})
-	total := relic_total(&g.colony)
-	rl.DrawText(fmt.ctprintf("%d relic%s owned  -  colony-wide passives dropped by bosses; they STACK", total, total == 1 ? "" : "s"),
-		i32(p.x) + 24, i32(p.y) + 54, 15, rl.Color{200, 190, 170, 255})
-
-	for r, i in RELIC_ORDER {
-		rec := relic_row_rect(i)
-		n := g.colony.relics[r]
-		bg := n > 0 ? rl.Color{40, 34, 24, 255} : rl.Color{24, 24, 30, 255}
-		rl.DrawRectangleRounded(rec, 0.12, 6, bg)
-		rl.DrawRectangleRoundedLinesEx(rec, 0.12, 6, 2, n > 0 ? rl.Color{235, 195, 110, 255} : rl.Color{54, 54, 66, 255})
-		rl.DrawCircleV(rl.Vector2{rec.x + 22, rec.y + rec.height / 2}, 12, n > 0 ? rl.Color{235, 195, 110, 255} : rl.Color{60, 60, 74, 255})
-		rl.DrawText(relic_name(r), i32(rec.x) + 44, i32(rec.y) + 5, 17, n > 0 ? rl.Color{250, 240, 210, 255} : rl.Color{150, 150, 165, 255})
-		rl.DrawText(relic_desc(r), i32(rec.x) + 44, i32(rec.y) + 24, 12, rl.Color{180, 178, 190, 255})
-		owned := fmt.ctprintf("x%d", n)
-		ow := rl.MeasureText(owned, 18)
-		rl.DrawText(owned, i32(rec.x + rec.width) - 16 - ow, i32(rec.y) + 10, 18, n > 0 ? rl.Color{245, 220, 150, 255} : rl.Color{110, 110, 125, 255})
-	}
-
-	hint := cstring("J / Esc to close   -   defeat bosses in Boss Rooms to earn more")
 	hw := rl.MeasureText(hint, 16)
 	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 28, 16, rl.Color{150, 150, 170, 255})
 }

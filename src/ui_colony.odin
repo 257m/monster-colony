@@ -3,6 +3,36 @@ package main
 import rl "vendor:raylib"
 import "core:fmt"
 import "core:math"
+// ----------------------------------------------------------------------------
+// Opening tutorial hints
+//
+// One short hint per turn for the first few turns, shown in a box the player
+// can click away. Kept purely advisory — nothing is gated behind it.
+// ----------------------------------------------------------------------------
+tutorial_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	return rl.Rectangle{sw / 2 - 330, 132, 660, 62}
+}
+
+TUTORIAL_HINTS := [?]string{
+	"Press B and click a tile to build. A Farm feeds your monsters - they eat every turn.",
+	"Click a tile next to your monster to move it. Right-drag or WASD pans, the wheel zooms.",
+	"Click a wild monster beside you to attack it. Click your own tile to pick a different monster.",
+	"Build a Granary or Silo near your Farms so the food actually reaches your stockpile.",
+	"Winning a fight drops loot and offers a new card. Press V to see the deck.",
+	"Press T on a Trading Post tile to heal, buy capture cards or recruit monsters.",
+	"Press M for the monster dex, L for the move dex, I for improvements, K for every control.",
+	"That is the basics - the tips stop here. K brings the full control list back any time.",
+}
+
+// The hint for this turn, if the tips are still running.
+tutorial_hint :: proc(turn: int) -> (string, bool) {
+	if turn < 0 || turn >= len(TUTORIAL_HINTS) {
+		return "", false
+	}
+	return TUTORIAL_HINTS[turn], true
+}
+
 draw_colony :: proc(g: ^Game) {
 	rl.ClearBackground(rl.Color{10, 12, 16, 255})
 
@@ -69,6 +99,15 @@ draw_colony :: proc(g: ^Game) {
 			}
 			if t.improvement != .NONE {
 				draw_improvement_icon(t.improvement, cx + sx, cy + sy, g.renderer.zoom)
+				#partial switch t.improvement {
+				case .TURRET:
+					draw_charge_bar(t, cx + sx, cy + sy, g.renderer.zoom, TURRET_CAP + upgrade_turret_cap(&g.colony))
+				case .MENDER:
+					draw_charge_bar(t, cx + sx, cy + sy, g.renderer.zoom, MENDER_CAP)
+				case .BATTERY:
+					draw_charge_bar(t, cx + sx, cy + sy, g.renderer.zoom, BATTERY_CAP)
+				case:
+				}
 			}
 		}
 	}
@@ -217,7 +256,8 @@ draw_build_selection :: proc(g: ^Game) {
 	// Preview the hovered improvement's effect radius on the map.
 	if g.build_preview != .NONE {
 		if r := improvement_effect_radius(g, g.build_preview); r > 0 {
-			disk := make([dynamic]Hex, 0); defer delete(disk)
+			// Per-frame, so the frame's temp allocator owns it.
+			disk := make([dynamic]Hex, 0, 64, context.temp_allocator)
 			hex_range(g.build_hex, r, &disk)
 			for h in disk {
 				if t := tile_at(&g.colony, h); t != nil {
@@ -447,6 +487,23 @@ draw_tile_floats :: proc(g: ^Game) {
 	}
 }
 
+// A tiny charge bar under an energy building (Turret / Mender / Battery), so you
+// can see at a glance whether it is full or running dry.
+draw_charge_bar :: proc(t: ^Tile, cx, cy, z: f32, cap: int) {
+	if cap <= 0 {
+		return
+	}
+	w := 22 * z
+	h := max(3 * z, 2)
+	x := cx - w / 2
+	y := cy + 16 * z
+	rl.DrawRectangleRounded(rl.Rectangle{x, y, w, h}, 0.5, 3, rl.Color{22, 22, 30, 210})
+	f := clamp(f32(t.stored) / f32(cap), 0, 1)
+	if f > 0 {
+		rl.DrawRectangleRounded(rl.Rectangle{x, y, w * f, h}, 0.5, 3, rl.Color{242, 200, 70, 255})
+	}
+}
+
 draw_hover_marker :: proc(r: ^Hex_Renderer, hex: Hex, active: bool) {
 	if !active {
 		return
@@ -478,6 +535,8 @@ improvement_rings :: proc(im: Improvement) -> ([2]Coverage_Ring, int) {
 		return {Coverage_Ring{SCARECROW_PANIC, rl.Color{255, 110, 110, 32}}, Coverage_Ring{SCARECROW_DETER, rl.Color{255, 175, 80, 42}}}, 2
 	case .FOUNTAIN:
 		return {Coverage_Ring{FOUNTAIN_RANGE, rl.Color{245, 220, 120, 34}}, Coverage_Ring{}}, 1
+	case .BATTERY:
+		return {Coverage_Ring{BATTERY_RANGE, rl.Color{242, 200, 70, 34}}, Coverage_Ring{}}, 1
 	case .TURRET:
 		return {Coverage_Ring{TURRET_RANGE, rl.Color{255, 200, 90, 34}}, Coverage_Ring{}}, 1
 	case .MARKETPLACE:
@@ -593,7 +652,7 @@ draw_colony_hud :: proc(g: ^Game) {
 
 	rl.DrawText("THE COLONY", 20, 16, 26, rl.Color{215, 215, 235, 255})
 	res := fmt.ctprintf("Floor %d    Turn %d    Threat %d    Milestones %d/%d    Relics %d",
-		g.colony.floor, g.colony.turn, colony_escalation(&g.colony), milestones_done_count(&g.colony), len(MILESTONES), relic_total(&g.colony))
+		g.colony.floor, g.colony.turn, wild_threat_level(&g.colony), milestones_done_count(&g.colony), len(MILESTONES), relic_total(&g.colony))
 	rl.DrawText(res, 20, 48, 18, rl.Color{140, 140, 165, 255})
 	if g.colony.goal_done {
 		gw := rl.MeasureText("OBJECTIVE COMPLETE", 18)
@@ -689,7 +748,22 @@ draw_colony_hud :: proc(g: ^Game) {
 		}
 		rl.DrawText(info, 236, 130, 16, rl.Color{180, 180, 200, 255})
 
-		oy := i32(152)
+		// Special tiles: say what you can actually do standing here.
+		special := i32(0)
+		#partial switch t.terrain {
+		case .ARENA:
+			rl.DrawText("Arena: stand a monster here, then press T to challenge it (gold in, crystals out).", 236, 148, 14, rl.Color{235, 205, 130, 255})
+			special = 18
+		case .TRADING_POST:
+			rl.DrawText("Trading Post: stand a monster here, then press T to heal, recruit or buy capture cards.", 236, 148, 14, rl.Color{200, 220, 160, 255})
+			special = 18
+		case .BOSS_ROOM:
+			rl.DrawText("Boss Room: a boss pack lairs here - beat it for crystals and a relic.", 236, 148, 14, rl.Color{235, 150, 150, 255})
+			special = 18
+		case:
+		}
+
+		oy := i32(152) + special
 		// Improvement production status (explains why it may be idle).
 		green := rl.Color{150, 220, 150, 255}
 		amber := rl.Color{235, 185, 120, 255}
@@ -717,6 +791,17 @@ draw_colony_hud :: proc(g: ^Game) {
 			}
 			rl.DrawText(line, 236, oy, 14, staffed ? green : amber)
 			oy += 18
+		case .RELIC_TOWER:
+			ht := tile_at(&g.colony, hovered)
+			if ht != nil {
+				line := fmt.ctprintf("Relic Tower: %d/%d slots, projecting %d tiles", int(ht.relic_count), RELIC_SLOTS, RELIC_RADIUS)
+				rl.DrawText(line, 236, oy, 14, rl.Color{235, 195, 110, 255})
+				oy += 18
+				for k in 0..<int(ht.relic_count) {
+					rl.DrawText(fmt.ctprintf("  %s", relic_name(ht.relics[k])), 236, oy, 14, rl.Color{220, 210, 180, 255})
+					oy += 16
+				}
+			}
 		case:
 		}
 
@@ -738,9 +823,37 @@ draw_colony_hud :: proc(g: ^Game) {
 		}
 	}
 
+	// Relic placement banner.
+	if g.relic_place_active {
+		msg := fmt.ctprintf("Placing %s  -  click a Relic Tower to slot it   (Esc cancels)", relic_name(g.relic_place))
+		mw := rl.MeasureText(msg, 20)
+		br := rl.Rectangle{sw / 2 - f32(mw) / 2 - 18, 150, f32(mw) + 36, 42}
+		rl.DrawRectangleRounded(br, 0.4, 6, rl.Color{32, 28, 16, 240})
+		rl.DrawRectangleRoundedLinesEx(br, 0.4, 6, 2, rl.Color{235, 195, 110, 255})
+		rl.DrawText(msg, i32(br.x) + 18, i32(br.y) + 10, 20, rl.Color{245, 220, 150, 255})
+	}
+
 	if g.show_key_hints {
-		rl.DrawText("Move: click adjacent tile | select: click own tile / TAB | Space end turn | B build | T trade | V deck | M dex | I improvements | G bag | U upgrades | Q journal | J relics | Y fallen | C nursery | H storage | O save | K help | P settings | X sound", 20, i32(sh) - 70, 14, rl.Color{120, 120, 145, 255})
-		rl.DrawText("RMB/WASD pan  |  wheel zoom  |  R recenter  |  M monsterdex  |  N new run", 20, i32(sh) - 46, 16, rl.Color{120, 120, 145, 255})
+		hint := cstring("Space end turn  ·  B build  ·  T trade  ·  V deck  ·  M dex  ·  L moves  ·  K all controls")
+		hw := rl.MeasureText(hint, 15)
+		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(sh) - 32, 15, rl.Color{120, 120, 145, 255})
+	}
+
+	// First-turns tutorial: one short contextual hint at a time, click to
+	// dismiss for good.
+	if !g.tutorial_done {
+		if text, ok := tutorial_hint(g.colony.turn); ok {
+			box := tutorial_rect()
+			draw_panel(box, rl.Color{20, 26, 34, 240}, rl.Color{140, 190, 235, 255})
+			rl.DrawText("TIP", i32(box.x) + 16, i32(box.y) + 14, 14, rl.Color{140, 190, 235, 255})
+			draw_text_wrapped(fmt.ctprintf("%s", text), i32(box.x) + 62, i32(box.y) + 10, 16, i32(box.width) - 190, rl.Color{220, 230, 245, 255})
+			more := cstring("click for all tips")
+			mw := rl.MeasureText(more, 13)
+			rl.DrawText(more, i32(box.x + box.width) - 16 - mw, i32(box.y + box.height) - 24, 13, rl.Color{130, 140, 165, 255})
+			if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos(), box) {
+				g.show_tips = true
+			}
+		}
 	}
 
 	// World notifications (scuffles in the distance, things slipping away).

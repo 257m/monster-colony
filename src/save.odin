@@ -17,7 +17,7 @@ import "core:time"
 // ============================================================================
 
 SAVE_MAGIC   :: "MCV1"
-SAVE_VERSION :: 4
+SAVE_VERSION :: 16
 SAVE_SLOTS   :: 3
 // The autosave is a 4th, special slot: the game writes it every so often and the
 // save panel only lets you load from it.
@@ -62,6 +62,10 @@ sw_i64 :: proc(w: ^Save_Writer, v: i64) {
 	for i in 0 ..< 8 {
 		append(&w.buf, u8(u >> (u64(i) * 8)))
 	}
+}
+
+sw_u64 :: proc(w: ^Save_Writer, v: u64) {
+	sw_i64(w, transmute(i64)v)
 }
 
 sw_f32 :: proc(w: ^Save_Writer, v: f32) {
@@ -109,6 +113,10 @@ sr_i64 :: proc(r: ^Save_Reader) -> i64 {
 		u |= u64(sr_u8(r)) << (u64(i) * 8)
 	}
 	return i64(u)
+}
+
+sr_u64 :: proc(r: ^Save_Reader) -> u64 {
+	return transmute(u64)sr_i64(r)
 }
 
 sr_f32 :: proc(r: ^Save_Reader) -> f32 {
@@ -248,6 +256,11 @@ save_tile :: proc(w: ^Save_Writer, t: ^Tile) {
 	sw_int(w, t.stored)
 	sw_int(w, t.scuffle)
 	sw_bool(w, t.drawbridge_down)
+	// Relic Tower contents.
+	sw_int(w, int(t.relic_count))
+	for i in 0..<int(t.relic_count) {
+		sw_enum(w, t.relics[i])
+	}
 }
 
 load_tile :: proc(r: ^Save_Reader) -> Tile {
@@ -262,6 +275,11 @@ load_tile :: proc(r: ^Save_Reader) -> Tile {
 	t.stored = sr_int(r)
 	t.scuffle = sr_int(r)
 	t.drawbridge_down = sr_bool(r)
+	// Relic Tower contents.
+	t.relic_count = u8(clamp(sr_int(r), 0, RELIC_SLOTS))
+	for i in 0..<int(t.relic_count) {
+		t.relics[i] = sr_enum(r, Relic)
+	}
 	t.hit_t0 = 0 // don't replay a stale damage shake
 	return t
 }
@@ -315,15 +333,34 @@ save_colony :: proc(w: ^Save_Writer, c: ^Colony) {
 	// Lifetime stats + quest board (Phase 22).
 	sw_int(w, c.fights_won)
 	sw_int(w, c.alphas_slain)
+	sw_int(w, c.arena_run ? 1 : 0)
+	sw_int(w, c.arena_floor)
+	sw_int(w, c.arena_best_floor)
+	sw_int(w, c.arena_run_crystals)
+	sw_int(w, c.arena_base_level)
+	sw_u64(w, c.arena_run_seed)
+	sw_int(w, len(c.arena_boons))
+	for r in c.arena_boons {
+		sw_enum(w, r)
+	}
+	sw_int(w, len(c.arena_items))
+	for it in c.arena_items {
+		sw_enum(w, it)
+	}
+	for sp in Species_Id {
+		sw_int(w, c.bosses_slain[sp] ? 1 : 0)
+	}
 	sw_int(w, c.crystals_earned)
 	sw_int(w, c.improvements_built)
 	for k in Milestone_Kind {
 		sw_int(w, c.milestones[k] ? 1 : 0)
 	}
 	sw_int(w, c.goal_done ? 1 : 0)
-	// Relics (Phase 25).
-	for r in Relic {
-		sw_int(w, c.relics[r])
+	// Relic bag (Phase 25/44): the relics you haven't slotted yet. Placed ones
+	// live on their tower tiles (see `save_tile`).
+	sw_int(w, len(c.relic_bag))
+	for r in c.relic_bag {
+		sw_enum(w, r)
 	}
 }
 
@@ -376,17 +413,38 @@ load_colony :: proc(r: ^Save_Reader, c: ^Colony) {
 	// Lifetime stats + quest board (Phase 22).
 	c.fights_won = sr_int(r)
 	c.alphas_slain = sr_int(r)
+	c.arena_run = sr_int(r) != 0
+	c.arena_floor = sr_int(r)
+	c.arena_best_floor = sr_int(r)
+	c.arena_run_crystals = sr_int(r)
+	c.arena_base_level = sr_int(r)
+	c.arena_run_seed = sr_u64(r)
+	{
+		bn := sr_int(r)
+		for _ in 0..<bn {
+			append(&c.arena_boons, sr_enum(r, Relic))
+		}
+	}
+	{
+		in_ := sr_int(r)
+		for _ in 0..<in_ {
+			append(&c.arena_items, sr_enum(r, Item))
+		}
+	}
+	for sp in Species_Id {
+		c.bosses_slain[sp] = sr_int(r) != 0
+	}
 	c.crystals_earned = sr_int(r)
 	c.improvements_built = sr_int(r)
 	for k in Milestone_Kind {
 		c.milestones[k] = sr_int(r) != 0
 	}
 	c.goal_done = sr_int(r) != 0
-	// Relics (Phase 25).
-	for rel in Relic {
-		c.relics[rel] = sr_int(r)
+	// Relic bag (Phase 25/44).
+	n_relics := sr_int(r)
+	for _ in 0..<n_relics {
+		append(&c.relic_bag, sr_enum(r, Relic))
 	}
-	colony_apply_relics(c)
 }
 
 // ----------------------------------------------------------------------------
@@ -477,7 +535,8 @@ load_game :: proc(g: ^Game, slot: int) -> bool {
 		return false
 	}
 	g.has_colony = true
-	g.mode = .MAP
+	// A run in progress resumes on the Arena screen, where it left off.
+	g.mode = g.colony.arena_run ? .ARENA : .MAP
 	g.has_battle = false
 	g.battle_choice_open = false
 	g.attack_select_open = false

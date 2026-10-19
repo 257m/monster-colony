@@ -79,9 +79,42 @@ refines while **staffed** (a monster standing on it) — see the refinery pass i
 `colony_end_turn`. It has glowing-shard tile art and its own spawn table.
 
 **Arena** terrain (~0.6%, ≥4 from the entrance) has no spawns. Standing on it and
-pressing `T` opens the Arena panel; `colony_spawn_arena_team` drops a fresh team
-on the tile and the fight is forced. Winning pays `ARENA_CRYSTAL_REWARD` crystals
-(in `resolve_won`); losing calls `arena_reset` to clear the tile.
+pressing `T` opens the **Arena screen** (its own `Game_Mode.ARENA`, not a modal —
+see [ui-and-input.md](ui-and-input.md)). The colony is frozen while a run is live:
+the party you brought is the party you climb with, and the only exits are cashing
+out or abandoning.
+
+The Arena is a **run**, not a ladder of one-off fights:
+
+- One **flat** entry fee (`ARENA_ENTRY_COST`) buys a chain of floors that always
+  starts at **floor 1**. Each cleared floor **banks** its purse; the run ends when
+  you **cash out** (banking the winnings) or your party **wipes** (losing them).
+- `arena_floor_purse` is back-loaded: nothing at all for the first
+  `ARENA_PURSE_DELAY` (10) floors, then a crystal a floor bending up slowly
+  (floor 50 → 1, 100 → 3, 250 → 7, 1000 → 49). A run to floor 100 banks ~150.
+- **The challengers level on your curve, and never read your team.** A run banks
+  its own entry level (`arena_base_level`, the party average when the run
+  started) and walks the floors letting the tower earn what a monster would earn
+  from the same fights — one kill's XP per challenger at the level being fielded
+  — then reads a level off that total with `xp_to_next` (`arena_challenger_level`).
+  Nothing in it reads your monsters as they stand, so holding them back gains
+  nothing.
+- Species are picked by a **soft band over roster rank** (`arena_species_weight`),
+  so floor 1 is weak wilds, the middle is the evolved lines and the deep floors
+  are the bosses — plus the **elite** species that fill the gap between them. A
+  non-boss gets a level multiplier (`arena_regular_level_mult`) so deep floors
+  stay mixed rather than all bosses.
+- Every **tenth** floor is a **trial** (`arena_trials.odin`): a **gym** (a fixed,
+  themed team from a cycling list, at `ARENA_GYM_LEVEL_MULT`) or, every third
+  trial, an **event** — a decision floor with no fight that offers a card, an
+  item, an ability, a run boon or a rest, and always the option to walk on.
+- The run has its own seed (`arena_run_seed`), which fixes the gym order and the
+  event offers for that run — and its own **pack** (`arena_items`, unbounded) and
+  **boons** (`arena_boons`). Cashing out keeps the pack; a wipe or an abandon
+  loses it along with the winnings.
+- `colony_spawn_arena_team` builds each floor's team; `arena_clear_floor` banks a
+  cleared floor, climbs, and hands out the tower's rest; `arena_reset` clears the
+  tile after a loss.
 
 ### Raids, heat & alphas (Phase D)
 `colony_heat` = `colony_improvement_heat/3 + total_monster_levels/6`, clamped to
@@ -240,9 +273,11 @@ Caps are recomputed by `colony_recompute_caps`: `gold_cap = BASE_GOLD_CAP +
 - `colony_move(c, index, target)` returns `0 ok, 1 not adjacent, 2 blocked,
   3 tile full, 4 not enough energy, 5 already acted`, and spends
   `monster_move_cost`.
-- `monster_move_cost(m, terrain) = terrain_move_cost · clamp(10/speed, 0.7, 1.6) · MOVE_STEP_FACTOR`
-  (`MOVE_STEP_FACTOR` = **0.8**). `terrain_move_cost` varies by the tile you're
-  **entering** (0.9 Grove/Mushroom … 1.8 Quicksand), so routes and Roads matter.
+- `monster_move_cost(m, terrain) = terrain_move_cost · clamp(10/speed, 0.7, 1.6)`.
+  `terrain_move_cost` is the **real** cost per tile you're **entering** — 0.7
+  Grove/Mushroom up to 1.45 Quicksand, with no global multiplier on top — so
+  tuning the map's pace means editing that one table. Routes and Roads matter
+  (a Road halves the step).
 - **Attacking ends the turn** (`Monster.acted`, set in `begin_battle`, cleared in
   `colony_end_turn`): a monster that fought can't move again until next turn, so
   you can't chain fights to keep moving on battle-refilled energy. Acted monsters
@@ -251,9 +286,17 @@ Caps are recomputed by `colony_recompute_caps`: `gold_cap = BASE_GOLD_CAP +
   `attack_move_attackers` (called on commit in `update_attack_select`) steps the
   chosen attackers onto the tile, so cancelling costs nothing.
 - `creature.energy_max` / `energy_regen` grow **logarithmically** with level
-  (`creature_stats_for_level` → `energy_scale`, no hard cap); `energy_regen` is
-  then **halved** (`ENERGY_REGEN_FACTOR` 0.5), so higher-level monsters get a
-  little more but energy stays a real constraint.
+  (`creature_stats_for_level` → `energy_scale`, no hard cap), so higher-level
+  monsters get a little more but energy stays a real constraint. Both are **raw
+  species values** — `base_energy` (regen, 1.5) and `base_energy_max` (bank,
+  4–6) — with no multiplier applied on top.
+- **The bank (`base_energy_max`) is deliberately small** — 4–6, against a regen
+  of ~1.5–2 per turn. It is the bank that decides how hard a fight opens, because
+  energy carries over and creatures enter a battle holding a full one. With the
+  old 8–12 banks, turn one could dump a whole hand and fights averaged 2.7
+  rounds; halving them took that to 4.1. X-cost cards (`All_In`, `Bulwark`,
+  `Overcharge`) spend the whole bank, so they scale with it — they were doubled
+  when the banks were halved.
 
 ## 6. The turn loop — `colony_end_turn(c)`
 

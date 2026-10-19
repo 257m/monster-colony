@@ -75,6 +75,9 @@ when ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32 {
 		screen_begin()
 		game_draw(&web_game)
 		screen_end()
+		// Same temp-allocator reset as the desktop loop: ctprintf allocates from
+		// it, so without this every frame leaks.
+		free_all(context.temp_allocator)
 		return true
 	}
 

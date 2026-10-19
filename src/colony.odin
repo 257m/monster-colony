@@ -23,7 +23,7 @@ import "core:math"
 // ============================================================================
 
 Terrain :: enum { CAVE, WATER, DUNGEON, GROVE, TRADING_POST, BOSS_ROOM, MUSHROOM, RUINS, TUNDRA, JUNGLE, LAVA, DESERT, QUICKSAND, ARENA, CRYSTAL_COVE }
-Improvement :: enum { NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON, DEN, VAULT, NURSERY, MENDER }
+Improvement :: enum { NONE, FARM, MINE, BRIDGE, GRANARY, TREASURY, WATCHTOWER, WALL, WELL, GATE, SPIKE_TRAP, SCARECROW, ROAD, SILO, CRYSTAL_REFINERY, FOUNTAIN, TURRET, DRAWBRIDGE, QUARRY, LUMBER_MILL, MARKETPLACE, KITCHEN, BARRACKS, BEACON, DEN, VAULT, NURSERY, MENDER, RELIC_TOWER, WARD_STONE, TRAINING_YARD, CALTROPS, BATTERY }
 
 MAX_MONSTERS_PER_TILE :: 6
 REFILL_FRAC           :: f32(0.5) // of max satiation gained per fed turn
@@ -47,13 +47,18 @@ WATCHTOWER_DETER       :: 4    // radius in which a Watchtower stops spawns
 WATCHTOWER_GUARD       :: 4    // radius in which defenders get starting Block
 WATCHTOWER_GUARD_BLOCK :: 6    // Block granted to those defenders at battle start
 SPIKE_TRAP_DAMAGE_PCT  :: f32(0.15) // HP a wild loses per turn on a Spike Trap (of its max HP)
+CALTROPS_DAMAGE_PCT    :: f32(0.24) // Caltrops bite harder than a Spike Trap
+WARD_STONE_RANGE       :: 4         // tiles a Ward Stone widens towers within
+WARD_STONE_BONUS       :: 2         // extra relic radius per Ward Stone
+TRAINING_YARD_XP       :: 8         // XP a monster standing on a Training Yard gains per turn
+BATTERY_CAP            :: 40        // charge a Battery can hold
+BATTERY_RANGE          :: 4         // tiles a Battery links to Fountains and Turrets
 SCARECROW_DETER        :: 2    // radius a Scarecrow keeps spawns out of
 SCARECROW_PANIC        :: 3    // radius a Scarecrow makes wilds likelier to flee
 SCARECROW_PANIC_CHANCE :: f32(0.5)
 CRYSTAL_REFINERY_COST  :: 20   // gold spent per crystal refined
 CRYSTAL_REFINERY_PERIOD :: 6   // turns a Refinery takes to make one crystal (slow!)
 ROAD_MOVE_FACTOR       :: f32(0.5)
-MOVE_STEP_FACTOR       :: f32(0.8) // global multiplier on every step's cost
 // Phase B — energy network + builders
 FOUNTAIN_RANGE         :: 4    // a Fountain supplies the closest recipient in range
 FOUNTAIN_OUTPUT        :: 3    // energy handed out per turn
@@ -87,7 +92,13 @@ BEACON_VULN            :: 2    // Vulnerable applied to wilds attacking near a B
 ARENA_ENTRY_COST       :: 40
 ARENA_TEAM_SIZE        :: 6
 ARENA_LEVEL_BONUS      :: 2
-ARENA_CRYSTAL_REWARD   :: 5
+ARENA_PURSE_DELAY     :: 10  // floors the tower pays nothing at all for
+// The Arena is a *run*: one flat entry fee buys a chain of floors, starting at
+// floor 1 every time. Each cleared floor banks its purse; the run ends when you
+// cash out (keeping the winnings) or when your party wipes (losing them).
+ARENA_BASE_LEVEL      :: 4   // challengers never drop below this
+ARENA_GOLD_PER_FLOOR  :: 25  // gold a cleared floor pays, on top of kill loot
+ARENA_HEAL_PCT        :: f32(0.25) // (unused: heals are full; kept for tuning)
 BOSS_CRYSTAL_REWARD    :: 6
 
 // Phase 10 — storage & breeding buildings.
@@ -110,6 +121,7 @@ RAID_BASE_INTERVAL     :: 26   // turns between raids at low heat
 RAID_MIN_INTERVAL      :: 9    // fastest raid cadence at high heat
 RAID_MAX_SIZE          :: 14   // biggest raid at max heat
 RAID_LEVEL_PER_HEAT    :: 4    // raid monsters gain +1 level per this much heat
+HEAT_LEVEL_PER         :: 3    // wilds/bosses gain +1 level per this much heat
 
 terrain_name :: proc(t: Terrain) -> cstring {
 	switch t {
@@ -213,10 +225,10 @@ IMPROVEMENT_INFO := [Improvement]Improvement_Info {
 		detail = "Reveals tiles within 6, deters wild spawns within 4, and gives defenders within 4 tiles +6 Block at the start of a battle. A solid anchor for a front-line tile you expect to be attacked.",
 	},
 	.WALL = Improvement_Info{
-		name = "Wall", cost = 15, hp = IMPROVEMENT_HP, category = "Defense",
+		name = "Wall", cost = 6, hp = IMPROVEMENT_HP, category = "Defense",
 		effect = "wilds won't roam across it",
 		heat = 1, terrains = {.CAVE, .RUINS, .GROVE, .MUSHROOM, .TUNDRA, .DESERT},
-		blocks = true, cost_divisor = 6,
+		blocks = true, cost_divisor = 16,
 		detail = "Ground wilds cannot move through a Wall (Air types fly over). A wild whose step is blocked by a Wall batters it instead, so even a wall line needs occasional repair — but it reliably channels wilds away from what it protects.",
 	},
 	.WELL = Improvement_Info{
@@ -226,26 +238,26 @@ IMPROVEMENT_INFO := [Improvement]Improvement_Info {
 		detail = "Must be built adjacent to Water. Produces a small amount of food each turn into the local pool (delivered to a food store within 4) and needs no staffing to do it. A cheap top-up for a food district near water.",
 	},
 	.GATE = Improvement_Info{
-		name = "Gate", cost = 12, hp = 30, category = "Defense",
+		name = "Gate", cost = 5, hp = 30, category = "Defense",
 		effect = "wilds can't cross; your monsters can",
 		heat = 1, terrains = {.CAVE, .RUINS, .GROVE, .MUSHROOM},
-		blocks = true, cost_divisor = 6,
+		blocks = true, cost_divisor = 16,
 		detail = "Wilds cannot pass, but your own monsters move through freely. Frailer than a Wall (30 HP) and wilds batter it down faster, so treat a Gate as a door you control rather than a wall.",
 	},
 	.SPIKE_TRAP = Improvement_Info{
-		name = "Spike Trap", cost = 18, hp = 25, category = "Defense",
+		name = "Spike Trap", cost = 9, hp = 25, category = "Defense",
 		effect = "wilds standing here take 8 dmg/turn",
 		heat = 1, terrains = {.CAVE, .RUINS, .GROVE}, stacks = true, cost_divisor = 6,
 		detail = "Any wild standing on the tile loses 8 HP per turn. Cheap, passive attrition for a chokepoint or a tile wilds keep walking over. Your own monsters are unaffected.",
 	},
 	.SCARECROW = Improvement_Info{
-		name = "Scarecrow", cost = 8, hp = 20, category = "Defense",
+		name = "Scarecrow", cost = 5, hp = 20, category = "Defense",
 		effect = "cheap; keeps spawns out (r2), spooks wilds (r3)",
 		heat = 1, terrains = {.GROVE, .MUSHROOM, .JUNGLE}, stacks = true, cost_divisor = 6,
 		detail = "The cheapest deterrent. Keeps wild spawns out of a 2-tile radius, and spooks wilds within 3 so that, instead of crossing, they step away toward open ground. Best used to keep a quiet pocket around farms and workers.",
 	},
 	.ROAD = Improvement_Info{
-		name = "Road", cost = 10, hp = 40, category = "Traversal",
+		name = "Road", cost = 6, hp = 40, category = "Traversal",
 		effect = "monsters cross for half the energy",
 		heat = 1, terrains = {.CAVE, .GROVE, .DUNGEON, .RUINS, .DESERT, .TUNDRA, .MUSHROOM, .JUNGLE},
 		stacks = true, cost_divisor = 6,
@@ -276,7 +288,7 @@ IMPROVEMENT_INFO := [Improvement]Improvement_Info {
 		detail = "Needs energy from a nearby Fountain. Spends 2 charge to shoot the nearest wild within 4 tiles for 10 damage. Useless on its own — always pair it with a Fountain, and cluster a couple of Turrets around a single one to cover a flank.",
 	},
 	.DRAWBRIDGE = Improvement_Info{
-		name = "Drawbridge", cost = 16, hp = 40, category = "Defense",
+		name = "Drawbridge", cost = 8, hp = 40, category = "Defense",
 		effect = "a Bridge you can raise (blocks wilds) or lower",
 		heat = 1, terrains = {.WATER}, cost_divisor = 3,
 		detail = "Built on Water. Toggle it raised to block wilds or lowered to let your monsters cross. More expensive than a Bridge but reconfigurable, so you can seal a water lane when a raid approaches and reopen it afterward.",
@@ -341,6 +353,36 @@ IMPROVEMENT_INFO := [Improvement]Improvement_Info {
 		heat = 3, terrains = {.CAVE, .GROVE, .RUINS, .DESERT, .MUSHROOM}, cost_divisor = 3,
 		detail = "A repair drone. It draws energy from a Fountain within 4 tiles into its own charge, then spends that charge to mend every damaged improvement within 4 tiles by 1 HP per turn — buildings and overlays alike. Useless without a Fountain, so build one alongside it. Slow, but it quietly keeps a wall line or a front-line cluster patched between raids without spending gold.",
 	},
+	.WARD_STONE = Improvement_Info{
+		name = "Ward Stone", cost = 35, hp = 40, category = "Support",
+		effect = "Relic Towers within 4 project 2 tiles further",
+		heat = 2, terrains = {.CAVE, .GROVE, .MUSHROOM, .RUINS, .TUNDRA, .CRYSTAL_COVE}, cost_divisor = 3,
+		detail = "A standing stone that focuses relic energy. Every Relic Tower within 4 tiles projects its relics 2 tiles further per Ward Stone, so a ring of stones turns one tower into a district-wide aura. Costs nothing to run; it is pure reach.",
+	},
+	.TRAINING_YARD = Improvement_Info{
+		name = "Training Yard", cost = 30, hp = 45, category = "Support",
+		effect = "a monster standing here gains +8 XP/turn",
+		heat = 2, terrains = {.CAVE, .RUINS, .GROVE, .MUSHROOM, .DESERT, .JUNGLE}, cost_divisor = 3,
+		detail = "A sparring ground. Any of your monsters standing on the tile gains 8 XP every turn, so a fresh recruit can be brought up to speed without feeding it into fights it cannot win. Leave a monster here between expeditions.",
+	},
+	.BATTERY = Improvement_Info{
+		name = "Battery", cost = 25, hp = 40, category = "Energy",
+		effect = "banks Fountain overflow for Turrets within 4",
+		heat = 2, terrains = {.CAVE, .RUINS, .DESERT, .CRYSTAL_COVE, .TUNDRA}, cost_divisor = 3,
+		detail = "A bank of cells. When a Fountain within 4 tiles has nothing that needs its charge — every Turret and Mender in reach is already full — the surplus pours into the Battery instead of being wasted. Turrets within 4 draw from it whenever their own cells run dry, so a Fountain can keep a whole cluster firing through a long raid instead of trickling into one barrel at a time.",
+	},
+	.CALTROPS = Improvement_Info{
+		name = "Caltrops", cost = 14, hp = 25, category = "Defense",
+		effect = "wilds here take 24% max HP/turn",
+		heat = 1, terrains = {.CAVE, .RUINS, .GROVE, .DESERT}, stacks = true, cost_divisor = 6,
+		detail = "A nastier Spike Trap. Wilds standing on the tile lose 24% of their max HP per turn instead of 15%, so a couple of Caltrops tiles will grind down even a boss pack that parks on them. Shares the overlay slot with Roads and Scarecrows.",
+	},
+	.RELIC_TOWER = Improvement_Info{
+		name = "Relic Tower", cost = 60, hp = 60, category = "Support",
+		effect = "holds 3 relics; projects them 5 tiles",
+		heat = 4, terrains = {.CAVE, .GROVE, .MUSHROOM, .RUINS, .TUNDRA, .DESERT, .JUNGLE, .CRYSTAL_COVE}, cost_divisor = 2,
+		detail = "A spire built to hold relics. It has 3 slots; each relic slotted here projects its effect over a 5-tile radius — battle relics buff your monsters fighting inside that radius, economy relics boost the Mines, Farms and Turrets inside it, and win-bonus relics pay out for fights won there. Relics outside a tower do nothing, so where you raise your towers decides what your relics actually do. Copies stack.",
+	},
 }
 
 // Every buildable improvement, in build-panel order (used by the improvements dex).
@@ -348,7 +390,8 @@ ALL_IMPROVEMENTS := [?]Improvement{
 	.FARM, .MINE, .WELL, .BRIDGE, .GRANARY, .TREASURY, .WATCHTOWER, .WALL,
 	.GATE, .SPIKE_TRAP, .SCARECROW, .ROAD, .SILO, .CRYSTAL_REFINERY, .FOUNTAIN,
 	.TURRET, .DRAWBRIDGE, .QUARRY, .LUMBER_MILL, .MARKETPLACE, .KITCHEN,
-	.BARRACKS, .BEACON, .DEN, .VAULT, .NURSERY, .MENDER,
+	.BARRACKS, .BEACON, .DEN, .VAULT, .NURSERY, .MENDER, .RELIC_TOWER,
+	.WARD_STONE, .TRAINING_YARD, .CALTROPS, .BATTERY,
 }
 
 tile_has :: proc(t: ^Tile, im: Improvement) -> bool {
@@ -505,13 +548,27 @@ Colony :: struct {
 	// Lifetime stats + milestone board (Phase 22).
 	fights_won:         int,
 	alphas_slain:       int,
+	bosses_slain:       [Species_Id]bool, // one flag per boss, for the quest board
 	crystals_earned:    int,
 	improvements_built: int,
 	milestones:         [Milestone_Kind]bool,
 	goal_done:          bool,
 
-	// Colony-wide boss relics (Phase 25), stackable.
-	relics: [Relic]int,
+	// Arena tower (Phase 53/54): the run, the floor you're on, your best ever,
+	// and the winnings banked so far this run.
+	arena_run:          bool,
+	arena_floor:        int,
+	arena_best_floor:   int,
+	arena_run_crystals: int,
+	arena_base_level:   int, // the party's average level when the run started
+	arena_run_seed:     u64, // fixes this run's gym order and event offers
+	arena_boons:        [dynamic]Relic, // relics picked up this run; dropped when it ends
+	arena_items:        [dynamic]Item,  // the run's own pack: unbounded, and only this run's
+	arena_event:        Arena_Event, // the pending trial-floor offer (regenerated per floor)
+
+	// Boss relics you own but haven't slotted into a tower yet (Phase 25/44).
+	// Placed relics live on the tower tile itself; see `src/relics.odin`.
+	relic_bag: [dynamic]Relic,
 
 	// World event state (Phase: ecology/events).
 	tremor: f32, // seconds of screen shake remaining
@@ -1014,6 +1071,7 @@ xp_to_next :: proc(level: int) -> int {
 	return 40 + level * 30
 }
 
+
 // Grants XP and levels the monster up as thresholds are crossed.
 // Grants XP and levels the monster up as thresholds are crossed. Any move a
 // level unlocks becomes a choice (even a single one), so the player can decline.
@@ -1022,8 +1080,13 @@ monster_add_xp :: proc(c: ^Colony, m: ^Monster, amount: int) -> bool {
 	leveled := false
 	for m.creature.xp >= xp_to_next(m.creature.level) {
 		m.creature.xp -= xp_to_next(m.creature.level)
-		opts, n := creature_level_up(&m.creature)
+		old_name := m.creature.name
+		opts, n, evolved := creature_level_up(&m.creature)
 		leveled = true
+		if evolved {
+			colony_notify(c, "%s evolved into %s!", old_name, m.creature.name)
+			colony_add_float(c, m.pos, .GROW, 1)
+		}
 		if n > 0 {
 			enqueue_choice(c, m.id, opts, n, .LEVEL)
 		}
@@ -1045,19 +1108,22 @@ enqueue_choice :: proc(c: ^Colony, monster_id: int, opts: [MAX_CHOICE_OPTIONS]Mo
 
 // How much a step into each terrain costs, before the mover's Speed and the
 // global step factor. Rough ground is pricier, so routes and Roads matter.
+// Energy per step, by the tile being entered. These are the real costs — there
+// is no global multiplier on top of them — so tuning the map's pace means
+// editing this table.
 terrain_move_cost :: proc(t: Terrain) -> f32 {
 	switch t {
-	case .GROVE, .MUSHROOM:            return 0.9  // soft, easy going
-	case .CAVE, .TRADING_POST, .ARENA: return 1.0
-	case .CRYSTAL_COVE, .RUINS:        return 1.15
-	case .DESERT:                      return 1.25
-	case .TUNDRA, .JUNGLE:             return 1.35
-	case .DUNGEON:                     return 1.4
-	case .BOSS_ROOM, .WATER:           return 1.5
-	case .LAVA:                        return 1.6
-	case .QUICKSAND:                   return 1.8  // the worst footing
+	case .GROVE, .MUSHROOM:            return 0.7  // soft, easy going
+	case .CAVE, .TRADING_POST, .ARENA: return 0.8
+	case .CRYSTAL_COVE, .RUINS:        return 0.9
+	case .DESERT:                      return 1.0
+	case .TUNDRA, .JUNGLE:             return 1.1
+	case .DUNGEON:                     return 1.15
+	case .BOSS_ROOM, .WATER:           return 1.2
+	case .LAVA:                        return 1.3
+	case .QUICKSAND:                   return 1.45 // the worst footing
 	}
-	return 1.0
+	return 0.8
 }
 
 monster_move_cost :: proc(m: ^Monster, t: Terrain) -> f32 {
@@ -1065,7 +1131,7 @@ monster_move_cost :: proc(m: ^Monster, t: Terrain) -> f32 {
 	factor := clamp(10.0 / speed, 0.7, 1.6)
 	// Movement and card-play share one energy pool. A step is deliberately not
 	// free: long treks cost real energy, so you can't cross the map in a turn.
-	return terrain_move_cost(t) * factor * MOVE_STEP_FACTOR
+	return terrain_move_cost(t) * factor
 }
 
 // Step cost to a specific tile, including a Road's discount.
@@ -1329,16 +1395,15 @@ colony_store_food :: proc(c: ^Colony, from: Hex, amount: int) -> int {
 // farm with no receiver in range still shows its potential).
 colony_food_production :: proc(c: ^Colony) -> int {
 	sum := 0
-	bonus := upgrade_food_bonus(c)
 	farm_bonus := upgrade_farm_food_bonus(c)
 	for t in c.tiles {
 		#partial switch t.improvement {
 		case .FARM:
 			if monsters_on_tile(c, t.hex, false) > 0 {
-				sum += FARM_FOOD_YIELD + bonus + farm_bonus
+				sum += int(f32(FARM_FOOD_YIELD + farm_bonus) * upgrade_food_mult(c))
 			}
 		case .WELL:
-			sum += WELL_FOOD_YIELD + bonus
+			sum += int(f32(WELL_FOOD_YIELD) * upgrade_food_mult(c))
 		case:
 		}
 	}
@@ -1347,10 +1412,10 @@ colony_food_production :: proc(c: ^Colony) -> int {
 
 colony_gold_production :: proc(c: ^Colony) -> int {
 	sum := 0
-	bonus := upgrade_gold_bonus(c) + upgrade_deep_core_bonus(c)
+	bonus := upgrade_deep_core_bonus(c)
 	for t in c.tiles {
 		if t.improvement == .MINE && monsters_on_tile(c, t.hex, false) > 0 {
-			sum += MINE_GOLD_YIELD + bonus
+			sum += int(f32(MINE_GOLD_YIELD + bonus) * upgrade_gold_mult(c))
 		}
 	}
 	return sum
@@ -1399,6 +1464,9 @@ SHOP_SLOTS :: 2
 shop_pick_species :: proc(c: ^Colony) -> Species_Id {
 	total := 0
 	for sp in SPECIES {
+		if sp.role == .BOSS {
+			continue // bosses aren't for sale
+		}
 		total += rarity_weight(sp.rarity)
 	}
 	if total <= 0 {
@@ -1407,6 +1475,9 @@ shop_pick_species :: proc(c: ^Colony) -> Species_Id {
 	roll := rng_below(&c.rng, total)
 	acc := 0
 	for id in Species_Id {
+		if SPECIES[id].role == .BOSS {
+			continue
+		}
 		acc += rarity_weight(SPECIES[id].rarity)
 		if roll < acc {
 			return id
@@ -1624,10 +1695,13 @@ colony_end_turn :: proc(c: ^Colony) {
 			continue
 		}
 		yield := t.improvement == .QUARRY ? QUARRY_GOLD_YIELD : MINE_GOLD_YIELD
-		yield += upgrade_gold_bonus(c) + upgrade_deep_core_bonus(c)
+		yield += upgrade_deep_core_bonus(c)
+		yield = int(f32(yield) * upgrade_gold_mult(c))
 		if t.improvement == .MINE && near_improvement(c, t.hex, MARKET_RADIUS, .MARKETPLACE) {
 			yield += int(f32(yield) * (MARKET_BONUS + upgrade_market_bonus(c)))
 		}
+		// Coin of Plenty relics project onto the Mine/Quarry they cover.
+		yield = int(f32(yield) * relic_gold_mult_at(c, t.hex))
 		kept := colony_deposit_gold(c, t.hex, yield)
 		if kept > 0 {
 			colony_add_float(c, t.hex, .GOLD, kept)
@@ -1668,11 +1742,11 @@ colony_end_turn :: proc(c: ^Colony) {
 			food = WELL_FOOD_YIELD
 		}
 		if food > 0 {
-			food += upgrade_food_bonus(c)
 			if t.improvement == .FARM {
 				food += upgrade_farm_food_bonus(c)
 			}
-			food = int(f32(food) * relic_food_mult(c))
+			food = int(f32(food) * upgrade_food_mult(c))
+			food = int(f32(food) * relic_food_mult_at(c, t.hex))
 			farm_pool[i] = food
 			colony_add_float(c, t.hex, .FOOD, food)
 		}
@@ -1747,6 +1821,7 @@ colony_end_turn :: proc(c: ^Colony) {
 
 	// 4b. Barracks heal and train nearby monsters (each eats food to run).
 	colony_barracks(c, n_tiles, food_stores[:])
+	colony_training_yards(c)
 
 	// 4c. Nurseries eat food and hatch babies from their breeding pair.
 	colony_nurseries(c, n_tiles, food_stores[:])
@@ -1829,6 +1904,22 @@ colony_end_turn :: proc(c: ^Colony) {
 
 // Barracks: each one eats food from a nearby Granary and, if fed, heals and
 // grants a little XP to your monsters nearby.
+// Training Yard: any of your monsters standing on the tile gains XP each turn,
+// so a recruit can be brought up to speed without feeding it to fights.
+colony_training_yards :: proc(c: ^Colony) {
+	for &m in c.roster {
+		if m.wild || m.creature.hp <= 0 {
+			continue
+		}
+		t := tile_at(c, m.pos)
+		if t == nil || t.improvement != .TRAINING_YARD {
+			continue
+		}
+		monster_add_xp(c, &m, TRAINING_YARD_XP)
+		colony_add_float(c, m.pos, .GROW, TRAINING_YARD_XP)
+	}
+}
+
 colony_barracks :: proc(c: ^Colony, n_tiles: int, food_stores: []int) {
 	for i in 0..<n_tiles {
 		t := c.tiles[i]
@@ -1863,12 +1954,15 @@ colony_fountains :: proc(c: ^Colony) {
 
 	fountains := make([dynamic]int, 0); defer delete(fountains)
 	structs := make([dynamic]int, 0); defer delete(structs)
+	batteries := make([dynamic]int, 0); defer delete(batteries)
 	for i in 0..<len(c.tiles) {
 		#partial switch c.tiles[i].improvement {
 		case .FOUNTAIN:
 			append(&fountains, i)
 		case .TURRET, .MENDER:
 			append(&structs, i)
+		case .BATTERY:
+			append(&batteries, i)
 		}
 	}
 
@@ -1904,11 +1998,38 @@ colony_fountains :: proc(c: ^Colony) {
 		if best_struct >= 0 {
 			t := c.tiles[best_struct]
 			cap := t.improvement == .TURRET ? turret_cap : MENDER_CAP
+			before := t.stored
 			t.stored = min(cap, t.stored + output)
+			if t.stored > before {
+				// Show the charge actually landing (monsters and Batteries
+				// already float it).
+				colony_add_float(c, t.hex, .ENERGY, t.stored - before)
+			}
 		} else if best_monster >= 0 {
 			m := &c.roster[best_monster]
 			m.creature.energy = min(m.creature.energy_max, m.creature.energy + f32(output))
 			colony_add_float(c, m.pos, .ENERGY, output)
+		} else {
+			// Nobody needs the charge right now — every Turret and Mender in
+			// reach is full. Bank it in a Battery instead of wasting it.
+			best_b := -1
+			best_bd := 1 << 30
+			for j in batteries {
+				b := c.tiles[j]
+				if b.stored >= BATTERY_CAP {
+					continue
+				}
+				d := hex_distance(f.hex, b.hex)
+				if d <= BATTERY_RANGE && d < best_bd {
+					best_bd = d
+					best_b = j
+				}
+			}
+			if best_b >= 0 {
+				b := c.tiles[best_b]
+				b.stored = min(BATTERY_CAP, b.stored + output)
+				colony_add_float(c, b.hex, .ENERGY, output)
+			}
 		}
 	}
 }
@@ -1955,12 +2076,35 @@ colony_turrets :: proc(c: ^Colony) {
 	shots := 1 + upgrade_turret_rate(c)
 	splash := upgrade_turret_splash(c)
 	range_ := TURRET_RANGE + upgrade_turret_range(c)
+	// Batteries let a dry Turret draw stored surplus before it gives up a shot.
+	batteries := make([dynamic]int, 0); defer delete(batteries)
+	for i in 0..<len(c.tiles) {
+		if c.tiles[i].improvement == .BATTERY {
+			append(&batteries, i)
+		}
+	}
 	for i in 0..<len(c.tiles) {
 		t := c.tiles[i]
 		if t.improvement != .TURRET {
 			continue
 		}
 		for _ in 0..<shots {
+			if t.stored < TURRET_COST {
+				for j in batteries {
+					b := c.tiles[j]
+					if b.stored <= 0 || hex_distance(b.hex, t.hex) > BATTERY_RANGE {
+						continue
+					}
+					need := TURRET_COST - t.stored
+					drawn := min(need, b.stored)
+					b.stored -= drawn
+					t.stored += drawn
+					colony_add_float(c, t.hex, .ENERGY, drawn)
+					if t.stored >= TURRET_COST {
+						break
+					}
+				}
+			}
 			if t.stored < TURRET_COST {
 				break
 			}
@@ -1982,7 +2126,7 @@ colony_turrets :: proc(c: ^Colony) {
 			}
 			t.stored -= TURRET_COST
 			target_hex := c.roster[best_w].pos
-			dmg := int(f32(TURRET_DAMAGE+upgrade_turret_damage(c)) * relic_turret_mult(c))
+			dmg := int(f32(TURRET_DAMAGE+upgrade_turret_damage(c)) * relic_turret_mult_at(c, t.hex))
 			c.roster[best_w].creature.hp -= dmg
 			colony_add_float(c, target_hex, .DAMAGE, dmg)
 			if c.roster[best_w].creature.hp <= 0 {
@@ -2014,8 +2158,14 @@ colony_apply_traps :: proc(c: ^Colony) {
 	for i < len(c.roster) {
 		m := &c.roster[i]
 		if m.wild {
-			if t := tile_at(c, m.pos); t != nil && tile_has(t, .SPIKE_TRAP) {
-				dmg := max(int(f32(m.creature.max_hp)*(SPIKE_TRAP_DAMAGE_PCT+upgrade_spike_pct(c))), 1)
+			t := tile_at(c, m.pos)
+			pct := f32(0)
+			if t != nil {
+				if tile_has(t, .SPIKE_TRAP) { pct = SPIKE_TRAP_DAMAGE_PCT }
+				if tile_has(t, .CALTROPS) { pct = CALTROPS_DAMAGE_PCT }
+			}
+			if pct > 0 {
+				dmg := max(int(f32(m.creature.max_hp)*(pct+upgrade_spike_pct(c))), 1)
 				m.creature.hp -= dmg
 				colony_add_float(c, m.pos, .DAMAGE, dmg)
 				if m.creature.hp <= 0 {

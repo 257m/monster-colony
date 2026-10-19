@@ -2,6 +2,7 @@ package main
 
 import rl "vendor:raylib"
 import "core:fmt"
+import "core:math"
 tile_prevents_spawn :: proc(t: ^Tile) -> bool {
 	return t.improvement == .FARM || t.improvement == .MINE
 }
@@ -50,99 +51,117 @@ spawn_pick :: proc(r: f32, entries: []Spawn_Entry) -> Species_Id {
 			return e.species
 		}
 	}
+	if len(entries) == 0 {
+		return .Emberling
+	}
 	return entries[len(entries) - 1].species
 }
 
+// ----------------------------------------------------------------------------
+// WILD SPAWNS
+//
+// One table per terrain. Entries are ordered by ascending cutoff and the last
+// cutoff must be 1.0, so `spawn_pick` can be a single roll and a linear scan.
+// Common species sit low, rare species sit at the top of the range.
+// ----------------------------------------------------------------------------
+
 SPAWN_CAVE := [?]Spawn_Entry {
-	{0.30, .Gloomling},
-	{0.50, .Wispling},
-	{1.0, .Cave_Bat},
+	{0.35, .Grubling},
+	{0.60, .Vesperling},
+	{0.85, .Rockmite},
+	{1.0, .Dustwing},
 }
 SPAWN_GROVE := [?]Spawn_Entry {
-	{0.30, .Swampbeast},
-	{0.50, .Mosshide},
-	{1.0, .Thornkit},
+	{0.30, .Thornkit},
+	{0.55, .Mossling},
+	{0.85, .Bloomcap},
+	{1.0, .Barkhound},
 }
 SPAWN_WATER := [?]Spawn_Entry {
-	{0.22, .Krakling},
-	{0.40, .Rimescale},
-	{0.58, .Bogfang},
-	{0.72, .Frostmoss},
-	{1.0, .Bubblet},
+	{0.30, .Bubblet},
+	{0.65, .Ripjaw},
+	{0.90, .Tidecaller},
+	{1.0, .Abyssal_Fry},
 }
 SPAWN_DUNGEON := [?]Spawn_Entry {
-	{0.12, .Elite_Sentinel},
-	{0.34, .Pyrelord},
-	{0.54, .Cindermaw},
-	{0.72, .Emberbloom},
-	{1.0, .Magmite},
+	{0.40, .Gloomling},
+	{0.75, .Crypt_Rat},
+	{0.96, .Gravemaw},
+	{1.0, .Wispling},
 }
 SPAWN_MUSHROOM := [?]Spawn_Entry {
-	{0.28, .Mosshide},
-	{0.52, .Swampbeast},
-	{0.72, .Frostmoss},
-	{1.0, .Thornkit},
+	{0.55, .Sporeling},
+	{1.0, .Capmaw},
 }
 SPAWN_RUINS := [?]Spawn_Entry {
-	{0.28, .Wispling},
-	{0.52, .Gloomling},
-	{0.72, .Cinderwing},
-	{1.0, .Magmite},
+	{0.40, .Sentinel},
+	{0.75, .Relic_Hound},
+	{1.0, .Hexling},
 }
 SPAWN_TUNDRA := [?]Spawn_Entry {
-	{0.35, .Frostfang},
-	{0.60, .Blizzard},
-	{0.80, .Galebeast},
-	{1.0, .Frostfang},
+	{0.35, .Snowpup},
+	{0.70, .Glacierling},
+	{0.95, .Rimewarden},
+	{1.0, .Frostmaw},
 }
 SPAWN_JUNGLE := [?]Spawn_Entry {
-	{0.35, .Venomtail},
-	{0.65, .Swampbeast},
-	{1.0, .Mosshide},
+	{0.35, .Vinecat},
+	{0.70, .Pouncer},
+	{0.94, .Bogmaw},
+	{1.0, .Venomtail},
 }
 SPAWN_LAVA := [?]Spawn_Entry {
-	{0.30, .Pyrelord},
-	{0.60, .Cindermaw},
-	{1.0, .Magmite},
+	{0.40, .Magmite},
+	{0.75, .Cinderwing},
+	{0.97, .Ashfang},
+	{1.0, .Slagbeast},
 }
 SPAWN_DESERT := [?]Spawn_Entry {
-	{0.35, .Stonepaw},
-	{0.65, .Sparkit},
-	{1.0, .Magmite},
+	{0.45, .Sandfang},
+	{0.92, .Dreadhorn},
+	{1.0, .Sparkit},
+}
+SPAWN_QUICKSAND := [?]Spawn_Entry {
+	{0.35, .Sandfang},
+	{0.70, .Rockmite},
+	{1.0, .Relic_Hound},
 }
 SPAWN_CRYSTAL_COVE := [?]Spawn_Entry {
-	{0.30, .Stonepaw},
-	{0.55, .Frostfang},
-	{0.78, .Rimescale},
-	{1.0, .Sparkit},
+	{0.50, .Hexling},
+	{0.92, .Stormwing},
+	{1.0, .Crystalfin},
 }
 
 spawn_species_for :: proc(t: Terrain, rng: ^Rng) -> Species_Id {
+	r := rng_f32(rng)
 	switch t {
-	case .CAVE:         return spawn_pick(rng_f32(rng), SPAWN_CAVE[:])
-	case .GROVE:        return spawn_pick(rng_f32(rng), SPAWN_GROVE[:])
-	case .WATER:        return spawn_pick(rng_f32(rng), SPAWN_WATER[:])
-	case .DUNGEON:      return spawn_pick(rng_f32(rng), SPAWN_DUNGEON[:])
-	case .MUSHROOM:     return spawn_pick(rng_f32(rng), SPAWN_MUSHROOM[:])
-	case .RUINS:        return spawn_pick(rng_f32(rng), SPAWN_RUINS[:])
-	case .TUNDRA:       return spawn_pick(rng_f32(rng), SPAWN_TUNDRA[:])
-	case .JUNGLE:       return spawn_pick(rng_f32(rng), SPAWN_JUNGLE[:])
-	case .LAVA:         return spawn_pick(rng_f32(rng), SPAWN_LAVA[:])
-	case .DESERT:       return spawn_pick(rng_f32(rng), SPAWN_DESERT[:])
-	case .CRYSTAL_COVE: return spawn_pick(rng_f32(rng), SPAWN_CRYSTAL_COVE[:])
-	case .QUICKSAND:    return .Stonepaw
-	case .BOSS_ROOM:    return .Deep_One
-	case .TRADING_POST: return .Cave_Bat
-	case .ARENA:        return .Cave_Bat
+	case .CAVE:         return spawn_pick(r, SPAWN_CAVE[:])
+	case .GROVE:        return spawn_pick(r, SPAWN_GROVE[:])
+	case .WATER:        return spawn_pick(r, SPAWN_WATER[:])
+	case .DUNGEON:      return spawn_pick(r, SPAWN_DUNGEON[:])
+	case .MUSHROOM:     return spawn_pick(r, SPAWN_MUSHROOM[:])
+	case .RUINS:        return spawn_pick(r, SPAWN_RUINS[:])
+	case .TUNDRA:       return spawn_pick(r, SPAWN_TUNDRA[:])
+	case .JUNGLE:       return spawn_pick(r, SPAWN_JUNGLE[:])
+	case .LAVA:         return spawn_pick(r, SPAWN_LAVA[:])
+	case .DESERT:       return spawn_pick(r, SPAWN_DESERT[:])
+	case .QUICKSAND:    return spawn_pick(r, SPAWN_QUICKSAND[:])
+	case .CRYSTAL_COVE: return spawn_pick(r, SPAWN_CRYSTAL_COVE[:])
+	case .TRADING_POST, .BOSS_ROOM, .ARENA:
+		return .Grubling // no ambient spawns here; callers spawn their own
 	}
-	return .Cave_Bat
+	return .Grubling
 }
 
 // Threats keep pace with the run: wilds and raiders gain levels over time, so
 // an over-levelled colony never trivialises the wilds near the entrance. This
 // is the single knob that makes the world get meaner the longer you survive.
-colony_escalation :: proc(c: ^Colony) -> int {
-	return c.turn / 20
+// How much tougher the world has become. **Heat is the driver**: it is your
+// footprint (improvements and monster levels), so a loud colony draws monsters
+// that have grown to match, while a quiet one stays easy. Turn count does not
+// feed it — camping does not make the underground harder.
+wild_threat_level :: proc(c: ^Colony) -> int {
+	return c.heat / HEAT_LEVEL_PER
 }
 
 // Highest level among your monsters — used to keep wilds relevant even in the
@@ -158,25 +177,395 @@ player_top_level :: proc(c: ^Colony) -> int {
 }
 
 spawn_level_for :: proc(c: ^Colony, hex: Hex) -> int {
-	// Weaker near the entrance, tougher the further out you are — and tougher
-	// the longer the run has gone on. Wilds never fall far behind your best
-	// monster, so there is always something worth fighting.
+	// Weaker near the entrance and tougher the further out you are, but the real
+	// driver is **heat**: the attention your colony has drawn. Build big and the
+	// underground grows to match; stay small and it stays quiet. Wilds never
+	// fall far behind your best monster, so there is always a fight worth having.
 	dist := hex_distance(c.start_hex, hex)
-	by_place := 1 + c.floor / 2 + dist / 4 + colony_escalation(c)
+	by_place := 1 + c.floor / 2 + dist / 4 + wild_threat_level(c)
 	by_player := player_top_level(c) * 2 / 3
 	return max(by_place, by_player) + rng_below(&c.rng, 2)
 }
 
-// The Arena sends a fresh, strong team onto its tile when challenged.
-colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
-	lvl := spawn_level_for(c, hex) + ARENA_LEVEL_BONUS
-	for _ in 0..<ARENA_TEAM_SIZE {
-		sp := Species_Id(rng_below(&c.rng, len(Species_Id)))
-		spawn_wild_at(c, hex, sp, lvl)
+// The Arena sends a fresh team onto its tile when challenged.
+// --- Arena tower (Phase 53) ---
+//
+// The Arena is a run: one flat entry fee buys a chain of floors that always
+// starts at floor 1. Each win banks that floor's purse and takes you higher; the
+// teams get bigger and higher-levelled, and losing ends the run and forfeits the
+// winnings. Your best floor is recorded for good.
+//
+// The tower does not field curated teams. Every species in the game is on the
+// table, weighted by how tough it is and by how deep the floor is: floor 1 is
+// mostly the weak wilds, the middle is the evolved lines, and the deep floors
+// are the bosses themselves. A species' share comes from a soft band around the
+// "power" the tower wants at that floor, so the roster slides smoothly instead
+// of switching between fixed pools.
+
+// A rough strength score: bulk, offence, and the role it plays.
+arena_species_power :: proc(sp: Species_Id) -> f32 {
+	s := SPECIES[sp]
+	p := f32(s.base_hp) / 40.0 + s.base_power / 8.0
+	switch s.role {
+	case .STARTER: p += 0.5
+	case .WILD:    p += 0.0
+	case .ELITE:   p += 1.5
+	case .BOSS:    p += 3.0
+	}
+	return p
+}
+
+ARENA_RAMP_FLOORS :: 250  // floors to walk the whole roster, weakest to strongest
+ARENA_SPREAD      :: 4.5  // the tower's band, measured in ranks
+ARENA_SPREAD_MAX  :: 11.0 // ...and how wide it may get at the very top
+ARENA_REPEAT      :: 0.15 // weight multiplier for a species already on the team
+
+// The weakest and strongest species on the roster, so the ramp has no magic
+// numbers in it and follows the data if species are added or retuned.
+arena_power_range :: proc() -> (lo, hi: f32) {
+	lo, hi = 1e9, -1e9
+	for sp in Species_Id {
+		p := arena_species_power(sp)
+		lo = min(lo, p)
+		hi = max(hi, p)
+	}
+	return
+}
+
+// The power the tower is looking for at a floor: it lerps from the weakest
+// species to the strongest across the ramp, then stays at the top of the roster.
+arena_wanted_power :: proc(floor: int) -> f32 {
+	lo, hi := arena_power_range()
+	t := clamp(f32(floor) / f32(ARENA_RAMP_FLOORS), 0, 1)
+	return lo + (hi - lo) * t
+}
+
+// How many species are weaker than this power. The tower bands its picks by
+// *rank* rather than raw power, because the roster is very unevenly spread: two
+// thirds of it are near-identical weak wilds, so a band measured in power would
+// always be swamped by that crowd.
+arena_rank_below :: proc(p: f32) -> f32 {
+	r := f32(0)
+	for sp in Species_Id {
+		if arena_species_power(sp) < p {
+			r += 1
+		}
+	}
+	return r
+}
+
+// The band widens as you climb. At the very top the tower would otherwise field
+// nothing but the handful of bosses, which is boring; a wider band lets the
+// strong regulars — levelled up to hold their own — keep showing up.
+arena_spread :: proc(floor: int) -> f32 {
+	return min(ARENA_SPREAD + f32(floor) / 25.0, ARENA_SPREAD_MAX)
+}
+
+// Rarity deliberately plays no part: it governs how hard a species is to find
+// and catch, not how hard it hits. The tower's picks are about strength alone.
+arena_species_weight :: proc(sp: Species_Id, floor: int) -> f32 {
+	d := arena_rank_below(arena_species_power(sp)) - arena_rank_below(arena_wanted_power(floor))
+	s := arena_spread(floor)
+	// The small constant keeps every species technically possible at any floor,
+	// but it is tiny, so the deep floors really are the deep roster.
+	return math.exp(-(d * d) / (s * s)) + 0.0005
+}
+
+// Weight of a species for a team that already has `avoid` on it. A repeat is
+// heavily down-weighted rather than banned: a wide roster still produces varied
+// lineups, while a narrow one — the top of the tower is only a handful of bosses
+// — doubles up instead of scraping the bottom of the roster.
+arena_team_weight :: proc(sp: Species_Id, floor: int, avoid: []Species_Id) -> f32 {
+	w := arena_species_weight(sp, floor)
+	for a in avoid {
+		if a == sp {
+			return w * ARENA_REPEAT
+		}
+	}
+	return w
+}
+
+// The average level of the monsters you brought to this Arena tile. The tower is
+// built to beat *you*, so this is what sets the floor's difficulty — breed and
+// deck-build a strong team and the tower answers it.
+arena_party_level :: proc(c: ^Colony, hex: Hex) -> int {
+	sum := 0
+	n := 0
+	for m in c.roster {
+		if m.wild || m.creature.hp <= 0 || !hex_equal(m.pos, hex) {
+			continue
+		}
+		sum += m.creature.level
+		n += 1
+	}
+	if n == 0 {
+		return player_top_level(c)
+	}
+	return sum / n
+}
+
+// Roll a species for a floor, favouring ones not already on the team.
+arena_species_for :: proc(floor: int, rng: ^Rng, avoid: []Species_Id = nil) -> Species_Id {
+	total := f32(0)
+	for sp in Species_Id {
+		total += arena_team_weight(sp, floor, avoid)
+	}
+	if total <= 0 {
+		return .Grubling
+	}
+	roll := rng_f32(rng) * total
+	for sp in Species_Id {
+		roll -= arena_team_weight(sp, floor, avoid)
+		if roll <= 0 {
+			return sp
+		}
+	}
+	return .Grubling
+}
+
+// Give an Arena monster one of its species' sets: the ability it fights with,
+// the item it holds, and the deck that set is built around.
+// How many challengers a floor fields. A full team, every floor: the tower is
+// meant to be an even fight against a rival colony, not a warm-up.
+arena_team_size_for :: proc(floor: int) -> int {
+	_ = floor
+	return ARENA_TEAM_SIZE
+}
+
+// XP a single kill pays, per level of the victim — the same rate the colony's
+// own fights use (`killed_levels * 10` in `resolve_won`).
+ARENA_XP_PER_KILL :: 10
+
+// The level the tower fields on a floor. This is deliberately a **pure function
+// of the floor and the party average you walked in with**: nothing in it reads
+// your team as it stands, so there is nothing to be gained by holding monsters
+// back to keep the challengers weak.
+//
+// The shape is the shape of levelling itself. Walk the floors and let the tower
+// earn what a monster would earn from the same fights — one kill's XP per
+// challenger, at the level being fielded — and spend it on `xp_to_next`. That
+// settles at roughly one level per three challengers, which is exactly what your
+// own monsters get out of the same fight, so the tower climbs with you.
+arena_challenger_level :: proc(c: ^Colony, hex: Hex) -> int {
+	base := c.arena_base_level
+	if base <= 0 {
+		// Older saves, and a run started before the entry level was recorded.
+		base = arena_party_level(c, hex)
+	}
+	level := f32(base)
+	for floor in 1..=max(c.arena_floor, 1) {
+		// This floor's fight, priced at the level the tower is fielding.
+		gain := f32(ARENA_XP_PER_KILL * arena_team_size_for(floor)) * level
+		level += gain / f32(40 + 30*int(level))
+	}
+	return max(int(level), ARENA_BASE_LEVEL)
+}
+
+// Bosses carry unique, powerful abilities (and several times the base stats), so
+// a regular monster in a deep-floor lineup is levelled up to stand beside them.
+// Without this the top of the tower is nothing but bosses, which is boring. The
+// edge is a *multiplier* that ramps in as you climb, so floor 1 is still an even
+// fight.
+ARENA_REGULAR_LEVEL_RAMP :: 800
+
+arena_regular_level_mult :: proc(floor: int) -> f32 {
+	return 1.0 + f32(floor) / f32(ARENA_REGULAR_LEVEL_RAMP)
+}
+
+arena_apply_set :: proc(c: ^Creature, set: Species_Set) {
+	c.ability = set.ability
+	c.item = set.item
+	clear(&c.deck)
+	for m in set.deck {
+		append(&c.deck, m)
+	}
+	// The item may move stats, so settle everything and come in fully charged.
+	creature_recompute_stats(c)
+	c.hp = c.max_hp
+	c.energy = c.energy_max
+	c.block = 0
+}
+
+// Crystals a single floor banks. The run's payout is the sum of these, so it is
+// a function of how deep you got — and it is back-loaded, but not *that*
+// back-loaded: the tower pays nothing for the first ten floors, then a crystal a
+// floor with the curve bending up from there.
+//
+//   10 -> 0   11 -> 1   50 -> 2   100 -> 3   250 -> 8   500 -> 19   1000 -> 49
+arena_floor_purse :: proc(floor: int) -> int {
+	f := max(floor - ARENA_PURSE_DELAY, 0)
+	if f <= 0 {
+		return 0
+	}
+	return 1 + (f-1)/40 + (f-1)*(f-1)/40000
+}
+
+// Between floors the tower mends your team — but the higher you climb, the
+// stingier it gets. Two separate cadences, and they are **full** restores:
+//
+//   HP   — a complete heal plus a cleanse of every ailment, every 1 / 2 / 5 /
+//          10 / 20 floors.
+//   Energy — a complete refill, which you get after *every* floor early on and
+//          only later starts to thin out (20 / 50 / 100 / 200, then 20).
+//
+// That gap is the tower's difficulty curve: the level numbers stay sane, but
+// your team stops being topped up between fights.
+arena_heal_interval :: proc(floor: int) -> int {
+	switch {
+	case floor < 10:  return 1
+	case floor < 30:  return 2
+	case floor < 60:  return 5
+	case floor < 120: return 10
+	case:             return 20
 	}
 }
 
-spawn_wild_at :: proc(c: ^Colony, hex: Hex, species: Species_Id, level: int, role: Wild_Role = .WILD, pack: int = 0) {
+arena_energy_interval :: proc(floor: int) -> int {
+	switch {
+	case floor < 20:  return 1
+	case floor < 50:  return 2
+	case floor < 100: return 5
+	case floor < 200: return 10
+	case:             return 20
+	}
+}
+
+arena_heals_on :: proc(floor: int) -> bool {
+	return floor % arena_heal_interval(floor) == 0
+}
+
+arena_energy_on :: proc(floor: int) -> bool {
+	return floor % arena_energy_interval(floor) == 0
+}
+
+// Clear any Arena challengers off the current battle tile.
+arena_reset :: proc(g: ^Game) {
+	i := 0
+	for i < len(g.colony.roster) {
+		m := &g.colony.roster[i]
+		if m.wild && hex_equal(m.pos, g.battle_hex) {
+			remove_monster_at(&g.colony, i, false)
+			continue
+		}
+		i += 1
+	}
+}
+
+colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
+	floor := max(c.arena_floor, 1)
+	lvl := arena_challenger_level(c, hex)
+	mult := arena_regular_level_mult(floor)
+
+	// A trial floor fields its gym: a fixed team with a theme, a little tougher
+	// than the floors around it, and each member fighting as a named set.
+	if arena_is_trial_floor(floor) && !arena_is_event_floor(floor) {
+		gym := arena_gym_for(c, floor)
+		glvl := int(f32(lvl) * ARENA_GYM_LEVEL_MULT)
+		for member in gym.team {
+			mon_lvl := SPECIES[member.species].role == .BOSS ? glvl : int(f32(glvl) * mult)
+			spawn_wild_at(c, hex, member.species, mon_lvl, mature = false)
+			m := &c.roster[len(c.roster) - 1]
+			sets := SPECIES_SETS[m.creature.species]
+			arena_apply_set(&m.creature, sets[arena_set_index(m.creature.species, member.set)])
+		}
+		return
+	}
+
+	n := arena_team_size_for(floor)
+	avoid := make([dynamic]Species_Id, 0, context.temp_allocator)
+	for _ in 0..<n {
+		sp := arena_species_for(floor, &c.rng, avoid[:])
+		append(&avoid, sp)
+		// Regular monsters get a level edge over the bosses' abilities.
+		mon_lvl := SPECIES[sp].role == .BOSS ? lvl : int(f32(lvl) * mult)
+		spawn_wild_at(c, hex, sp, mon_lvl, mature = false)
+		m := &c.roster[len(c.roster) - 1]
+		// A challenger arrives as one of its species' sets, not a stock wild.
+		sets := SPECIES_SETS[m.creature.species]
+		arena_apply_set(&m.creature, sets[rng_below(&c.rng, MAX_SETS)])
+	}
+}
+
+// Top the party's energy back up. Entering the tower does this, so the energy
+// spent walking to the Arena tile does not come out of the run's first fight.
+arena_refill_party :: proc(c: ^Colony, hex: Hex) {
+	for &m in c.roster {
+		if m.wild || m.creature.hp <= 0 || !hex_equal(m.pos, hex) {
+			continue
+		}
+		m.creature.energy = m.creature.energy_max
+	}
+}
+
+// Bank a cleared floor, climb, and hand out the tower's rest. Shared by a won
+// battle and by a trial floor settled without a fight.
+arena_clear_floor :: proc(c: ^Colony, hex: Hex, floor: int) -> (purse, gold: int) {
+	purse = arena_floor_purse(floor)
+	c.arena_run_crystals += purse
+	// Arenas drop gold too, on top of kill loot.
+	gold = colony_deposit_gold(c, hex, ARENA_GOLD_PER_FLOOR + floor * 2)
+	// Climb a floor, and remember the high-water mark.
+	c.arena_floor = floor + 1
+	if c.arena_floor > c.arena_best_floor {
+		c.arena_best_floor = c.arena_floor
+	}
+	// The tower's spring. HP is a **full** heal plus a cleanse, and it thins as
+	// you climb; energy is a full refill on its own, later cadence, so the top
+	// of the tower stops topping your team up.
+	healed := arena_heals_on(floor)
+	refilled := arena_energy_on(floor)
+	if healed || refilled {
+		for &m in c.roster {
+			if m.wild || m.creature.hp <= 0 || !hex_equal(m.pos, hex) {
+				continue
+			}
+			if healed {
+				m.creature.hp = m.creature.max_hp
+				creature_cleanse_status(&m.creature)
+			}
+			if refilled {
+				m.creature.energy = m.creature.energy_max
+			}
+		}
+		switch {
+		case healed && refilled: colony_notify(c, "The tower's spring mends and refills your party.")
+		case healed:             colony_notify(c, "The tower's spring mends your party.")
+		case:                    colony_notify(c, "The tower's spring refills your party.")
+		}
+	}
+	return
+}
+
+// Wilds grow up in the world, too: one spawned at or past its evolve level may
+// show up as its evolved form instead (and keeps climbing while the level
+// allows), so the late-game roster includes the evolved wilds. The odds rise
+// the further past the evolve level the spawn is.
+WILD_EVOLVE_CHANCE :: f32(0.5)
+
+wild_mature_species :: proc(id: Species_Id, level: int, rng: ^Rng) -> Species_Id {
+	cur := id
+	for _ in 0..<2 {
+		sp := SPECIES[cur]
+		if sp.evolve_level <= 0 || level < sp.evolve_level {
+			break
+		}
+		chance := clamp(WILD_EVOLVE_CHANCE + 0.1 * f32(level - sp.evolve_level), 0.0, 1.0)
+		if rng_f32(rng) >= chance {
+			break
+		}
+		cur = sp.evolves_to
+	}
+	return cur
+}
+
+spawn_wild_at :: proc(c: ^Colony, hex: Hex, species_in: Species_Id, level: int, role: Wild_Role = .WILD, pack: int = 0, mature: bool = true) {
+	// Spawns past an evolve level have a chance to arrive already evolved. The
+	// Arena opts out: it picks the species it wants by strength, so maturing
+	// would only double-dip.
+	species := species_in
+	if mature {
+		species = wild_mature_species(species_in, level, &c.rng)
+	}
 	m := Monster{
 		id       = c.next_id,
 		creature = creature_make(species, level, SPECIES[species].name, &c.rng),
@@ -398,7 +787,7 @@ colony_raids :: proc(c: ^Colony) {
 		} else {
 			// A growing share of the rank and file specialise as the run drags
 			// on: sieges tear down buildings, stalkers run down monsters.
-			spec := clamp(0.15 + f32(colony_escalation(c)) * 0.03, 0, 0.5)
+			spec := clamp(0.15 + f32(wild_threat_level(c)) * 0.03, 0, 0.5)
 			roll := rng_f32(&c.rng)
 			if roll < spec {
 				role = .SIEGE
@@ -559,7 +948,7 @@ TERRITORY_RADIUS :: 4
 // Capped a little above your best monster so it never runs away from you.
 colony_grow_wilds :: proc(c: ^Colony) {
 	cap := player_top_level(c) + 4
-	bump := WILD_GROW_CHANCE + f32(colony_escalation(c)) * 0.012
+	bump := WILD_GROW_CHANCE + f32(wild_threat_level(c)) * 0.012
 	for i in 0..<len(c.roster) {
 		m := &c.roster[i]
 		if !m.wild || m.role == .BOSS || m.role == .CRONY {
@@ -748,6 +1137,17 @@ colony_crowd_fights :: proc(c: ^Colony) {
 		if rng_f32(&c.rng) >= CROWD_FIGHT_CHANCE {
 			continue
 		}
+		// Same readiness rule as picking a fight with you.
+		ready := false
+		for &m in c.roster {
+			if m.wild && hex_equal(m.pos, hex) && wild_ready_to_fight(c, &m) {
+				ready = true
+				break
+			}
+		}
+		if !ready {
+			continue
+		}
 		ids := make([dynamic]int, 0)
 		for m in c.roster {
 			if m.wild && hex_equal(m.pos, hex) {
@@ -812,6 +1212,19 @@ colony_crowd_fights :: proc(c: ^Colony) {
 	}
 }
 
+// A wild won't pick a fight it can't afford. Stepping onto one of your monsters
+// (or brawling over a crowded tile) starts a battle, so a drained wild holds off
+// and a charged one gets bolder — fights are worth having on both sides.
+WILD_FIGHT_ENERGY_MIN :: f32(0.40) // fraction of its bank it wants before engaging
+
+wild_ready_to_fight :: proc(c: ^Colony, m: ^Monster) -> bool {
+	frac := m.creature.energy / max(m.creature.energy_max, 0.001)
+	if frac < WILD_FIGHT_ENERGY_MIN {
+		return false
+	}
+	return rng_f32(&c.rng) < frac
+}
+
 colony_roam_wilds :: proc(c: ^Colony) {
 	for i in 0..<len(c.roster) {
 		m := &c.roster[i]
@@ -852,6 +1265,11 @@ colony_roam_wilds :: proc(c: ^Colony) {
 				continue
 			}
 			if tile_passable(c, m, n) {
+				// Walking onto your monster starts a fight; only a charged wild
+				// will commit to that.
+				if monsters_on_tile(c, n, false) > 0 && !wild_ready_to_fight(c, m) {
+					continue
+				}
 				m.pos = n
 				break
 			}
@@ -1016,21 +1434,22 @@ wild_monsters :: proc(c: ^Colony) -> int {
 // unit of six and are re-challengeable, so relics can be farmed.
 // ----------------------------------------------------------------------------
 
-BOSS_SPECIES := [?]Species_Id{.Boss_Leviathan, .Boss_Infernal, .Boss_Titan, .Boss_Sovereign}
+BOSS_SPECIES := [?]Species_Id{.Boss_Leviathan, .Boss_Infernal, .Boss_Titan, .Boss_Sovereign, .Deep_One}
 BOSS_PACK_SIZE     :: 6
 BOSS_LEVEL_BONUS   :: 5
-BOSS_RESPAWN_TURNS :: 12
+BOSS_RESPAWN_TURNS :: 30
 BOSS_SPAWN_RANGE   :: 14
 
 boss_cronies :: proc(boss: Species_Id) -> [BOSS_PACK_SIZE - 1]Species_Id {
+	// Each boss keeps a retinue themed to its lair, drawn from the wild roster.
 	#partial switch boss {
-	case .Boss_Leviathan: return {.Krakling, .Bubblet, .Bogfang, .Frostmoss, .Rimescale}
-	case .Boss_Infernal:  return {.Magmite, .Cindermaw, .Emberbloom, .Pyrelord, .Cinderwing}
-	case .Boss_Titan:     return {.Stonepaw, .Mosshide, .Swampbeast, .Gloomling, .Venomtail}
-	case .Boss_Sovereign: return {.Sparkit, .Galebeast, .Wispling, .Blizzard, .Cave_Bat}
-	case:                 return {.Cave_Bat, .Cave_Bat, .Cave_Bat, .Cave_Bat, .Cave_Bat}
+	case .Boss_Leviathan: return {.Abyssal_Fry, .Ripjaw, .Bubblet, .Tidecaller, .Glacierling}
+	case .Boss_Infernal:  return {.Magmite, .Cinderwing, .Slagbeast, .Magmaw, .Cinderwing}
+	case .Boss_Titan:     return {.Rockmite, .Relic_Hound, .Sandfang, .Sentinel, .Slagbeast}
+	case .Boss_Sovereign: return {.Sparkit, .Hexling, .Wispling, .Voltail, .Vesperling}
+	case:                 return {.Grubling, .Vesperling, .Rockmite, .Dustwing, .Gloomling}
 	}
-	return {.Cave_Bat, .Cave_Bat, .Cave_Bat, .Cave_Bat, .Cave_Bat}
+	return {.Grubling, .Vesperling, .Rockmite, .Dustwing, .Gloomling}
 }
 
 colony_spawn_boss_pack :: proc(c: ^Colony, hex: Hex) {

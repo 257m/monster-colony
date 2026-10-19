@@ -3,6 +3,7 @@ package main
 import rl "vendor:raylib"
 import "core:fmt"
 import "core:math"
+import "core:strings"
 
 // ============================================================================
 // SYMMETRIC CREATURE BATTLE
@@ -17,14 +18,36 @@ PARTY_MAX    :: 6
 
 SHAKE_DUR         :: f32(0.22) // screen shake duration
 CREATURE_SHAKE_DUR :: f32(0.30) // per-creature hit wobble duration
-MAX_ROUNDS        :: 30        // stalemate cap
+// A true stalemate ends a fight: this many rounds with no HP lost on either
+// side. (A flat 30-round cap used to cut fights off while they were still going
+// somewhere, which is why long Arena fights were ending on a coin flip.)
+STALL_ROUNDS      :: 12
+// Last-ditch net, far beyond any real fight (a 400-fight sample topped out at
+// 12 rounds). It exists only so a bug can never freeze the game; it is not a
+// design cap the way the old 30-round limit was.
+SAFETY_ROUNDS     :: 200
+// A hard ceiling on cards played by one monster in one round. A normal turn is
+// two to six; this only ever catches a genuine loop, like a retained card that
+// pays for itself (Meditate costs 0.5 and hands back 1), which an AI will
+// otherwise play until the heat death of the universe.
+MAX_PLAYS_PER_ROUND :: 12
 
 // Percentage-based battle tuning (Phase 28). DoT/heal/reflect are fractions so
 // they scale with HP instead of going stale at high levels.
 POISON_PCT         :: f32(0.02) // poison damage per stack, of the victim's max HP
 BURN_PCT           :: f32(0.03) // burn damage per stack, of the victim's max HP
 REGEN_PCT          :: f32(0.03) // regen heal per stack, of the owner's max HP
-THORNS_REFLECT_PCT :: f32(0.10) // thorns damage per stack, of the hit taken
+// Burn isn't just damage: a burning creature also *hits softer*. Poison is pure
+// attrition (highest raw DoT, no rider); Burn is attrition + a weaken.
+BURN_WEAKEN_PER_STACK :: f32(0.05)
+BURN_WEAKEN_CAP       :: f32(0.50)
+// Thorns: each stack reflects a slice of the *attacker's* max HP, not of the
+// hit. Stacks compound with diminishing returns (`thorns_fraction`), so the
+// total can never reach 100%. A stack is spent on each hit.
+THORNS_HP_PCT :: f32(0.0625)
+// Vulnerable: a *duration* (in turns), not a stack. While it's up, attacks deal
+// this much to the target. Each turn it ticks down by one.
+VULN_MULT :: f32(1.5)
 
 hp_fraction :: proc(list: []^Creature) -> f32 {
 	hp := 0
@@ -47,7 +70,7 @@ hp_fraction :: proc(list: []^Creature) -> f32 {
 Battle_Phase :: enum { PLAYER_ACTION, ENEMY_ACTION, WON, LOST, CAPTURED }
 Battle_Side  :: enum { PLAYER, WILD }
 
-Popup_Kind :: enum { DAMAGE, BLOCK, HEAL, BUFF, DEBUFF, DEFEND, WEAKEN, SHATTER, CAPTURE, POISON, BURN, STUN, REGEN, THORNS, ENERGY }
+Popup_Kind :: enum { DAMAGE, BLOCK, HEAL, BUFF, DEBUFF, DEFEND, WEAKEN, SHATTER, CAPTURE, POISON, BURN, STUN, REGEN, THORNS, ENERGY, DRAW, JUNK, CLEAR }
 
 Popup :: struct {
 	value:    int,
@@ -56,6 +79,21 @@ Popup :: struct {
 	life:     f32,
 	max_life: f32,
 }
+
+// One queued piece of per-hit feedback. Damage resolves instantly (so the game
+// logic never waits), but the feedback plays out in `wave`s: every event from
+// the same hit index fires together, and waves are spaced by HIT_FX_STAGGER. A
+// multi-hit card therefore reads as several impacts, while a spread (AoE) card
+// is a single wave — every victim hit at the same instant.
+Hit_Fx :: struct {
+	wave:   int,
+	kind:   Popup_Kind,
+	value:  int,
+	side:   Battle_Side,
+	target: ^Creature, // who flinches and sparks
+}
+
+HIT_FX_STAGGER :: f32(0.06)
 
 Actor :: struct {
 	side:  Battle_Side,
@@ -69,6 +107,7 @@ Battle :: struct {
 	enemies:       [dynamic]^Creature, // the attacking wilds (external)
 	enemy_ids:     [dynamic]int,       // colony ids, parallel to enemies
 	target:        int,                // currently targeted enemy
+	enemy_first:   int,                // scroll: leftmost visible enemy in the row
 	ally_target:   int,                // currently targeted teammate (for support cards)
 	sel_kind:      Move_Target,        // which side the player last picked (.ENEMY or .ALLY)
 	enemy_acting:  int,                // enemy taking the current action
@@ -76,7 +115,11 @@ Battle :: struct {
 	capture_cards: int,                // capture cards available (spent on capture)
 	capture_bonus: f32,                // colony Scout upgrade, added to capture odds
 	auto_play:     bool,               // AI plays the player's side
+	stall:         int,                // consecutive rounds with no HP lost
+	stall_hp:      int,                // total HP across both sides last round
 	show_piles:    bool,               // the draw/discard pile viewer is open
+	show_effects:  bool,               // the active-effects panel is open
+	effects_scroll: f32,
 	phase:         Battle_Phase,
 	round:         int,
 	order:         [dynamic]Actor, // initiative queue: every living monster
@@ -84,7 +127,11 @@ Battle :: struct {
 	timer:         f32,
 	rng:           Rng,
 	log:           [dynamic]string,
+	log_scroll:    int, // messages hidden above the log window
 	popups:        [dynamic]Popup,
+	hit_fx:        [dynamic]Hit_Fx, // queued per-hit feedback (see Hit_Fx)
+	hit_fx_wave:   int,
+	hit_fx_t:      f32,
 	shake:         f32,
 	shake_mag:     f32,
 }
@@ -101,7 +148,9 @@ battle_silent: bool
 
 battle_log :: proc(b: ^Battle, format: string, args: ..any) {
 	append(&b.log, fmt.aprintf(format, ..args))
-	if len(b.log) > 7 {
+	// A new line brings you back to the present.
+	b.log_scroll = 0
+	if len(b.log) > 40 {
 		delete(b.log[0])
 		ordered_remove(&b.log, 0)
 	}
@@ -114,6 +163,8 @@ battle_free :: proc(b: ^Battle) {
 	for i in 0..<len(b.enemies) {
 		creature_free_piles(b.enemies[i])
 	}
+	delete(b.hit_fx)
+	b.hit_fx = make([dynamic]Hit_Fx, 0)
 	delete(b.party)
 	b.party = make([dynamic]^Creature, 0)
 	delete(b.party_done)
@@ -133,6 +184,7 @@ battle_free :: proc(b: ^Battle) {
 	b.log = make([dynamic]string, 0)
 	delete(b.popups)
 	b.popups = make([dynamic]Popup, 0)
+	b.hit_fx = make([dynamic]Hit_Fx, 0)
 }
 
 shuffle_cards :: proc(cards: ^[dynamic]Move_Id, rng: ^Rng) {
@@ -158,6 +210,7 @@ battle_start :: proc(defenders: []^Creature, enemies: []^Creature, enemy_ids: []
 	b.rng = rng_make(rng_next_u64(seed_rng))
 	b.log = make([dynamic]string, 0)
 	b.popups = make([dynamic]Popup, 0)
+	b.hit_fx = make([dynamic]Hit_Fx, 0)
 	b.party = make([dynamic]^Creature, 0)
 	b.party_done = make([dynamic]bool, 0)
 	b.enemies = make([dynamic]^Creature, 0)
@@ -194,12 +247,12 @@ battle_start :: proc(defenders: []^Creature, enemies: []^Creature, enemy_ids: []
 	// Species abilities that fire once at the start of the fight (Intimidate
 	// needs the opposing side, so both sides are applied here), then item buffs.
 	for e in b.enemies {
-		ability_battle_start(e, b.party[:])
-		item_battle_start(e)
+		ability_battle_start(&b, e, b.party[:])
+		item_battle_start(&b, e)
 	}
 	for i in 0..<len(b.party) {
-		ability_battle_start(b.party[i], b.enemies[:])
-		item_battle_start(b.party[i])
+		ability_battle_start(&b, b.party[i], b.enemies[:])
+		item_battle_start(&b, b.party[i])
 	}
 
 	n := len(b.enemies)
@@ -249,11 +302,29 @@ fix_target :: proc(b: ^Battle) {
 			b.target = i
 		}
 	}
+	// Keep the target on screen in the scrolled row.
+	enemy_scroll_to(b, b.target)
+}
+
+// Is this card actually worth playing right now? The turn gate and both AIs
+// must answer this the same way, or a monster can be handed a turn it can never
+// take and the fight spins forever.
+//
+// A card that only makes energy or draws is worth one play a round; past that
+// it is just spinning (and a retained one would never stop at all).
+card_worth_playing :: proc(c: ^Creature, m: Move) -> bool {
+	if !move_playable(c, m) {
+		return false
+	}
+	if c.played > 0 && m.damage == 0 && m.block == 0 && (m.energy_give > 0 || m.draw > 0) {
+		return false
+	}
+	return true
 }
 
 enemy_has_card :: proc(e: ^Creature) -> bool {
 	for m in e.hand {
-		if e.energy >= move_data(m).cost {
+		if card_worth_playing(e, move_data(m)) {
 			return true
 		}
 	}
@@ -307,28 +378,89 @@ creature_draw :: proc(c: ^Creature, n: int, rng: ^Rng) {
 	}
 }
 
-creature_begin_round :: proc(c: ^Creature, rng: ^Rng) {
+creature_begin_round :: proc(b: ^Battle, c: ^Creature, rng: ^Rng) {
 	c.played = 0
-	// Energy is generated each round and carries over up to the bank cap.
-	c.energy = min(c.energy + c.energy_regen, c.energy_max)
+	c.attacked_this_turn = false
+	// Energy is generated each round and carries over up to the bank cap. Relic
+	// towers in range (Mana Shard) add a battle-only regen bonus.
+	c.energy = min(c.energy + c.energy_regen + c.energy_regen_buff, c.energy_max)
 	draw := 5
 	if c.ability == .Lucky {
 		draw += ABILITY_LUCKY_DRAW
 	}
-	draw += ITEM_DATA[c.item].draw
 	creature_draw(c, draw, rng)
+	if extra := draw - 5; extra > 0 {
+		spawn_popup(b, side_of(b, c), .DRAW, extra)
+	}
+	power_begin_round(b, c)
+	ability_begin_round(b, c)
 }
 
-creature_end_round :: proc(c: ^Creature) {
+creature_end_round :: proc(b: ^Battle, c: ^Creature) {
+	power_combustion(b, c)
+	// Junk cards (Wound) punish you for ending the turn with them in hand.
+	dmg := 0
 	for card in c.hand {
-		append(&c.discard, card)
+		dmg += MOVE_DATA[card].hand_damage
 	}
-	clear(&c.hand)
+	if dmg > 0 {
+		c.hp -= dmg
+		spawn_popup(b, side_of(b, c), .DAMAGE, dmg)
+		creature_burst(c, popup_color(.DAMAGE), 0.4)
+		battle_log(b, "%s's wounds ache for %d.", c.name, dmg)
+	}
+	// Clear the hand. Retain cards stay; Ethereal cards exhaust instead of
+	// being discarded.
+	i := 0
+	for i < len(c.hand) {
+		md := MOVE_DATA[c.hand[i]]
+		if md.retain {
+			i += 1
+			continue
+		}
+		card := c.hand[i]
+		if md.ethereal {
+			append(&c.exhausted, card)
+		} else {
+			append(&c.discard, card)
+		}
+		ordered_remove(&c.hand, i)
+	}
+	power_end_round(b, c)
+	// Inferno (boss ability): burn every foe at the end of the turn.
+	if c.ability == .Inferno {
+		foes := side_of(b, c) == .PLAYER ? b.enemies[:] : b.party[:]
+		for f in foes {
+			if f.hp <= 0 {
+				continue
+			}
+			f.burn += ABILITY_INFERNO_BURN
+			spawn_popup(b, side_of(b, f), .BURN, ABILITY_INFERNO_BURN)
+			creature_burst(f, popup_color(.BURN), 0.5)
+		}
+		battle_log(b, "%s's Inferno scorches every foe.", c.name)
+	}
 	// Block is cleared between rounds (here rather than in begin_round so a
 	// battle-start ability like Guardian keeps its Block through turn one).
-	c.block = 0
+	// Barricade (power) and Colossus (ability) keep it.
+	if !power_keeps_block(c) && !ability_keeps_block(c) {
+		c.block = 0
+	}
 	if c.vulnerable > 0 {
 		c.vulnerable -= 1
+	}
+	// Ration Pouch: a trickle of healing each turn (the caller's heal popup covers
+	// it, since it diffs HP around this call).
+	if it := ITEM_DATA[c.item]; it.turn_heal_pct > 0 && c.hp > 0 {
+		c.hp = min(c.hp + max(int(f32(c.max_hp) * it.turn_heal_pct), 1), c.max_hp)
+	}
+	// Cleansing Bloom: shrug off Poison / Burn / Stun every turn.
+	if ITEM_DATA[c.item].cleanse_turn {
+		if n := creature_cleanse_status(c); n > 0 {
+			spawn_popup(b, side_of(b, c), .CLEAR, n)
+			creature_burst(c, popup_color(.HEAL), 0.6)
+			battle_log(b, "%s's Cleansing Bloom clears its status.", c.name)
+		}
 	}
 	if c.ability == .Regenerator && c.hp > 0 {
 		c.hp = min(c.hp + max(int(f32(c.max_hp)*ABILITY_REGENERATOR_PCT), 1), c.max_hp)
@@ -343,19 +475,31 @@ tick_status :: proc(b: ^Battle, c: ^Creature, side: Battle_Side) -> bool {
 		return false
 	}
 	if c.poison > 0 {
+		// Poison phases straight through Block — it's the answer to turtling.
 		dmg := max(int(f32(c.max_hp) * POISON_PCT * f32(c.poison)), 1)
 		c.hp -= dmg
 		spawn_popup(b, side, .DAMAGE, dmg)
 		creature_burst(c, popup_color(.POISON), 0.4)
+		battle_sfx(.DOT, 0.5)
 		battle_log(b, "%s suffers %d poison.", c.name, dmg)
 		c.poison -= 1
 	}
 	if c.burn > 0 {
+		// Burn is stopped by Block (Block soaks it), but weakens the burned.
 		dmg := max(int(f32(c.max_hp) * BURN_PCT * f32(c.burn)), 1)
-		c.hp -= dmg
-		spawn_popup(b, side, .DAMAGE, dmg)
+		absorbed := min(c.block, dmg)
+		c.block -= absorbed
+		dmg -= absorbed
+		if dmg > 0 {
+			c.hp -= dmg
+			spawn_popup(b, side, .DAMAGE, dmg)
+			battle_log(b, "%s burns for %d.", c.name, dmg)
+		} else {
+			spawn_popup(b, side, .BLOCK, absorbed)
+			battle_log(b, "%s's Block smothers the flames.", c.name)
+		}
 		creature_burst(c, popup_color(.BURN), 0.4)
-		battle_log(b, "%s burns for %d.", c.name, dmg)
+		battle_sfx(.DOT, 0.5)
 		c.burn -= 1
 	}
 	if c.regen > 0 && c.hp > 0 {
@@ -365,8 +509,12 @@ tick_status :: proc(b: ^Battle, c: ^Creature, side: Battle_Side) -> bool {
 		if c.hp > before {
 			spawn_popup(b, side, .HEAL, c.hp - before)
 			creature_burst(c, popup_color(.HEAL), 0.5)
+			battle_sfx(.HEAL, 0.45)
 		}
 		c.regen -= 1
+	}
+	if c.hp <= 0 {
+		ability_try_survive(b, c) // Resilient: bursts + logs if it saves them
 	}
 	if c.hp <= 0 {
 		c.hp = 0
@@ -428,11 +576,11 @@ actor_can_act :: proc(b: ^Battle, a: Actor) -> bool {
 			return false
 		}
 		c := b.party[a.index]
-		if b.party_done[a.index] || c.hp <= 0 {
+		if b.party_done[a.index] || c.hp <= 0 || c.played >= MAX_PLAYS_PER_ROUND {
 			return false
 		}
 		for m in c.hand {
-			if c.energy >= move_data(m).cost {
+			if card_worth_playing(c, move_data(m)) {
 				return true
 			}
 		}
@@ -442,7 +590,7 @@ actor_can_act :: proc(b: ^Battle, a: Actor) -> bool {
 		return false
 	}
 	e := b.enemies[a.index]
-	return e.hp > 0 && enemy_has_card(e)
+	return e.hp > 0 && e.played < MAX_PLAYS_PER_ROUND && enemy_has_card(e)
 }
 
 set_actor :: proc(b: ^Battle, a: Actor) {
@@ -504,6 +652,22 @@ advance :: proc(b: ^Battle) {
 	if b.phase == .WON || b.phase == .LOST || b.phase == .CAPTURED {
 		return
 	}
+	// A wiped side ends the fight here, whatever did the wiping. Checking only
+	// where damage lands misses the deaths that come from elsewhere — item
+	// recoil, a poison tick, reflected thorns — and a side that is already gone
+	// but not marked so leaves the other side taking turns at nobody forever.
+	if enemies_alive(b) == 0 {
+		b.phase = .WON
+		b.timer = 0
+		battle_log(b, "All wilds defeated!")
+		return
+	}
+	if !party_has_alive(b) {
+		b.phase = .LOST
+		b.timer = 0
+		battle_log(b, "Your party has fallen...")
+		return
+	}
 	n := len(b.order)
 	for _ in 0..<n {
 		if b.order_pos >= n {
@@ -520,20 +684,44 @@ advance :: proc(b: ^Battle) {
 }
 
 begin_round :: proc(b: ^Battle) {
-	// Safety valve: healing on both sides can stalemate. After MAX_ROUNDS the
-	// side with the greater remaining HP fraction wins.
-	if b.round >= MAX_ROUNDS {
+	// Safety valve: two sides that heal as fast as they hurt can go forever.
+	// Track whether anyone has actually lost HP; only a genuine standstill ends
+	// the fight, so a long grind is allowed to play out.
+	total_hp := 0
+	for p in b.party {
+		total_hp += max(p.hp, 0)
+	}
+	for e in b.enemies {
+		total_hp += max(e.hp, 0)
+	}
+	if b.round > 0 {
+		if total_hp >= b.stall_hp {
+			b.stall += 1
+		} else {
+			b.stall = 0
+		}
+	}
+	b.stall_hp = total_hp
+	if b.round >= SAFETY_ROUNDS {
 		pf := hp_fraction(b.party[:])
 		ef := hp_fraction(b.enemies[:])
 		b.phase = pf >= ef ? .WON : .LOST
 		b.timer = 0
-		battle_log(b, "The fight drags on - it ends in your %s.", pf >= ef ? "favour" : "disfavour")
+		battle_log(b, "The fight is called - it ends in your %s.", pf >= ef ? "favour" : "disfavour")
+		return
+	}
+	if b.stall >= STALL_ROUNDS {
+		pf := hp_fraction(b.party[:])
+		ef := hp_fraction(b.enemies[:])
+		b.phase = pf >= ef ? .WON : .LOST
+		b.timer = 0
+		battle_log(b, "Neither side can make progress - it ends in your %s.", pf >= ef ? "favour" : "disfavour")
 		return
 	}
 	if b.round > 0 {
 		for p in b.party {
 			before := p.hp
-			creature_end_round(p)
+			creature_end_round(b, p)
 			if p.hp > before {
 				creature_burst(p, popup_color(.HEAL), 0.6)
 				spawn_popup(b, .PLAYER, .HEAL, p.hp - before)
@@ -541,7 +729,7 @@ begin_round :: proc(b: ^Battle) {
 		}
 		for e in b.enemies {
 			before := e.hp
-			creature_end_round(e)
+			creature_end_round(b, e)
 			if e.hp > before {
 				creature_burst(e, popup_color(.HEAL), 0.6)
 				spawn_popup(b, .WILD, .HEAL, e.hp - before)
@@ -549,6 +737,14 @@ begin_round :: proc(b: ^Battle) {
 		}
 	}
 	b.round += 1
+
+	// Boss aura: Dominion strips Strength from every foe each round.
+	for p in b.party {
+		ability_dominion(b, p)
+	}
+	for e in b.enemies {
+		ability_dominion(b, e)
+	}
 
 	// Status effects tick at the start of each round; a DoT can end the fight.
 	died := false
@@ -579,10 +775,10 @@ begin_round :: proc(b: ^Battle) {
 
 	for i in 0..<len(b.party) {
 		b.party_done[i] = false
-		creature_begin_round(b.party[i], &b.rng)
+		creature_begin_round(b, b.party[i], &b.rng)
 	}
 	for e in b.enemies {
-		creature_begin_round(e, &b.rng)
+		creature_begin_round(b, e, &b.rng)
 	}
 
 	build_order(b)
@@ -602,31 +798,79 @@ begin_round :: proc(b: ^Battle) {
 // Card resolution
 // ----------------------------------------------------------------------------
 
-// Damage = base card damage x power x strength bonus, then type effectiveness,
-// STAB and vulnerability, then a multiplicative defense reduction.
-//   - power is the creature's power stat (a multiplier, ~1.0 at level 1).
-//   - each point of Strength adds +10% damage.
-//   - defense scales the hit down proportionally (defense 10 = half damage),
-//     so it stays relevant as attacks grow.
-apply_damage :: proc(attacker: ^Creature, target: ^Creature, base: int, elem: Element) -> int {
-	str_mult := max(1.0 + 0.1 * f32(attacker.strength), 0.1)
-	dmg := f32(base) * attacker.power * str_mult
-	// Type effectiveness against every type the defender has.
-	for de in creature_elements(target) {
-		dmg *= element_multiplier(elem, de)
+// ----------------------------------------------------------------------------
+// Damage
+//
+//   damage = move.damage x offense x type_mult x stab_mult x vuln_mult
+//                              x defense_mult
+//
+//   move.damage   - the card's own damage (Move data)
+//   offense       - the attacker's attacking stat and its multiplier (see Offense)
+//   type_mult     - element effectiveness against the target's types
+//   stab_mult     - same-type attack bonus (1.5 when the element matches)
+//   vuln_mult     - the target's Vulnerable stacks
+//   defense_mult  - the target's defense reduction, 10 / (10 + defense)
+// ----------------------------------------------------------------------------
+
+// An attack's offense: the creature stat it attacks with, and the multiplier
+// applied to that stat. Normal attacks use power + the strength bonus; a Body
+// Press uses defense for both.
+Offense :: struct {
+	stat: f32,
+	mult: f32,
+}
+
+move_offense :: proc(m: Move, c: ^Creature) -> Offense {
+	if m.offense_stat == .DEFENSE {
+		d := creature_defense(c)
+		return {stat = d, mult = max(1.0 + 0.1 * d, 0.1)}
 	}
-	// Same-type attack bonus: a move matching one of the attacker's types.
+	return {stat = c.power, mult = max(1.0 + 0.1 * f32(c.strength), 0.1)}
+}
+
+// How much a creature's attacks are weakened by its own Burn stacks.
+burn_weaken :: proc(c: ^Creature) -> f32 {
+	if c.burn <= 0 {
+		return 0
+	}
+	return min(f32(c.burn) * BURN_WEAKEN_PER_STACK, BURN_WEAKEN_CAP)
+}
+
+// Can this creature play this card right now? (X-cost cards need at least 1
+// energy; unplayable junk never can.)
+move_playable :: proc(c: ^Creature, m: Move) -> bool {
+	if m.unplayable {
+		return false
+	}
+	if m.x_cost {
+		return c.energy >= 1
+	}
+	return c.energy >= m.cost
+}
+
+apply_damage :: proc(b: ^Battle, attacker: ^Creature, target: ^Creature, base: int, elem: Element, offense: Offense) -> int {
+	type_mult := f32(1)
+	for de in creature_elements(target) {
+		type_mult *= element_multiplier(elem, de)
+	}
+	stab_mult := f32(1)
 	for ae in creature_elements(attacker) {
 		if ae == elem {
-			dmg *= 1.5
+			stab_mult = 1.5
 			break
 		}
 	}
+	vuln_mult := f32(1)
 	if target.vulnerable > 0 {
-		dmg *= 1.0 + 0.5 * f32(target.vulnerable)
+		vuln_mult = VULN_MULT
 	}
-	dmg *= 10.0 / (10.0 + creature_defense(target))
-	d := int(dmg)
+	defense_mult := 10.0 / (10.0 + creature_defense(target))
+
+	// Ability multipliers: Predator (attacker) and Abyssal (target). Held items
+	// add raw damage (Bloodstone) and type-advantage damage (Weakpoint Lens).
+	item_mult := item_damage_mult(attacker.item, type_mult > 1.0)
+	d := int(f32(base) * offense.stat * offense.mult * type_mult * stab_mult * vuln_mult * defense_mult *
+		(1.0 - burn_weaken(attacker)) * ability_attack_mult(attacker, target) * ability_defense_mult(target) * item_mult)
 	absorbed := min(target.block, d)
 	target.block -= absorbed
 	d -= absorbed
@@ -634,22 +878,88 @@ apply_damage :: proc(attacker: ^Creature, target: ^Creature, base: int, elem: El
 		target.hp -= d
 		target.shake = CREATURE_SHAKE_DUR
 		target.flash = 0.22
-		if !battle_silent {
-			audio_play(.HIT, 0.8)
+		ability_on_hit_taken(b, target) // Vengeance
+		// Grudge Idol: a super-effective hit hardens the victim.
+		if type_mult > 1.0 {
+			if w := ITEM_DATA[target.item].weakness_str; w > 0 {
+				target.strength += w
+				spawn_popup(b, side_of(b, target), .BUFF, w)
+				creature_burst(target, popup_color(.BUFF), 0.5)
+			}
 		}
+		ability_try_survive(b, target) // Resilient
+		item_try_save(b, target)       // Grit Charm / Amber Fruit
+		battle_sfx(.HIT, 0.8)
 	}
 	return d
 }
 
-// Damage a card would deal to a target right now, without mutating anything.
-// Mirrors apply_damage (including synergy bonuses) and also returns the type
+// Fraction of the attacker's max HP that `stacks` thorns reflect. Each stack
+// multiplies the remaining fraction, so it rises fast at first and then flattens
+// — 6.25% at one stack, ~40% at eight, and never 100%.
+thorns_fraction :: proc(stacks: int) -> f32 {
+	remain := f32(1)
+	for _ in 0..<clamp(stacks, 0, 64) {
+		remain *= 1.0 - THORNS_HP_PCT
+	}
+	return 1.0 - remain
+}
+
+// Remove the harmful status effects (Poison / Burn / Stun) — a cleanse.
+// Returns the number of stacks removed, for the popup.
+creature_cleanse_status :: proc(c: ^Creature) -> int {
+	n := c.poison + c.burn + c.stun
+	c.poison = 0
+	c.burn = 0
+	c.stun = 0
+	return n
+}
+
+// Clear every battle modifier (boosts and debuffs) on a creature — Haze.
+// Returns the total magnitude removed, for the popup.
+creature_clear_boosts :: proc(c: ^Creature) -> int {
+	n := abs(c.strength) + abs(c.dexterity) + int(c.defense_buff) + int(c.defense_debuff) + c.vulnerable + c.regen + c.thorns
+	c.strength = 0
+	c.dexterity = 0
+	c.defense_buff = 0
+	c.defense_debuff = 0
+	c.vulnerable = 0
+	c.regen = 0
+	c.thorns = 0
+	return n
+}
+
+// Extra base damage a card gains from the caster's creature stats (block,
+// defense, max HP, or the HP it has lost). Additive scaling. Shared by the live
+// hit and the tooltip.
+move_scaled_damage :: proc(m: Move, c: ^Creature) -> int {
+	return int(f32(c.block) * m.scale_block) +
+		int(creature_defense(c) * m.scale_defense) +
+		int(f32(c.max_hp) * m.scale_max_hp) +
+		int(f32(max(c.max_hp - c.hp, 0)) * m.scale_missing_hp) +
+		len(c.exhausted) * m.scale_per_exhausted
+}
+
+// Damage multiplier from the caster's health: 1.0 at full HP, rising toward
+// 1 + mult_missing_hp as it nears death. Shared by the live hit and the tooltip.
+move_damage_mult :: proc(m: Move, c: ^Creature) -> f32 {
+	if m.mult_missing_hp == 0 {
+		return 1
+	}
+	missing := 1.0 - f32(c.hp) / f32(max(c.max_hp, 1))
+	return 1.0 + m.mult_missing_hp * clamp(missing, 0, 1)
+}
+
+// Damage a card would deal right now, without mutating anything. Mirrors
+// apply_damage (including the synergy bonuses) and also returns the type
 // multiplier so the UI can flag super-effective / resisted hits.
 estimate_damage :: proc(attacker, target: ^Creature, id: Move_Id, allies := 0) -> (total: int, type_mult: f32) {
 	m := MOVE_DATA[id]
 	type_mult = 1
-	if m.damage <= 0 || target == nil {
+	if !move_has_damage(m) || target == nil {
 		return 0, type_mult
 	}
+	// Flat damage bonuses from the move's synergies.
 	bonus := 0
 	if m.vuln_bonus > 0 && target.vulnerable > 0 {
 		bonus += m.vuln_bonus
@@ -666,25 +976,35 @@ estimate_damage :: proc(attacker, target: ^Creature, id: Move_Id, allies := 0) -
 	if m.ally_bonus > 0 {
 		bonus += m.ally_bonus * allies
 	}
+	// Multipliers, matching apply_damage.
 	for de in creature_elements(target) {
 		type_mult *= element_multiplier(m.element, de)
 	}
-	f := type_mult
+	stab_mult := f32(1)
 	for ae in creature_elements(attacker) {
 		if ae == m.element {
-			f *= 1.5
+			stab_mult = 1.5
 			break
 		}
 	}
+	vuln_mult := f32(1)
 	if target.vulnerable > 0 {
-		f *= 1.0 + 0.5 * f32(target.vulnerable)
+		vuln_mult = VULN_MULT
 	}
-	str_mult := max(1.0 + 0.1 * f32(attacker.strength), 0.1)
-	def_mult := 10.0 / (10.0 + creature_defense(target))
+	defense_mult := 10.0 / (10.0 + creature_defense(target))
+	offense := move_offense(m, attacker)
+	scaled := move_scaled_damage(m, attacker)
+	mult := move_damage_mult(m, attacker)
+	// X-cost cards scale with whatever energy the caster has right now.
+	dmg_base := m.damage
+	if m.x_cost {
+		dmg_base *= max(int(attacker.energy), 1)
+	}
 	total = 0
 	for h in 0..<max(m.hits, 1) {
-		d := m.damage + (h == 0 ? bonus : 0)
-		total += int(f32(d) * attacker.power * str_mult * f * def_mult)
+		base := int(f32(dmg_base + scaled) * mult) + (h == 0 ? bonus : 0)
+		total += int(f32(base) * offense.stat * offense.mult * type_mult * stab_mult * vuln_mult * defense_mult *
+			(1.0 - burn_weaken(attacker)) * ability_attack_mult(attacker, target) * ability_defense_mult(target))
 	}
 	return total, type_mult
 }
@@ -696,6 +1016,78 @@ side_of :: proc(b: ^Battle, c: ^Creature) -> Battle_Side {
 		}
 	}
 	return .PLAYER
+}
+
+// Combustion: damage every foe at the end of the turn.
+power_combustion :: proc(b: ^Battle, c: ^Creature) {
+	n := c.powers[.Combustion]
+	if n <= 0 {
+		return
+	}
+	d := POWER_COMBUSTION_DMG * n
+	hit := false
+	foes := side_of(b, c) == .PLAYER ? b.enemies[:] : b.party[:]
+	for f in foes {
+		if f.hp <= 0 {
+			continue
+		}
+		f.hp -= d
+		spawn_popup(b, side_of(b, f), .DAMAGE, d)
+		creature_burst(f, popup_color(.DAMAGE), 0.4)
+		hit = true
+	}
+	if hit {
+		battle_log(b, "%s's Combustion sears every foe for %d.", c.name, d)
+	}
+}
+
+// Dominion (boss ability): strip Strength from every foe at the start of a round.
+ability_dominion :: proc(b: ^Battle, c: ^Creature) {
+	if c.ability != .Dominion {
+		return
+	}
+	foes := side_of(b, c) == .PLAYER ? b.enemies[:] : b.party[:]
+	for f in foes {
+		if f.hp <= 0 {
+			continue
+		}
+		f.strength -= ABILITY_DOMINION_STR
+		spawn_popup(b, side_of(b, f), .WEAKEN, ABILITY_DOMINION_STR)
+		creature_burst(f, popup_color(.WEAKEN), 0.4)
+	}
+}
+
+// Juggernaut: gaining Block deals that much damage to a random living foe.
+power_juggernaut :: proc(b: ^Battle, c: ^Creature, gained: int) {
+	n := c.powers[.Juggernaut]
+	if n <= 0 || gained <= 0 {
+		return
+	}
+	foes := side_of(b, c) == .PLAYER ? b.enemies[:] : b.party[:]
+	alive := 0
+	for f in foes {
+		if f.hp > 0 {
+			alive += 1
+		}
+	}
+	if alive == 0 {
+		return
+	}
+	k := rng_below(&b.rng, alive)
+	for f in foes {
+		if f.hp <= 0 {
+			continue
+		}
+		if k == 0 {
+			d := gained * n
+			f.hp -= d
+			spawn_popup(b, side_of(b, f), .DAMAGE, d)
+			creature_burst(f, popup_color(.DAMAGE), 0.4)
+			battle_log(b, "%s's Juggernaut slams %s for %d.", c.name, f.name, d)
+			return
+		}
+		k -= 1
+	}
 }
 
 // How many of the caster's teammates (excluding itself) are still standing.
@@ -756,16 +1148,102 @@ spawn_popup :: proc(b: ^Battle, side: Battle_Side, kind: Popup_Kind, value: int)
 	append(&b.popups, Popup{value = value, kind = kind, side = side, life = 0.95, max_life = 0.95})
 }
 
+// Queue per-hit feedback. Events are grouped by `wave` (the hit index), so a
+// multi-hit card plays out one hit at a time while a spread (AoE) card — one
+// hit, many victims — fires every victim in the same wave.
+queue_hit_fx :: proc(b: ^Battle, wave: int, kind: Popup_Kind, value: int, side: Battle_Side, target: ^Creature) {
+	if value == 0 {
+		return
+	}
+	append(&b.hit_fx, Hit_Fx{wave = wave, kind = kind, value = value, side = side, target = target})
+}
+
+// Play one queued piece of feedback: popup, spark, flinch and cue.
+emit_hit_fx :: proc(b: ^Battle, fx: Hit_Fx) {
+	spawn_popup(b, fx.side, fx.kind, fx.value)
+	if fx.target != nil {
+		creature_burst(fx.target, popup_color(fx.kind), 0.45)
+		fx.target.shake = CREATURE_SHAKE_DUR * 0.6
+		fx.target.flash = 0.18
+	}
+	#partial switch fx.kind {
+	case .DAMAGE:
+		b.shake = SHAKE_DUR
+		b.shake_mag = clamp(3.0 + f32(fx.value) * 0.4, 3.0, 10.0)
+		battle_sfx(.HIT, 0.8)
+	case .HEAL:
+		battle_sfx(.HEAL, 0.6)
+	case .POISON, .BURN:
+		battle_sfx(.DOT, 0.5)
+	case .BLOCK, .DEFEND:
+		battle_sfx(.BLOCK, 0.5)
+	case .BUFF, .REGEN, .THORNS:
+		battle_sfx(.BUFF, 0.5)
+	case:
+	}
+}
+
+// Drain the feedback queue: every event in the current wave fires at once, then
+// the next wave waits HIT_FX_STAGGER.
+drain_hit_fx :: proc(b: ^Battle, dt: f32) {
+	if len(b.hit_fx) == 0 {
+		return
+	}
+	b.hit_fx_t -= dt
+	if b.hit_fx_t > 0 {
+		return
+	}
+	for len(b.hit_fx) > 0 && b.hit_fx[0].wave == b.hit_fx_wave {
+		fx := b.hit_fx[0]
+		ordered_remove(&b.hit_fx, 0)
+		emit_hit_fx(b, fx)
+	}
+	b.hit_fx_wave += 1
+	if len(b.hit_fx) > 0 {
+		b.hit_fx_t = HIT_FX_STAGGER
+	} else {
+		b.hit_fx_wave = 0
+		b.hit_fx_t = 0
+	}
+}
+
+// Fire a battle cue, unless the engine is running silently (headless skirmish).
+battle_sfx :: proc(cue: Sfx, volume := f32(0.7)) {
+	if !battle_silent {
+		audio_play(cue, volume)
+	}
+}
+
 play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: int, rng: ^Rng) -> bool {
 	if index < 0 || index >= len(c.hand) {
 		return false
 	}
 	id := c.hand[index]
 	m := move_data(id)
-	if c.energy < m.cost {
+	if m.unplayable {
+		return false // Wound: it only clogs a hand
+	}
+	// X-cost cards spend the caster's whole bank and scale per energy spent.
+	cost := m.cost
+	if m.x_cost {
+		if c.energy < 1 {
+			return false
+		}
+		cost = c.energy
+	}
+	if c.energy < cost {
 		return false
 	}
-	c.energy -= m.cost
+	c.energy -= cost
+	spent := max(int(cost), 1)
+
+	// Damage / block scale with energy for X-cost cards.
+	dmg_base := m.damage
+	block_gain := m.block
+	if m.x_cost {
+		dmg_base *= spent
+		block_gain *= spent
+	}
 
 	self_side := side_of(b, c)
 
@@ -792,77 +1270,158 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 	}
 	benef_side := side_of(b, benef)
 
-	if m.damage > 0 && victim != nil {
-		bonus := 0
-		if m.vuln_bonus > 0 && victim.vulnerable > 0 {
-			bonus += m.vuln_bonus
+	// Who gets hurt: the chosen victim, or every living foe for an AoE card.
+	victims: [24]^Creature
+	nvictims := 0
+	if m.aoe {
+		foes := self_side == .PLAYER ? b.enemies[:] : b.party[:]
+		for f in foes {
+			if f.hp > 0 && nvictims < len(victims) {
+				victims[nvictims] = f
+				nvictims += 1
+			}
 		}
-		if m.block_bonus > 0 && c.block > 0 {
-			bonus += m.block_bonus
-		}
-		if m.combo_bonus > 0 && c.played > 0 {
-			bonus += m.combo_bonus
-		}
-		// Execute: extra damage against a badly hurt foe.
-		if m.execute_bonus > 0 && m.execute_pct > 0 && f32(victim.hp) < m.execute_pct * f32(victim.max_hp) {
-			bonus += m.execute_bonus
-		}
-		// Teamwork: extra damage for every other ally still standing.
-		if m.ally_bonus > 0 {
-			bonus += m.ally_bonus * other_allies_alive(b, c)
-		}
-		total := 0
-		for hit in 0..<max(m.hits, 1) {
-			d := m.damage + (hit == 0 ? bonus : 0)
-			total += apply_damage(c, victim, d, m.element)
-		}
-		if total > 0 {
-			spawn_popup(b, victim_side, .DAMAGE, total)
-			creature_burst(victim, popup_color(.DAMAGE), 0.4)
-			b.shake = SHAKE_DUR
-			b.shake_mag = clamp(3.0 + f32(total) * 0.4, 3.0, 10.0)
-		}
-		// Lifesteal: the card's own drain, plus Vampiric / Vampire Fang, as a
-		// fraction of the damage dealt (so it scales with the hit).
+	} else if victim != nil {
+		victims[0] = victim
+		nvictims = 1
+	}
+
+	// --- Damage. One victim, or every foe at once for an AoE card. ---
+	if move_has_damage(m) && nvictims > 0 {
+		// On-hit effects resolve per hit, which is what gives multi-hit moves an
+		// identity: lifesteal drains in several bites, and thorns bite back once
+		// per hit, so many small hits heal more but hurt more too.
 		leech := m.leech_pct
 		if c.ability == .Vampiric {
 			leech += ABILITY_VAMPIRIC_PCT
 		}
-		leech += ITEM_DATA[c.item].on_hit_leech_pct
-		if leech > 0 && total > 0 {
-			heal := max(int(f32(total) * leech), 1)
-			before := c.hp
-			c.hp = min(c.hp + heal, c.max_hp)
-			if c.hp > before {
-				creature_burst(c, popup_color(.HEAL), 0.5)
-				spawn_popup(b, self_side, .HEAL, c.hp - before)
-			}
+		// Siphon Gland: drain and lifesteal heal more.
+		if dm := ITEM_DATA[c.item].drain_mult; dm > 0 {
+			leech *= 1.0 + dm
 		}
-		// Thorns: a thorny target reflects a fraction of the hit back.
-		if total > 0 && victim.thorns > 0 {
-			back := max(int(f32(total) * THORNS_REFLECT_PCT * f32(victim.thorns)), 1)
-			c.hp -= back
-			spawn_popup(b, self_side, .DAMAGE, back)
-			creature_burst(c, popup_color(.DAMAGE), 0.4)
-			battle_log(b, "%s's thorns bite %s for %d.", victim.name, c.name, back)
+
+		scaled := move_scaled_damage(m, c)
+		mult := move_damage_mult(m, c)
+		offense := move_offense(m, c)
+		hits := max(m.hits, 1)
+		// Ricochet Charm: multi-hit Attacks land one extra hit.
+		if m.hits > 1 {
+			hits += ITEM_DATA[c.item].extra_hits
+		}
+		// Aftershock: the first Attack each turn hits twice. (Once per card, not
+		// once per victim.)
+		if m.kind == .ATTACK && ability_first_attack_doubles(c) && !c.attacked_this_turn {
+			hits *= 2
+		}
+		if m.kind == .ATTACK {
+			c.attacked_this_turn = true
+		}
+
+		for vi in 0..<nvictims {
+			victim := victims[vi]
+			victim_side := side_of(b, victim)
+			// Flat damage bonuses from this card's synergies, per victim.
+			bonus := 0
+			if m.vuln_bonus > 0 && victim.vulnerable > 0 {
+				bonus += m.vuln_bonus
+			}
+			if m.block_bonus > 0 && c.block > 0 {
+				bonus += m.block_bonus
+			}
+			if m.combo_bonus > 0 && c.played > 0 {
+				bonus += m.combo_bonus
+			}
+			// Execute: extra damage against a badly hurt foe.
+			if m.execute_bonus > 0 && m.execute_pct > 0 && f32(victim.hp) < m.execute_pct * f32(victim.max_hp) {
+				bonus += m.execute_bonus
+			}
+			// Teamwork: extra damage for every other ally still standing.
+			if m.ally_bonus > 0 {
+				bonus += m.ally_bonus * other_allies_alive(b, c)
+			}
+
+			total := 0
+			for hit in 0..<hits {
+				base := int(f32(dmg_base + scaled) * mult) + (hit == 0 ? bonus : 0)
+				hit_dmg := apply_damage(b, c, victim, base, m.element, offense)
+				total += hit_dmg
+				if hit_dmg <= 0 {
+					continue
+				}
+				// The damage has landed; the feedback is queued per hit so a
+				// multi-hit card reads as several impacts (see `queue_hit_fx`).
+				queue_hit_fx(b, hit, .DAMAGE, hit_dmg, victim_side, victim)
+				if leech > 0 {
+					heal := max(int(f32(hit_dmg) * leech), 1)
+					before := c.hp
+					c.hp = min(c.hp + heal, c.max_hp)
+					queue_hit_fx(b, hit, .HEAL, c.hp - before, self_side, c)
+				}
+				if victim.thorns > 0 {
+					back := max(int(f32(c.max_hp) * thorns_fraction(victim.thorns)), 1)
+					c.hp -= back
+					victim.thorns -= 1 // a stack is spent on each hit
+					queue_hit_fx(b, hit, .DAMAGE, back, self_side, c)
+					battle_log(b, "%s's thorns bite %s for %d.", victim.name, c.name, back)
+				}
+				// Sanguine: a flat heal per hit landed (multi-hit friendly).
+				if h := power_on_hit_heal(c); h > 0 {
+					before := c.hp
+					c.hp = min(c.hp + h, c.max_hp)
+					queue_hit_fx(b, hit, .HEAL, c.hp - before, self_side, c)
+				}
+				// Toxic (power) + Envenom (ability): every hit applies Poison.
+				if tp := power_toxic_poison(c) + ability_on_hit_poison(c); tp > 0 {
+					victim.poison += tp
+					queue_hit_fx(b, hit, .POISON, tp, victim_side, victim)
+				}
+			}
+			if total > 0 {
+				c.shake = CREATURE_SHAKE_DUR * 0.4
+			}
 		}
 		c.shake = CREATURE_SHAKE_DUR * 0.4
 	}
 	// Beneficial effects land on the beneficiary (the ally, or the caster).
 	if m.block > 0 {
-		benef.block += m.block
-		spawn_popup(b, benef_side, .BLOCK, m.block)
+		gained := block_gain + benef.dexterity // Dexterity adds to every Block gain
+		benef.block += gained
+		spawn_popup(b, benef_side, .BLOCK, gained)
 		creature_burst(benef, popup_color(.BLOCK), 0.5)
+		power_juggernaut(b, benef, gained)
+	}
+	if m.dexterity != 0 {
+		benef.dexterity += m.dexterity
+		spawn_popup(b, benef_side, .DEFEND, m.dexterity)
+		creature_burst(benef, popup_color(.DEFEND), 0.55)
+	}
+	if m.double_block && benef.block > 0 {
+		gained := benef.block
+		benef.block += gained
+		spawn_popup(b, benef_side, .BLOCK, gained)
+		creature_burst(benef, popup_color(.BLOCK), 0.6)
+		power_juggernaut(b, benef, gained)
 	}
 	if m.strength > 0 {
 		benef.strength += m.strength
 		spawn_popup(b, benef_side, .BUFF, m.strength)
 		creature_burst(benef, popup_color(.BUFF), 0.55)
 	}
+	if m.double_strength && benef.strength > 0 {
+		gained := benef.strength
+		benef.strength += gained
+		spawn_popup(b, benef_side, .BUFF, gained)
+		creature_burst(benef, popup_color(.BUFF), 0.65)
+	}
 	if m.defense > 0 {
 		benef.defense_buff += m.defense
 		spawn_popup(b, benef_side, .DEFEND, int(m.defense))
 		creature_burst(benef, popup_color(.DEFEND), 0.55)
+	}
+	if m.speed > 0 {
+		benef.speed_buff += m.speed
+		spawn_popup(b, benef_side, .BUFF, int(m.speed))
+		creature_burst(benef, popup_color(.BUFF), 0.55)
 	}
 	if m.regen > 0 {
 		benef.regen += m.regen
@@ -888,8 +1447,10 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 		spawn_popup(b, benef_side, .ENERGY, m.energy_give)
 		creature_burst(benef, popup_color(.ENERGY), 0.5)
 	}
-	// Hostile effects land on the victim.
-	if victim != nil {
+	// Hostile effects land on every victim (one, or all foes for an AoE card).
+	for vi in 0..<nvictims {
+		victim := victims[vi]
+		victim_side := side_of(b, victim)
 		if m.vulnerable > 0 {
 			victim.vulnerable += m.vulnerable
 			spawn_popup(b, victim_side, .DEBUFF, m.vulnerable)
@@ -900,20 +1461,39 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 			spawn_popup(b, victim_side, .WEAKEN, m.strength_down)
 			creature_burst(victim, popup_color(.WEAKEN), 0.5)
 		}
+		if m.dexterity_down > 0 {
+			victim.dexterity -= m.dexterity_down
+			spawn_popup(b, victim_side, .WEAKEN, m.dexterity_down)
+			creature_burst(victim, popup_color(.WEAKEN), 0.5)
+		}
 		if m.defense_down > 0 {
 			victim.defense_debuff += m.defense_down
 			spawn_popup(b, victim_side, .SHATTER, int(m.defense_down))
 			creature_burst(victim, popup_color(.SHATTER), 0.5)
 		}
+		// Venom Sac: this creature's Poison and Burn bite deeper.
+		status_bonus := ITEM_DATA[c.item].status_bonus
 		if m.poison > 0 {
-			victim.poison += m.poison
-			spawn_popup(b, victim_side, .POISON, m.poison)
+			applied := m.poison + status_bonus
+			victim.poison += applied
+			spawn_popup(b, victim_side, .POISON, applied)
 			creature_burst(victim, popup_color(.POISON), 0.5)
 		}
 		if m.burn > 0 {
-			victim.burn += m.burn
-			spawn_popup(b, victim_side, .BURN, m.burn)
+			applied := m.burn + status_bonus
+			victim.burn += applied
+			spawn_popup(b, victim_side, .BURN, applied)
 			creature_burst(victim, popup_color(.BURN), 0.5)
+		}
+		if m.double_poison && victim.poison > 0 {
+			victim.poison *= 2
+			spawn_popup(b, victim_side, .POISON, victim.poison)
+			creature_burst(victim, popup_color(.POISON), 0.65)
+		}
+		if m.double_burn && victim.burn > 0 {
+			victim.burn *= 2
+			spawn_popup(b, victim_side, .BURN, victim.burn)
+			creature_burst(victim, popup_color(.BURN), 0.65)
 		}
 		if m.stun > 0 {
 			victim.stun += m.stun
@@ -931,6 +1511,24 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 				creature_burst(victim, popup_color(.ENERGY), 0.5)
 			}
 		}
+		// Energy sabotage: burn the target's energy away (the caster gains none).
+		if m.energy_burn > 0 {
+			before := victim.energy
+			victim.energy = max(victim.energy - f32(m.energy_burn), 0)
+			lost := int(before - victim.energy)
+			if lost > 0 {
+				spawn_popup(b, victim_side, .ENERGY, -lost)
+				creature_burst(victim, popup_color(.ENERGY), 0.5)
+				battle_log(b, "%s burns away %d of %s's energy.", c.name, lost, victim.name)
+			}
+		}
+	}
+	// Bloodstone recoil: every Attack costs the holder a slice of its max HP.
+	if pct := ITEM_DATA[c.item].self_damage_pct; pct > 0 && m.kind == .ATTACK {
+		recoil := max(int(f32(c.max_hp) * pct), 1)
+		c.hp -= recoil
+		queue_hit_fx(b, 0, .DAMAGE, recoil, self_side, c)
+		battle_log(b, "%s's Bloodstone burns it for %d.", c.name, recoil)
 	}
 	// Self-costs: paid by the caster no matter the target.
 	if m.self_strength_down > 0 {
@@ -948,45 +1546,146 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 		spawn_popup(b, self_side, .DAMAGE, m.self_damage)
 		creature_burst(c, popup_color(.DAMAGE), 0.4)
 	}
-	if m.draw > 0 {
+	if m.draw > 0 && !m.discard_hand {
 		creature_draw(c, m.draw, rng)
+		spawn_popup(b, self_side, .DRAW, m.draw)
+		battle_sfx(.CLICK, 0.4)
+	}
+	// Haze: wipe the target's modifiers, whichever side it's on.
+	if m.clear_boosts {
+		wiped := creature_clear_boosts(target)
+		creature_burst(target, popup_color(.DEBUFF), 0.6)
+		if wiped > 0 {
+			spawn_popup(b, side_of(b, target), .CLEAR, wiped)
+		}
+		battle_sfx(.CANCEL, 0.5)
+		battle_log(b, "%s's boosts are wiped away.", target.name)
+	}
+	// Cleanse: strip Poison / Burn / Stun from the beneficiary.
+	if m.cleanse_status {
+		wiped := creature_cleanse_status(benef)
+		creature_burst(benef, popup_color(.HEAL), 0.6)
+		if wiped > 0 {
+			spawn_popup(b, benef_side, .CLEAR, wiped)
+		}
+		battle_sfx(.HEAL, 0.5)
+		battle_log(b, "%s is cleansed.", benef.name)
+	}
+	// Powers: grant a persistent per-battle effect to the caster.
+	if m.grant_power != .NONE {
+		n := max(m.power_stacks, 1)
+		c.powers[m.grant_power] += n
+		spawn_popup(b, self_side, .BUFF, n)
+		creature_burst(c, popup_color(.BUFF), 0.65)
+		battle_log(b, "%s gains %s.", c.name, power_name(m.grant_power))
+	}
+	// Rage: gain Block whenever you play an Attack.
+	if m.kind == .ATTACK {
+		if blk := power_rage_block(c); blk > 0 {
+			c.block += blk
+			spawn_popup(b, self_side, .BLOCK, blk)
+			creature_burst(c, popup_color(.BLOCK), 0.5)
+			power_juggernaut(b, c, blk)
+		}
+	}
+	// Cards this card creates: into a battle pile, or permanently into the deck.
+	// `add_to_target` sends them to the target's piles instead (junk cards).
+	if m.add_count > 0 {
+		dst := c
+		if m.add_to_target && target != nil {
+			dst = target
+		}
+		for _ in 0..<m.add_count {
+			switch m.add_where {
+			case .HAND:    append(&dst.hand, m.add_move)
+			case .DRAW:    append(&dst.draw_pile, m.add_move)
+			case .DISCARD: append(&dst.discard, m.add_move)
+			case .DECK:    append(&dst.deck, m.add_move)
+			}
+		}
+		spawn_popup(b, side_of(b, dst), .JUNK, m.add_count)
+		creature_burst(dst, popup_color(.JUNK), 0.5)
+		battle_sfx(.ERROR, 0.5)
+		battle_log(b, "%s adds %d %s to %s.", c.name, m.add_count, MOVE_DATA[m.add_move].name, dst.name)
 	}
 
 	ordered_remove(&c.hand, index)
-	append(&c.discard, id)
+	if m.exhaust {
+		append(&c.exhausted, id) // spent for the rest of the battle
+		// Scavenger: draw for each card that exhausts.
+		if n := power_on_exhaust_draw(c); n > 0 {
+			creature_draw(c, n, rng)
+			spawn_popup(b, self_side, .DRAW, n)
+			battle_sfx(.CLICK, 0.4)
+		}
+	} else {
+		append(&c.discard, id)
+	}
+	// Hand manipulation: dump or burn the rest of your hand.
+	if m.discard_hand || m.exhaust_hand {
+		n := len(c.hand)
+		for card in c.hand {
+			if m.exhaust_hand {
+				append(&c.exhausted, card)
+			} else {
+				append(&c.discard, card)
+			}
+		}
+		clear(&c.hand)
+		if n > 0 {
+			spawn_popup(b, self_side, .CLEAR, n)
+			creature_burst(c, popup_color(.CLEAR), 0.5)
+			battle_sfx(.CANCEL, 0.5)
+		}
+		if m.discard_hand {
+			creature_draw(c, n + m.draw, rng) // Gambit: draw back more than you threw away
+			spawn_popup(b, self_side, .DRAW, n + m.draw)
+		} else if sc := power_on_exhaust_draw(c); sc > 0 {
+			creature_draw(c, sc * n, rng)
+			spawn_popup(b, self_side, .DRAW, sc * n)
+		}
+	}
 	c.played += 1
 	return true
 }
 
-player_play :: proc(b: ^Battle, index: int) {
+// Returns whether the card actually resolved. The auto-fight relies on this: a
+// card that can't find a legal target must not be re-picked forever.
+player_play :: proc(b: ^Battle, index: int) -> bool {
 	if b.phase != .PLAYER_ACTION {
-		return
+		return false
 	}
 	c := b.party[b.active]
+	if c.played >= MAX_PLAYS_PER_ROUND {
+		battle_log(b, "%s has played its fill this round.", c.name)
+		return false
+	}
 	// The card's allowed targets (and the player's last pick) decide who it hits.
 	tgt: ^Creature
 	if index >= 0 && index < len(c.hand) {
 		tgt = pick_card_target(b, move_data(c.hand[index]))
 	}
-	if play_creature_card(b, c, tgt, index, &b.rng) {
-		if !battle_silent {
-			audio_play(.CLICK, 0.7)
-		}
-		fix_target(b)
-		if enemies_alive(b) == 0 {
-			b.phase = .WON
-			b.timer = 0
-			battle_log(b, "All wilds defeated!")
-			return
-		}
-		if !party_has_alive(b) {
-			b.phase = .LOST
-			b.timer = 0
-			battle_log(b, "Your party has fallen...")
-			return
-		}
-		advance(b)
+	if !play_creature_card(b, c, tgt, index, &b.rng) {
+		return false
 	}
+	if !battle_silent {
+		audio_play(.CLICK, 0.7)
+	}
+	fix_target(b)
+	if enemies_alive(b) == 0 {
+		b.phase = .WON
+		b.timer = 0
+		battle_log(b, "All wilds defeated!")
+		return true
+	}
+	if !party_has_alive(b) {
+		b.phase = .LOST
+		b.timer = 0
+		battle_log(b, "Your party has fallen...")
+		return true
+	}
+	advance(b)
+	return true
 }
 
 player_end_round :: proc(b: ^Battle) {
@@ -1006,9 +1705,12 @@ player_end_round :: proc(b: ^Battle) {
 
 choose_enemy_card :: proc(c: ^Creature) -> int {
 	best := -1
-	best_val := -1
+	// Must be below any real card's value: `move_value` is negative for cards
+	// that cost you something (a Dazed exhausts, so it scores -4), and a chooser
+	// that skips those would hand the turn gate a turn it can never take.
+	best_val := -9999
 	for card, i in c.hand {
-		if c.energy < move_data(card).cost {
+		if !card_worth_playing(c, move_data(card)) {
 			continue
 		}
 		v := move_value(card)
@@ -1037,6 +1739,11 @@ enemy_step :: proc(b: ^Battle) {
 
 	idx := choose_enemy_card(wild)
 	if idx < 0 {
+		// The turn gate said this monster had something to play, but the chooser
+		// found nothing it wanted. Retire it for the round so `advance` can't
+		// hand it the same turn again — that disagreement is what used to spin
+		// the fight forever.
+		wild.played = MAX_PLAYS_PER_ROUND
 		advance(b)
 		return
 	}
@@ -1048,7 +1755,15 @@ enemy_step :: proc(b: ^Battle) {
 	}
 
 	m := move_data(wild.hand[idx])
-	play_creature_card(b, wild, target, idx, &b.rng)
+	if !play_creature_card(b, wild, target, idx, &b.rng) {
+		// The card could not resolve — a target that died between choosing and
+		// playing, say. Retire this monster for the round instead of letting
+		// `advance` hand it the very same card again: `enemy_has_card` only
+		// checks energy, so that spin never ends.
+		wild.played = MAX_PLAYS_PER_ROUND
+		advance(b)
+		return
+	}
 	battle_log(b, "%s uses %s on %s.", wild.name, m.name, target.name)
 
 	if target.hp <= 0 {
@@ -1184,6 +1899,9 @@ battle_update :: proc(b: ^Battle, dt: f32) {
 		}
 	}
 
+	// Play out queued per-hit feedback (waves of one hit index at a time).
+	drain_hit_fx(b, dt)
+
 	if b.phase == .WON || b.phase == .LOST || b.phase == .CAPTURED {
 		b.timer += dt
 		return
@@ -1206,9 +1924,11 @@ battle_update :: proc(b: ^Battle, dt: f32) {
 player_ai_step :: proc(b: ^Battle) {
 	c := b.party[b.active]
 	best := -1
-	best_val := -1
+	// Same reasoning as `choose_enemy_card`: a negative-value card still has to
+	// be playable, or the AI would rather pass than clear a Dazed.
+	best_val := -9999
 	for card, i in c.hand {
-		if c.energy < move_data(card).cost {
+		if !card_worth_playing(c, move_data(card)) {
 			continue
 		}
 		v := move_value(card)
@@ -1216,6 +1936,10 @@ player_ai_step :: proc(b: ^Battle) {
 			best_val = v
 			best = i
 		}
+	}
+	if c.played >= MAX_PLAYS_PER_ROUND {
+		player_end_round(b)
+		return
 	}
 	if best >= 0 {
 		// Support-only cards need a teammate: aim at whoever has the least energy.
@@ -1237,8 +1961,20 @@ player_ai_step :: proc(b: ^Battle) {
 			b.sel_kind = .ALLY
 		} else {
 			b.sel_kind = .ENEMY
+			// Aim at a live enemy: a stale target makes the card unplayable, and
+			// the AI would otherwise pick it again and again forever.
+			if b.target < 0 || b.target >= len(b.enemies) || b.enemies[b.target].hp <= 0 {
+				for e, i in b.enemies {
+					if e.hp > 0 {
+						b.target = i
+						break
+					}
+				}
+			}
 		}
-		player_play(b, best)
+		if !player_play(b, best) {
+			player_end_round(b)
+		}
 	} else {
 		player_end_round(b)
 	}
@@ -1262,6 +1998,16 @@ capture_rect :: proc() -> rl.Rectangle {
 
 battle_input :: proc(b: ^Battle) {
 	// Pile viewer toggle works even in auto-fights, and while open it's modal.
+	// Active effects, in full: the chips are tiny and stack fast.
+	if rl.IsKeyPressed(.S) {
+		b.show_effects = !b.show_effects
+	}
+	if b.show_effects && rl.IsKeyPressed(.ESCAPE) {
+		b.show_effects = false
+	}
+	if b.show_effects {
+		return // modal
+	}
 	if rl.IsKeyPressed(.D) {
 		b.show_piles = !b.show_piles
 		return
@@ -1282,6 +2028,46 @@ battle_input :: proc(b: ^Battle) {
 		if rl.CheckCollisionPointRec(mp, pile_draw_rect()) || rl.CheckCollisionPointRec(mp, pile_discard_rect()) {
 			b.show_piles = true
 			return
+		}
+	}
+
+	// The log scrolls under the wheel when the pointer is over it, and on
+	// PgUp/PgDn from anywhere.
+	if rl.IsKeyPressed(.PAGE_UP) {
+		battle_log_scroll(b, 1)
+	}
+	if rl.IsKeyPressed(.PAGE_DOWN) {
+		battle_log_scroll(b, -1)
+	}
+	over_log := rl.CheckCollisionPointRec(mp, battle_log_rect())
+	if over_log {
+		if w := rl.GetMouseWheelMove(); w != 0 {
+			battle_log_scroll(b, w > 0 ? 1 : -1)
+		}
+	}
+
+	// Scroll the enemy row (the wheel, or the [ and ] keys) whenever a pack is
+	// wider than the field. Works in any phase — it only moves the view.
+	if len(b.enemies) > enemy_visible_count() {
+		if w := rl.GetMouseWheelMove(); w != 0 && !over_log {
+			enemy_scroll(b, w > 0 ? -1 : 1)
+		}
+		if rl.IsKeyPressed(.LEFT_BRACKET) {
+			enemy_scroll(b, -1)
+		}
+		if rl.IsKeyPressed(.RIGHT_BRACKET) {
+			enemy_scroll(b, 1)
+		}
+		// The arrows either side of the row are clickable, too.
+		if rl.IsMouseButtonPressed(.LEFT) {
+			if rl.CheckCollisionPointRec(mp, enemy_arrow_rect(true)) {
+				enemy_scroll(b, -1)
+				return
+			}
+			if rl.CheckCollisionPointRec(mp, enemy_arrow_rect(false)) {
+				enemy_scroll(b, 1)
+				return
+			}
 		}
 	}
 
@@ -1313,11 +2099,18 @@ battle_input :: proc(b: ^Battle) {
 			attempt_capture(b)
 			return
 		}
-		// Click an enemy to target it.
-		for i in 0..<len(b.enemies) {
-			if b.enemies[i].hp > 0 && rl.CheckCollisionPointRec(mp, enemy_rect(i, len(b.enemies))) {
+		// Click an enemy to target it (only the ones currently on screen).
+		visible := enemy_visible_count()
+		first := enemy_first_index(b)
+		for slot in 0..<visible {
+			i := first + slot
+			if i >= len(b.enemies) {
+				break
+			}
+			if b.enemies[i].hp > 0 && rl.CheckCollisionPointRec(mp, enemy_rect(b, i)) {
 				b.target = i
 				b.sel_kind = .ENEMY
+				enemy_scroll_to(b, i)
 				return
 			}
 		}
@@ -1419,6 +2212,9 @@ popup_text :: proc(p: Popup) -> cstring {
 	case .REGEN:   return fmt.ctprintf("+%d reg", p.value)
 	case .THORNS:  return fmt.ctprintf("+%d thr", p.value)
 	case .ENERGY:  return fmt.ctprintf("+%d en", p.value)
+	case .DRAW:    return fmt.ctprintf("+%d card", p.value)
+	case .JUNK:    return fmt.ctprintf("+%d junk", p.value)
+	case .CLEAR:   return fmt.ctprintf("%d wiped", p.value)
 	}
 	return ""
 }
@@ -1440,6 +2236,9 @@ popup_color :: proc(k: Popup_Kind) -> rl.Color {
 	case .REGEN:   return rl.Color{130, 235, 140, 255}
 	case .THORNS:  return rl.Color{150, 220, 150, 255}
 	case .ENERGY:  return rl.Color{245, 205, 90, 255}
+	case .DRAW:    return rl.Color{180, 200, 245, 255}
+	case .JUNK:    return rl.Color{170, 140, 120, 255}
+	case .CLEAR:   return rl.Color{205, 205, 220, 255}
 	}
 	return COL_TEXT
 }
@@ -1509,8 +2308,9 @@ draw_creature_avatar :: proc(center: rl.Vector2, radius: f32, c: ^Creature, dead
 	}
 }
 
-draw_card :: proc(id: Move_Id, rec: rl.Rectangle, playable, hovered: bool) {
+draw_card :: proc(id: Move_Id, rec: rl.Rectangle, playable_in, hovered: bool) {
 	m := move_data(id)
+	playable := playable_in && !m.unplayable // Wound can't be played
 	r := rec
 	if hovered && playable {
 		r.y -= CARD_HOVER_LIFT
@@ -1530,10 +2330,21 @@ draw_card :: proc(id: Move_Id, rec: rl.Rectangle, playable, hovered: bool) {
 	}
 	rl.DrawRectangleRoundedLinesEx(r, 0.14, 8, 2, outline)
 
+	// Card-kind band across the top (Attack / Skill / Power).
+	rl.DrawRectangleRounded(rl.Rectangle{r.x + 7, r.y + 4, r.width - 14, 5}, 0.5, 4, card_kind_color(m.kind))
+
+	// Top-right marker for hand-behaviour cards: R = Retain, E = Ethereal.
+	if m.retain || m.ethereal {
+		lbl := m.retain ? cstring("R") : cstring("E")
+		col := m.retain ? rl.Color{150, 210, 255, 255} : rl.Color{200, 160, 230, 255}
+		lw := rl.MeasureText(lbl, 12)
+		rl.DrawText(lbl, i32(r.x + r.width) - lw - 7, i32(r.y) + 7, 12, col)
+	}
+
 	cc := rl.Vector2{r.x + 19, r.y + 19}
 	rl.DrawCircleV(cc, 14, rl.Color{30, 34, 52, 255})
 	rl.DrawCircleLinesV(cc, 14, base)
-	cost := fmt_num(m.cost)
+	cost := m.x_cost ? cstring("X") : fmt_num(m.cost)
 	cw := rl.MeasureText(cost, 18)
 	rl.DrawText(cost, i32(cc.x) - cw / 2, i32(cc.y) - 9, 18, COL_TEXT)
 
@@ -1541,7 +2352,9 @@ draw_card :: proc(id: Move_Id, rec: rl.Rectangle, playable, hovered: bool) {
 	nw := rl.MeasureText(name, 16)
 	rl.DrawText(name, i32(r.x + r.width / 2) - nw / 2, i32(r.y + 40), 16, COL_TEXT)
 
-	desc := fmt.ctprintf("%s", m.desc)
+	// Clipped, so a long description can't run off the card face. The hover
+	// tooltip and the dex carry the full text.
+	desc := fit_text(m.desc, 13, i32(r.width) - 8)
 	dw := rl.MeasureText(desc, 13)
 	rl.DrawText(desc, i32(r.x + r.width / 2) - dw / 2, i32(r.y + r.height - 30), 13, rl.Color{215, 215, 228, 255})
 
@@ -1550,7 +2363,16 @@ draw_card :: proc(id: Move_Id, rec: rl.Rectangle, playable, hovered: bool) {
 	rl.DrawText(elem, i32(r.x + r.width / 2) - ew / 2, i32(r.y + r.height - 14), 11, base)
 
 	if hovered {
-		tooltip_set("%s [%s]  -  %s  (%s, cost %s, %s)", m.name, card_rarity_name(m.rarity), m.desc, elem, fmt_num(m.cost), move_target_label(m))
+		tag: cstring = ""
+		switch {
+		case m.x_cost:       tag = "X-cost, "
+		case m.retain:       tag = "Retain, "
+		case m.ethereal:     tag = "Ethereal, "
+		case m.discard_hand: tag = "Discards hand, "
+		case m.exhaust_hand: tag = "Exhausts hand, "
+		case m.cleanse_status: tag = "Cleanse, "
+		}
+		tooltip_set("%s [%s %s]  -  %s  (%s, %s%s)", m.name, card_kind_name(m.kind), card_rarity_name(m.rarity), m.desc, elem, tag, move_target_label(m))
 	}
 }
 
@@ -1571,6 +2393,7 @@ draw_battle :: proc(b: ^Battle) {
 	rl.DrawRectangle(0, i32(sh * 0.58), i32(sw), i32(sh * 0.42), COL_FLOOR)
 	draw_enemies(b)
 	draw_player_panel(b)
+	draw_target_panel(b)
 	draw_party_field(b, sw, sh)
 	draw_hand(b)
 	draw_popups(b)
@@ -1590,6 +2413,9 @@ draw_battle :: proc(b: ^Battle) {
 
 	draw_buttons(b)
 	draw_battle_log(b)
+	if b.show_effects {
+		draw_battle_effects(b)
+	}
 	draw_pile_readout(b)
 
 	if b.phase == .WON {
@@ -1615,11 +2441,14 @@ draw_initiative :: proc(b: ^Battle) {
 	count := min(n, 9)
 	chip_w := f32(70)
 	gap := f32(6)
+	// Keep the bar inside the gap between the two corner panels.
+	gap_w := max(sw - 2 * (PANEL_MARGIN + PANEL_W) - 20, 200)
+	count = min(count, max(int((gap_w + gap) / (chip_w + gap)), 1))
 	total := f32(count) * chip_w + f32(count - 1) * gap
 	x := sw / 2 - total / 2
 	y := f32(44)
 	start := (b.order_pos - 1 + n) % n
-	rl.DrawText("NEXT", i32(x) - 42, i32(y) + 8, 12, rl.Color{150, 150, 170, 255})
+	rl.DrawText("NEXT", i32(x), i32(y) + 34, 12, rl.Color{150, 150, 170, 255})
 	for k in 0..<count {
 		a := b.order[(start + k) % n]
 		c := actor_creature(b, a)
@@ -1640,16 +2469,82 @@ draw_initiative :: proc(b: ^Battle) {
 	}
 }
 
-enemy_rect :: proc(i, n: int) -> rl.Rectangle {
+// ----------------------------------------------------------------------------
+// Enemy row layout
+//
+// The row is a full-width band *below* the two corner panels, so a whole Arena
+// team (six challengers) fits on screen at once with no scrolling. Only a wider
+// pack than that scrolls (wheel, `[` / `]`, or the arrows either side).
+// ----------------------------------------------------------------------------
+PANEL_W      :: f32(340)
+PANEL_H      :: f32(180)
+PANEL_MARGIN :: f32(16)
+ENEMY_CARD_W :: f32(132)
+ENEMY_EY     :: f32(282)
+// How far the card reaches above / below its centre line.
+ENEMY_ROW_TOP :: f32(72)
+ENEMY_ROW_BOT :: f32(78)
+ENEMY_ROW_PAD :: f32(34)
+
+// The full-width band the enemy row lives in.
+enemy_row_band :: proc() -> (left, right: f32) {
 	sw := f32(screen_w())
-	spacing := f32(170)
-	total := f32(n) * spacing
-	start := sw / 2 - total / 2 + spacing / 2
-	ex := start + f32(i) * spacing
-	ey := f32(212)
-	return rl.Rectangle{ex - 60, ey - 60, 120, 120}
+	return ENEMY_ROW_PAD, sw - ENEMY_ROW_PAD
 }
 
+// How many enemy cards fit in the row.
+enemy_visible_count :: proc() -> int {
+	l, r := enemy_row_band()
+	return max(1, int((r - l) / ENEMY_CARD_W))
+}
+
+// The leftmost enemy currently on screen.
+enemy_first_index :: proc(b: ^Battle) -> int {
+	n := len(b.enemies)
+	visible := enemy_visible_count()
+	return clamp(b.enemy_first, 0, max(n - visible, 0))
+}
+
+// Centre x of visible slot `slot` (0-based) out of `spread` slots, spread evenly
+// across the row. A pack smaller than the row is centred rather than bunched to
+// the left.
+enemy_slot_x :: proc(slot, spread: int) -> f32 {
+	l, r := enemy_row_band()
+	step := (r - l) / f32(max(spread, 1))
+	return l + (f32(slot) + 0.5) * step
+}
+
+// The clickable rect for enemy `i` in the scrolled row.
+enemy_rect :: proc(b: ^Battle, i: int) -> rl.Rectangle {
+	spread := min(enemy_visible_count(), len(b.enemies))
+	first := enemy_first_index(b)
+	ex := enemy_slot_x(i - first, spread)
+	return rl.Rectangle{ex - ENEMY_CARD_W / 2, ENEMY_EY - ENEMY_ROW_TOP, ENEMY_CARD_W, ENEMY_ROW_TOP + ENEMY_ROW_BOT}
+}
+
+// The clickable scroll arrows either side of the row.
+enemy_arrow_rect :: proc(left: bool) -> rl.Rectangle {
+	l, r := enemy_row_band()
+	x := left ? l - 24 : r - 4
+	return rl.Rectangle{x, ENEMY_EY - 24, 28, 48}
+}
+
+// Scroll the row the least amount needed to bring enemy `i` on screen.
+enemy_scroll_to :: proc(b: ^Battle, i: int) {
+	visible := enemy_visible_count()
+	if i < b.enemy_first {
+		b.enemy_first = i
+	} else if i >= b.enemy_first + visible {
+		b.enemy_first = i - visible + 1
+	}
+	b.enemy_first = clamp(b.enemy_first, 0, max(len(b.enemies) - visible, 0))
+}
+
+// Scroll by `step` slots, clamped to the row.
+enemy_scroll :: proc(b: ^Battle, step: int) {
+	visible := enemy_visible_count()
+	b.enemy_first = clamp(b.enemy_first + step, 0, max(len(b.enemies) - visible, 0))
+}
 // ----------------------------------------------------------------------------
 // Active combat boosts (Strength / Defense / Block / Vulnerable) and the
 // damage multiplier each one contributes, so the player can read them at a
@@ -1658,15 +2553,15 @@ enemy_rect :: proc(i, n: int) -> rl.Rectangle {
 // (DEF).
 // ----------------------------------------------------------------------------
 
-Effect_Kind :: enum { STR, DEF, BLOCK, VULN, PSN, BRN, STUN, REGEN, THORNS }
+Effect_Kind :: enum { STR, DEF, DEX, BLOCK, VULN, PSN, BRN, STUN, REGEN, THORNS, PWR }
 Effect :: struct {
 	kind:  Effect_Kind,
 	value: int,
 	mult:  f32, // damage multiplier this boost contributes (0 = not applicable)
 }
 
-build_effects :: proc(c: ^Creature) -> ([9]Effect, int) {
-	out: [9]Effect
+build_effects :: proc(c: ^Creature) -> ([16]Effect, int) {
+	out: [16]Effect
 	n := 0
 	if c.strength != 0 {
 		// Each Strength point is a flat +10% damage multiplier (debuffs can push
@@ -1686,8 +2581,12 @@ build_effects :: proc(c: ^Creature) -> ([9]Effect, int) {
 		out[n] = {.BLOCK, c.block, 0}
 		n += 1
 	}
+	if c.dexterity != 0 {
+		out[n] = {.DEX, c.dexterity, 0}
+		n += 1
+	}
 	if c.vulnerable > 0 {
-		out[n] = {.VULN, c.vulnerable, 1.0 + 0.5 * f32(c.vulnerable)}
+		out[n] = {.VULN, c.vulnerable, VULN_MULT}
 		n += 1
 	}
 	if c.poison > 0 {
@@ -1710,6 +2609,17 @@ build_effects :: proc(c: ^Creature) -> ([9]Effect, int) {
 		out[n] = {.THORNS, c.thorns, 0}
 		n += 1
 	}
+	// Active powers (Barricade, Demon Form, ...). value = the power, mult = stacks.
+	for p in Power {
+		if p == .NONE || c.powers[p] <= 0 {
+			continue
+		}
+		if n >= len(out) {
+			break
+		}
+		out[n] = {.PWR, int(p), f32(c.powers[p])}
+		n += 1
+	}
 	return out, n
 }
 
@@ -1727,8 +2637,10 @@ effect_chip_text :: proc(e: Effect) -> cstring {
 		return fmt.ctprintf("DEF%+d", e.value)
 	case .BLOCK:
 		return fmt.ctprintf("BLK %d", e.value)
+	case .DEX:
+		return fmt.ctprintf("DEX %+d", e.value)
 	case .VULN:
-		return fmt.ctprintf("VULN+%d x%.2f", e.value, e.mult)
+		return fmt.ctprintf("VULN %d", e.value)
 	case .PSN:
 		return fmt.ctprintf("PSN %d", e.value)
 	case .BRN:
@@ -1739,6 +2651,8 @@ effect_chip_text :: proc(e: Effect) -> cstring {
 		return fmt.ctprintf("REG %d", e.value)
 	case .THORNS:
 		return fmt.ctprintf("THR %d", e.value)
+	case .PWR:
+		return fmt.ctprintf("%s %d", power_name(Power(e.value)), int(e.mult))
 	}
 	return ""
 }
@@ -1751,6 +2665,8 @@ effect_chip_color :: proc(e: Effect) -> rl.Color {
 		return e.value < 0 ? rl.Color{235, 120, 115, 255} : rl.Color{115, 225, 200, 255}
 	case .BLOCK:
 		return COL_BLOCK
+	case .DEX:
+		return e.value < 0 ? rl.Color{235, 120, 115, 255} : rl.Color{150, 220, 250, 255}
 	case .VULN:
 		return COL_VULN
 	case .PSN:
@@ -1763,23 +2679,34 @@ effect_chip_color :: proc(e: Effect) -> rl.Color {
 		return rl.Color{130, 235, 140, 255}
 	case .THORNS:
 		return rl.Color{150, 220, 150, 255}
+	case .PWR:
+		return rl.Color{200, 150, 240, 255}
 	}
 	return COL_TEXT
 }
 
-effect_tooltip :: proc(e: Effect) -> string {
+// The explanation for one active effect, built on the frame's temp allocator.
+// This is the single source of the text; the owned version below just copies it.
+effect_tooltip_text :: proc(e: Effect) -> cstring {
 	switch e.kind {
-	case .STR:    return fmt.aprintf("Strength: +10%% damage per point (now %+d).", e.value)
-	case .DEF:    return fmt.aprintf("Defence: scales incoming damage down (net %+d).", e.value)
-	case .BLOCK:  return fmt.aprintf("Block: soaks the next %d damage this round.", e.value)
-	case .VULN:   return fmt.aprintf("Vulnerable: takes +50%% damage per stack (%d).", e.value)
-	case .PSN:    return fmt.aprintf("Poison: loses %d HP at the start of each round, then decays.", e.value)
-	case .BRN:    return fmt.aprintf("Burn: loses %d HP at the start of each round, then decays.", e.value)
-	case .STUN:   return fmt.aprintf("Stunned: skips its next %d action(s).", e.value)
-	case .REGEN:  return fmt.aprintf("Regen: heals %d HP at the start of each round, then decays.", e.value)
-	case .THORNS: return fmt.aprintf("Thorns: deals %d back to anything that hits it.", e.value)
+	case .STR:    return fmt.ctprintf("Strength: +10%% damage per point (now %+d).", e.value)
+	case .DEF:    return fmt.ctprintf("Defence: scales incoming damage down (net %+d).", e.value)
+	case .BLOCK:  return fmt.ctprintf("Block: soaks the next %d damage this round.", e.value)
+	case .DEX:    return fmt.ctprintf("Dexterity: every Block gain is %+d.", e.value)
+	case .VULN:   return fmt.ctprintf("Vulnerable: takes +50%% damage for %d more turn(s).", e.value)
+	case .PSN:    return fmt.ctprintf("Poison: %d stack(s) — loses HP each round, phasing through Block, then decays.", e.value)
+	case .BRN:    return fmt.ctprintf("Burn: %d stack(s) — loses HP each round (Block soaks it) and deals %d%% less damage, then decays.", e.value, int(min(f32(e.value)*BURN_WEAKEN_PER_STACK, BURN_WEAKEN_CAP)*100))
+	case .STUN:   return fmt.ctprintf("Stunned: skips its next %d action(s).", e.value)
+	case .REGEN:  return fmt.ctprintf("Regen: heals %d HP at the start of each round, then decays.", e.value)
+	case .THORNS: return fmt.ctprintf("Thorns: %d stack(s) — reflects a slice of the attacker's max HP on each hit, and a stack is spent.", e.value)
+	case .PWR:    return fmt.ctprintf("%s", power_desc(Power(e.value)))
 	}
 	return ""
+}
+
+// The same text as an owned string, for `tooltip_set_owned` (which frees it).
+effect_tooltip :: proc(e: Effect) -> string {
+	return fmt.aprintf("%s", effect_tooltip_text(e))
 }
 
 draw_effect_chip :: proc(x, y: f32, text: cstring, col: rl.Color) -> f32 {
@@ -1791,95 +2718,173 @@ draw_effect_chip :: proc(x, y: f32, text: cstring, col: rl.Color) -> f32 {
 	return w
 }
 
-// Centered row of chips.
-draw_effects_row :: proc(effects: []Effect, center_x, y: f32) {
-	total := f32(0)
-	for e in effects {
-		total += f32(rl.MeasureText(effect_chip_text(e), 13)) + 12 + 4
+// Centered chip row clamped to `max_w`: chips that don't fit collapse into a
+// `+N` tail, so a panel can never be overrun by a long boost list.
+draw_effects_row_clamped :: proc(effects: []Effect, center_x, y: f32, max_w: f32) {
+	n := len(effects)
+	if n == 0 {
+		return
 	}
-	if len(effects) > 0 {
-		total -= 4
-	}
-	x := center_x - total / 2
-	for e in effects {
-		w := draw_effect_chip(x, y, effect_chip_text(e), effect_chip_color(e))
-		if rl.CheckCollisionPointRec(mouse_pos(), rl.Rectangle{x, y, w, 19}) {
-			tooltip_set_owned(effect_tooltip(e))
+	fit := n
+	for fit > 0 {
+		w := f32(0)
+		for i in 0..<fit {
+			w += f32(rl.MeasureText(effect_chip_text(effects[i]), 13)) + 16
 		}
-		x += w + 4
+		if fit < n {
+			w += f32(rl.MeasureText(fmt.ctprintf("+%d", n - fit), 13)) + 8
+		}
+		if w - 4 <= max_w {
+			break
+		}
+		fit -= 1
+	}
+	w := f32(0)
+	for i in 0..<fit {
+		w += f32(rl.MeasureText(effect_chip_text(effects[i]), 13)) + 16
+	}
+	tw := f32(0)
+	if fit < n {
+		tw = f32(rl.MeasureText(fmt.ctprintf("+%d", n - fit), 13)) + 8
+	}
+	total := max(w - 4, 0) + tw
+	x := center_x - total / 2
+	if fit < n {
+		rl.DrawText(fmt.ctprintf("+%d", n - fit), i32(x), i32(y) + 3, 13, COL_MUTED)
+		x += tw
+	}
+	for i in 0..<fit {
+		w2 := draw_effect_chip(x, y, effect_chip_text(effects[i]), effect_chip_color(effects[i]))
+		if rl.CheckCollisionPointRec(mouse_pos(), rl.Rectangle{x, y, w2, 19}) {
+			tooltip_set_owned(effect_tooltip(effects[i]))
+		}
+		x += w2 + 4
 	}
 }
 
 draw_enemies :: proc(b: ^Battle) {
 	sw := f32(screen_w())
 	n := len(b.enemies)
-	ey := f32(212)
-	spacing := f32(170)
-	total := f32(n) * spacing
-	start := sw / 2 - total / 2 + spacing / 2
+	visible := enemy_visible_count()
+	first := enemy_first_index(b)
+	spread := min(visible, n)
+	ey := ENEMY_EY
+	cw := ENEMY_CARD_W
 
-	for e, i in b.enemies {
-		ex := start + f32(i) * spacing
-		radius := f32(52)
+	for slot in 0..<visible {
+		i := first + slot
+		if i >= n {
+			break
+		}
+		e := b.enemies[i]
+		ex := enemy_slot_x(slot, spread)
+		// A smaller avatar leaves the ability line its own row above it.
+		radius := f32(26)
 		ox, oy := creature_offset(e)
 		draw_creature_avatar(rl.Vector2{ex + ox, ey + oy}, radius, e, e.hp <= 0)
 
 		name := fmt.ctprintf("%s", e.name)
-		nw := rl.MeasureText(name, 20)
-		rl.DrawText(name, i32(ex) - nw / 2, i32(ey) - 112, 20, COL_TEXT)
+		nw := rl.MeasureText(name, 14)
+		rl.DrawText(name, i32(ex) - nw / 2, i32(ey) - 70, 14, COL_TEXT)
 
 		// Level, then the enemy's element types as coloured chips.
-		lvl := fmt.ctprintf("Lvl %d", e.level)
-		lw := rl.MeasureText(lvl, 15)
+		lvl := fmt.ctprintf("Lv%d", e.level)
+		lw := rl.MeasureText(lvl, 11)
 		els := creature_elements(e)
-		chip_gap := f32(6)
+		chip_gap := f32(4)
 		total_w := f32(lw)
 		for el in els {
-			total_w += f32(rl.MeasureText(element_name(el), 12)) + 12 + chip_gap
+			total_w += f32(rl.MeasureText(element_name(el), 10)) + 7 + chip_gap
 		}
 		x0 := ex - total_w / 2
-		rl.DrawText(lvl, i32(x0), i32(ey) - 88, 15, rl.Color{175, 175, 195, 255})
+		rl.DrawText(lvl, i32(x0), i32(ey) - 56, 11, rl.Color{175, 175, 195, 255})
 		ccx := x0 + f32(lw) + chip_gap
 		for el in els {
 			txt := element_name(el)
-			w := f32(rl.MeasureText(txt, 12)) + 12
-			crec := rl.Rectangle{ccx, ey - 91, w, 18}
+			w := f32(rl.MeasureText(txt, 10)) + 7
+			crec := rl.Rectangle{ccx, ey - 58, w, 14}
 			col := element_color(el)
 			rl.DrawRectangleRounded(crec, 0.4, 4, rl.Color{col[0] / 5, col[1] / 5, col[2] / 5, 235})
 			rl.DrawRectangleRoundedLinesEx(crec, 0.4, 4, 1, col)
-			rl.DrawText(txt, i32(ccx) + 6, i32(ey) - 88, 12, col)
+			rl.DrawText(txt, i32(ccx) + 4, i32(ey) - 56, 10, col)
 			ccx += w + chip_gap
 		}
 
 		if e.ability != .NONE {
 			ab := ability_name(e.ability)
-			aw := rl.MeasureText(ab, 13)
-			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 74, 13, rl.Color{200, 180, 240, 255})
+			aw := rl.MeasureText(ab, 11)
+			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 42, 11, rl.Color{200, 180, 240, 255})
 		}
 
-		hp_rec := rl.Rectangle{ex - 70, ey + 70, 140, 18}
+		hp_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 38, cw - 8, 14}
 		draw_bar(hp_rec, e.hp, e.max_hp, COL_HP)
 		hp_txt := fmt.ctprintf("%d/%d", e.hp, e.max_hp)
-		hw := rl.MeasureText(hp_txt, 13)
-		rl.DrawText(hp_txt, i32(ex) - hw / 2, i32(hp_rec.y) + 2, 13, COL_TEXT)
+		hw := rl.MeasureText(hp_txt, 10)
+		rl.DrawText(hp_txt, i32(ex) - hw / 2, i32(hp_rec.y) + 1, 10, COL_TEXT)
 
 		// Energy (the same pool the wild uses on the colony map).
-		en_rec := rl.Rectangle{ex - 70, ey + 91, 140, 7}
+		en_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 56, cw - 8, 5}
 		draw_bar(en_rec, int(e.energy * 100), int(max(e.energy_max, 0.01) * 100), COL_ENERGY)
-		en_txt := fmt.ctprintf("En %s/%s  +%s", fmt_num(e.energy), fmt_num(e.energy_max), fmt_num(e.energy_regen))
-		ew := rl.MeasureText(en_txt, 11)
-		rl.DrawText(en_txt, i32(ex) - ew / 2, i32(en_rec.y) + 7, 11, COL_TEXT)
+		en_txt := fmt.ctprintf("En %s/%s", fmt_num(e.energy), fmt_num(e.energy_max))
+		ew := rl.MeasureText(en_txt, 10)
+		rl.DrawText(en_txt, i32(ex) - ew / 2, i32(en_rec.y) + 6, 10, COL_TEXT)
 
-		// Active boosts, each with the damage multiplier it contributes.
+		// Active boosts as compact colour-coded dots — the full chips for the
+		// selected target live in the target panel, so a card stays narrow.
 		effs, ne := build_effects(e)
-		draw_effects_row(effs[:ne], ex, ey + 120)
+		draw_effect_dots(effs[:ne], ex, ey + 74, 6)
 
 		if i == b.target && e.hp > 0 {
 			rl.DrawCircleLinesV(rl.Vector2{ex, ey}, radius + 5, rl.Color{255, 235, 140, 255})
-			rl.DrawText("TARGET", i32(ex) - 27, i32(ey) - 134, 14, rl.Color{255, 235, 140, 255})
 		} else if i == b.enemy_acting && e.hp > 0 && b.phase == .ENEMY_ACTION {
 			rl.DrawCircleLinesV(rl.Vector2{ex, ey}, radius + 10, rl.Color{240, 140, 120, 200})
 		}
+	}
+
+	// Scroll affordances when the pack is wider than the row.
+	if n > visible {
+		hint := fmt.ctprintf("%d-%d of %d   (wheel, [ ] or the arrows)", first + 1, min(first + visible, n), n)
+		hw := rl.MeasureText(hint, 13)
+		// Above the row: the space below it belongs to your party.
+		rl.DrawText(hint, i32(sw) / 2 - hw / 2, i32(ey) - 88, 13, COL_MUTED)
+		l, r := enemy_row_band()
+		mp := mouse_pos()
+		draw_scroll_arrow(l - 20, ey, true, first > 0, rl.CheckCollisionPointRec(mp, enemy_arrow_rect(true)))
+		draw_scroll_arrow(r - 16, ey, false, first + visible < n, rl.CheckCollisionPointRec(mp, enemy_arrow_rect(false)))
+	}
+}
+
+// A scroll arrow either side of the enemy row. Dimmed when there is nothing
+// left to scroll to, and highlighted on hover so it reads as clickable.
+draw_scroll_arrow :: proc(x, ey: f32, left, active, hovered: bool) {
+	col := rl.Color{110, 112, 128, 255}
+	if active {
+		col = hovered ? rl.Color{255, 240, 200, 255} : rl.Color{205, 205, 220, 255}
+	}
+	txt := left ? cstring("<") : cstring(">")
+	w := rl.MeasureText(txt, 26)
+	rl.DrawText(txt, i32(x) + (28 - w) / 2, i32(ey) - 14, 26, col)
+}
+
+// A compact stand-in for the full chip row: one small colour-coded dot per
+// active boost, capped, with a `+N` tail.
+draw_effect_dots :: proc(effects: []Effect, center_x, y: f32, max_dots: int) {
+	n := min(len(effects), max_dots)
+	if n <= 0 {
+		return
+	}
+	dot := f32(9)
+	gap := f32(4)
+	total := f32(n) * dot + f32(n - 1) * gap
+	x := center_x - total / 2
+	for i in 0..<n {
+		col := effect_chip_color(effects[i])
+		rl.DrawCircleV(rl.Vector2{x + dot / 2, y + dot / 2}, dot / 2, col)
+		rl.DrawCircleLinesV(rl.Vector2{x + dot / 2, y + dot / 2}, dot / 2, rl.Color{16, 16, 22, 255})
+		x += dot + gap
+	}
+	if len(effects) > n {
+		rl.DrawText(fmt.ctprintf("+%d", len(effects) - n), i32(x) + 2, i32(y), 12, COL_MUTED)
 	}
 }
 
@@ -1889,47 +2894,106 @@ vfmt :: proc(b: ^Battle, format: string, args: ..any) -> cstring {
 
 draw_player_panel :: proc(b: ^Battle) {
 	c := b.party[b.active]
-	panel := rl.Rectangle{16, 16, 384, 170}
+	panel := rl.Rectangle{PANEL_MARGIN, PANEL_MARGIN, PANEL_W, PANEL_H}
 	rl.DrawRectangleRounded(panel, 0.10, 8, COL_PANEL)
 	rl.DrawRectangleRoundedLinesEx(panel, 0.10, 8, 2, rl.Color{60, 60, 78, 255})
 
 	ox, oy := creature_offset(c)
-	draw_creature_avatar(rl.Vector2{panel.x + 48 + ox, panel.y + 62 + oy}, 34, c, false)
+	draw_creature_avatar(rl.Vector2{panel.x + 46 + ox, panel.y + 60 + oy}, 32, c, false)
 
+	tx := panel.x + 88 // text column
 	name := fmt.ctprintf("%s", c.name)
-	rl.DrawText(name, i32(panel.x) + 94, i32(panel.y) + 14, 22, COL_TEXT)
+	rl.DrawText(name, i32(tx), i32(panel.y) + 12, 22, COL_TEXT)
 	if c.ability != .NONE {
 		ab := ability_name(c.ability)
 		aw := rl.MeasureText(ab, 14)
-		rl.DrawText(ab, i32(panel.x + panel.width) - aw - 12, i32(panel.y) + 22, 14, rl.Color{200, 180, 240, 255})
+		rl.DrawText(ab, i32(panel.x + panel.width) - aw - 12, i32(panel.y) + 20, 14, rl.Color{200, 180, 240, 255})
 	}
-	sub := fmt.ctprintf("Lvl %d  %s  PWR x%s  DEF %s  SPD %s", c.level, element_label(c), fmt_num(c.power), fmt_num(creature_defense(c)), fmt_num(c.speed))
-	rl.DrawText(sub, i32(panel.x) + 94, i32(panel.y) + 40, 16, element_color(creature_element(c)))
+	// Stats on two lines: the whole row never fits the panel on one.
+	line1 := fmt.ctprintf("Lvl %d  %s", c.level, element_label(c))
+	rl.DrawText(line1, i32(tx), i32(panel.y) + 40, 14, element_color(creature_element(c)))
+	line2 := fmt.ctprintf("PWR x%s  DEF %s  SPD %s", fmt_num(c.power), fmt_num(creature_defense(c)), fmt_num(c.speed))
+	rl.DrawText(line2, i32(tx), i32(panel.y) + 56, 14, rl.Color{190, 190, 210, 255})
 
-	hp_rec := rl.Rectangle{panel.x + 94, panel.y + 64, 210, 20}
+	hp_rec := rl.Rectangle{tx, panel.y + 76, panel.width - 88 - 12, 20}
 	draw_bar(hp_rec, c.hp, c.max_hp, COL_HP)
 	hp_txt := fmt.ctprintf("%d / %d", c.hp, c.max_hp)
 	rl.DrawText(hp_txt, i32(hp_rec.x) + 8, i32(hp_rec.y) + 2, 15, COL_TEXT)
 
-	// XP toward the next level.
+	// XP toward the next level. The bar is short so its readout clears the
+	// piles counter on the right, which used to sit right on top of it.
 	need := xp_to_next(c.level)
-	xp_rec := rl.Rectangle{panel.x + 94, panel.y + 87, 176, 6}
+	xp_rec := rl.Rectangle{tx, panel.y + 100, 76, 6}
 	rl.DrawRectangleRounded(xp_rec, 0.5, 4, rl.Color{32, 36, 50, 255})
 	xf := clamp(f32(c.xp) / f32(max(need, 1)), 0, 1)
 	if xf > 0 {
 		rl.DrawRectangleRounded(rl.Rectangle{xp_rec.x, xp_rec.y, xp_rec.width * xf, xp_rec.height}, 0.5, 4, rl.Color{150, 210, 255, 255})
 	}
-	rl.DrawText(fmt.ctprintf("XP %d/%d", c.xp, need), i32(panel.x) + 276, i32(panel.y) + 82, 11, rl.Color{150, 210, 255, 255})
-
-	rl.DrawText(fmt.ctprintf("Energy +%s/turn", fmt_num(c.energy_regen)), i32(panel.x) + 94, i32(panel.y) + 96, 15, COL_ENERGY)
-	draw_energy(panel.x + 156, panel.y + 104, 160, c.energy, c.energy_max, c.energy_regen)
-
+	// The piles counter sits in the same corner, so lay the XP readout out to
+	// its left rather than at a fixed offset that collided with it.
 	piles := vfmt(b, "deck %d", len(c.deck))
-	rl.DrawText(piles, i32(panel.x) + 94, i32(panel.y) + 116, 14, COL_MUTED)
+	piles_w := rl.MeasureText(piles, 11)
+	piles_x := i32(panel.x + panel.width) - piles_w - 12
+	rl.DrawText(piles, piles_x, i32(panel.y) + 96, 11, COL_MUTED)
+	// Everything between the bar and the piles counter is the XP readout's, and
+	// it is clipped to that so a six-figure XP total can't collide with either.
+	xp_left := i32(tx) + 84
+	xp_room := max(piles_x - xp_left - 14, 40)
+	xp_txt := fit_textf(11, xp_room, "XP %d/%d", c.xp, need)
+	rl.DrawText(xp_txt, piles_x - rl.MeasureText(xp_txt, 11) - 14, i32(panel.y) + 96, 11, rl.Color{150, 210, 255, 255})
+
+	draw_energy(tx, panel.y + 124, panel.width - 88 - 12, c.energy, c.energy_max, c.energy_regen)
 
 	// Active boosts, each with the damage multiplier it contributes.
 	effs, ne := build_effects(c)
-	draw_effects_row(effs[:ne], panel.x + panel.width / 2, panel.y + 142)
+	draw_effects_row_clamped(effs[:ne], panel.x + panel.width / 2, panel.y + 158, panel.width - 24)
+}
+
+// The selected target, mirrored into the top-right corner: the same shape as the
+// player panel, so both sides of the fight read the same way — avatar, name,
+// ability, level/type/stats, HP, energy, rarity and the target's active boosts.
+draw_target_panel :: proc(b: ^Battle) {
+	if b.target < 0 || b.target >= len(b.enemies) {
+		return
+	}
+	e := b.enemies[b.target]
+	sw := f32(screen_w())
+	panel := rl.Rectangle{sw - PANEL_MARGIN - PANEL_W, PANEL_MARGIN, PANEL_W, PANEL_H}
+	rl.DrawRectangleRounded(panel, 0.10, 8, COL_PANEL)
+	rl.DrawRectangleRoundedLinesEx(panel, 0.10, 8, 2, rl.Color{60, 60, 78, 255})
+
+	// Avatar hugs the outer edge and the text runs inward, mirroring the player
+	// panel on the other side.
+	ox, oy := creature_offset(e)
+	draw_creature_avatar(rl.Vector2{panel.x + panel.width - 46 + ox, panel.y + 60 + oy}, 32, e, e.hp <= 0)
+
+	right := i32(panel.x + panel.width) - 88 // mirrored text column
+	name := fmt.ctprintf("%s", e.name)
+	nw := rl.MeasureText(name, 22)
+	rl.DrawText(name, right - nw, i32(panel.y) + 12, 22, COL_TEXT)
+	if e.ability != .NONE {
+		rl.DrawText(ability_name(e.ability), i32(panel.x) + 12, i32(panel.y) + 20, 14, rl.Color{200, 180, 240, 255})
+	}
+	// Rarity is worth knowing before you spend a capture card on it.
+	rl.DrawText(rarity_name(SPECIES[e.species].rarity), i32(panel.x) + 12, i32(panel.y) + 41, 12, rarity_color(SPECIES[e.species].rarity))
+
+	line1 := fmt.ctprintf("Lvl %d  %s", e.level, element_label(e))
+	l1w := rl.MeasureText(line1, 14)
+	rl.DrawText(line1, right - l1w, i32(panel.y) + 40, 14, element_color(creature_element(e)))
+	line2 := fmt.ctprintf("PWR x%s  DEF %s  SPD %s", fmt_num(e.power), fmt_num(creature_defense(e)), fmt_num(e.speed))
+	l2w := rl.MeasureText(line2, 14)
+	rl.DrawText(line2, right - l2w, i32(panel.y) + 56, 14, rl.Color{190, 190, 210, 255})
+
+	hp_rec := rl.Rectangle{panel.x + 12, panel.y + 76, panel.width - 88 - 12, 20}
+	draw_bar(hp_rec, e.hp, e.max_hp, COL_HP)
+	hp_txt := fmt.ctprintf("%d / %d", e.hp, e.max_hp)
+	rl.DrawText(hp_txt, i32(hp_rec.x) + 8, i32(hp_rec.y) + 2, 15, COL_TEXT)
+
+	draw_energy(panel.x + 12, panel.y + 124, panel.width - 88 - 12, e.energy, e.energy_max, e.energy_regen)
+
+	// Active boosts, each with the damage multiplier it contributes.
+	effs, ne := build_effects(e)
+	draw_effects_row_clamped(effs[:ne], panel.x + panel.width / 2, panel.y + 158, panel.width - 24)
 }
 
 // Your party, drawn as info cards on the field (bottom strip): avatar, name,
@@ -1941,11 +3005,12 @@ party_field_rect :: proc(i, n: int) -> rl.Rectangle {
 	sw := f32(screen_w())
 	gap := f32(10)
 	cw := min(f32(178), (sw - 60 - gap * f32(n - 1)) / f32(n))
-	ch := f32(100)
+	ch := f32(90)
 	total := f32(n) * cw + gap * f32(n - 1)
 	start := sw / 2 - total / 2
-	// Sit above the hand *and* above the hovered card's damage tooltip.
-	top := hand_card_rect(0, 1).y - CARD_HOVER_LIFT - 60 - ch
+	// Sit above the hand *and* above the hovered card's damage tooltip, low
+	// enough that the enemy row above has clear air.
+	top := hand_card_rect(0, 1).y - CARD_HOVER_LIFT - 54 - ch
 	return rl.Rectangle{start + f32(i) * (cw + gap), top, cw, ch}
 }
 
@@ -1977,9 +3042,14 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 			border = rl.Color{74, 52, 58, 255}
 		}
 		rl.DrawRectangleRoundedLinesEx(rec, 0.09, 6, 2, border)
-		// The selected teammate gets an outer ring, mirroring the enemy target.
+		// The monster whose turn it is wears the big outer ring — it is the one
+		// that matters right now. (The selected teammate only gets a thin inner
+		// border, so it can't be mistaken for the acting monster.)
+		if active && !dead {
+			rl.DrawRectangleRoundedLinesEx(rl.Rectangle{rec.x - 4, rec.y - 4, rec.width + 8, rec.height + 8}, 0.09, 6, 3, rl.Color{120, 230, 180, 255})
+		}
 		if i == b.ally_target && b.phase == .PLAYER_ACTION && !dead {
-			rl.DrawRectangleRoundedLinesEx(rl.Rectangle{rec.x - 3, rec.y - 3, rec.width + 6, rec.height + 6}, 0.09, 6, 3, rl.Color{255, 225, 130, 255})
+			rl.DrawRectangleRoundedLinesEx(rl.Rectangle{rec.x + 2, rec.y + 2, rec.width - 4, rec.height - 4}, 0.09, 6, 2, rl.Color{255, 225, 130, 255})
 		}
 
 		ox, oy := creature_offset(c)
@@ -2029,7 +3099,7 @@ draw_party_field :: proc(b: ^Battle, sw, sh: f32) {
 
 draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rectangle, allies := 0) {
 	m := MOVE_DATA[id]
-	if m.damage <= 0 {
+	if !move_has_damage(m) {
 		return
 	}
 	total, type_mult := estimate_damage(attacker, target, id, allies)
@@ -2069,7 +3139,7 @@ draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rec
 	bx := rec.x + rec.width / 2 - box_w / 2
 	sw := f32(screen_w())
 	bx = clamp(bx, 6, sw - box_w - 6)
-	by := rec.y - box_h - 8
+	by := rec.y - box_h - 4
 	box := rl.Rectangle{bx, by, box_w, box_h}
 	rl.DrawRectangleRounded(box, 0.28, 6, rl.Color{16, 16, 24, 242})
 	rl.DrawRectangleRoundedLinesEx(box, 0.28, 6, 2, rl.Color{130, 130, 150, 255})
@@ -2082,10 +3152,9 @@ draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rec
 draw_hand :: proc(b: ^Battle) {
 	mp := mouse_pos()
 	hand := b.party[b.active].hand
-	tgt := target_enemy(b)
 	for id, i in hand {
 		rec := hand_card_rect(i, len(hand))
-		playable := b.phase == .PLAYER_ACTION && b.party[b.active].energy >= move_data(id).cost
+		playable := b.phase == .PLAYER_ACTION && move_playable(b.party[b.active], move_data(id))
 		hovered := rl.CheckCollisionPointRec(mp, rec)
 		draw_card(id, rec, playable, hovered)
 		if hovered {
@@ -2093,9 +3162,13 @@ draw_hand :: proc(b: ^Battle) {
 			if playable {
 				dr.y -= CARD_HOVER_LIFT // draw_card lifts hovered playable cards
 			}
-			// Offensive cards get a damage readout when an enemy is selected.
-			if .ENEMY in move_targets(move_data(id)) && b.sel_kind == .ENEMY {
-				draw_card_estimate(b.party[b.active], tgt, id, dr, other_allies_alive(b, b.party[b.active]))
+			// Offensive cards get a damage readout against whoever this card
+			// would actually land on. (Gating on `sel_kind` was wrong: that flag
+			// sticks after you target an ally, which silently hid the estimate on
+			// every attack card.)
+			card_target := pick_card_target(b, move_data(id))
+			if card_target != nil && side_of(b, card_target) == .WILD {
+				draw_card_estimate(b.party[b.active], card_target, id, dr, other_allies_alive(b, b.party[b.active]))
 			}
 		}
 	}
@@ -2152,15 +3225,22 @@ pile_discard_rect :: proc() -> rl.Rectangle {
 	return rl.Rectangle{r.x, r.y + 34, r.width, 30}
 }
 
+pile_exhaust_rect :: proc() -> rl.Rectangle {
+	r := pile_draw_rect()
+	return rl.Rectangle{r.x, r.y + 68, r.width, 30}
+}
+
 // Clickable readouts of the active monster's piles, bottom-left.
 draw_pile_readout :: proc(b: ^Battle) {
 	c := b.party[b.active]
 	mp := mouse_pos()
 	dr := pile_draw_rect()
 	dc := pile_discard_rect()
+	de := pile_exhaust_rect()
 	hd := rl.CheckCollisionPointRec(mp, dr)
 	hc := rl.CheckCollisionPointRec(mp, dc)
-	if hd || hc {
+	he := rl.CheckCollisionPointRec(mp, de)
+	if hd || hc || he {
 		ui_want_hand()
 	}
 	rl.DrawRectangleRounded(dr, 0.25, 6, hd ? rl.Color{40, 52, 70, 240} : rl.Color{24, 30, 42, 230})
@@ -2169,8 +3249,11 @@ draw_pile_readout :: proc(b: ^Battle) {
 	rl.DrawRectangleRounded(dc, 0.25, 6, hc ? rl.Color{52, 44, 34, 240} : rl.Color{30, 26, 20, 230})
 	rl.DrawRectangleRoundedLinesEx(dc, 0.25, 6, 1, rl.Color{200, 150, 90, 255})
 	rl.DrawText(fmt.ctprintf("Discard %d", len(c.discard)), i32(dc.x) + 10, i32(dc.y) + 6, 16, rl.Color{230, 180, 120, 255})
-	if hd || hc {
-		tooltip_set("Click (or press D) to view your draw and discard piles.")
+	rl.DrawRectangleRounded(de, 0.25, 6, he ? rl.Color{58, 40, 54, 240} : rl.Color{32, 24, 30, 230})
+	rl.DrawRectangleRoundedLinesEx(de, 0.25, 6, 1, rl.Color{180, 120, 175, 255})
+	rl.DrawText(fmt.ctprintf("Exhaust %d", len(c.exhausted)), i32(de.x) + 10, i32(de.y) + 6, 16, rl.Color{215, 165, 210, 255})
+	if hd || hc || he {
+		tooltip_set("Click (or press D) to view your draw, discard and exhaust piles.")
 	}
 }
 
@@ -2185,11 +3268,13 @@ draw_piles :: proc(b: ^Battle) {
 	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
 	rl.DrawText(fmt.ctprintf("%s  -  piles", c.name), i32(p.x) + 24, i32(p.y) + 14, 26, rl.Color{230, 235, 245, 255})
 
-	col_w := (p.width - 68) / 2
+	col_w := (p.width - 88) / 3
 	rl.DrawText(fmt.ctprintf("DRAW PILE  (%d)", len(c.draw_pile)), i32(p.x) + 24, i32(p.y) + 56, 18, rl.Color{150, 210, 255, 255})
 	draw_pile_list(c.draw_pile[:], p.x + 24, p.y + 84, col_w)
 	rl.DrawText(fmt.ctprintf("DISCARD PILE  (%d)", len(c.discard)), i32(p.x) + 24 + i32(col_w) + 20, i32(p.y) + 56, 18, rl.Color{230, 180, 120, 255})
 	draw_pile_list(c.discard[:], p.x + 24 + col_w + 20, p.y + 84, col_w)
+	rl.DrawText(fmt.ctprintf("EXHAUSTED  (%d)", len(c.exhausted)), i32(p.x) + 24 + i32((col_w + 20) * 2), i32(p.y) + 56, 18, rl.Color{215, 165, 210, 255})
+	draw_pile_list(c.exhausted[:], p.x + 24 + (col_w + 20) * 2, p.y + 84, col_w)
 
 	hint := cstring("D / Esc to close")
 	hw := rl.MeasureText(hint, 16)
@@ -2213,9 +3298,135 @@ draw_pile_list :: proc(cards: []Move_Id, x, y, w: f32) {
 	}
 }
 
+// The log lives in the gap between the two corner panels, above the enemy row —
+// clear of both the art and the avatars. It is wider than the old left-hand
+// column, so a message fits on one line, and it scrolls (wheel, or PgUp/PgDn)
+// so a long fight can be read back.
+BATTLE_LOG_X  :: i32(364)
+BATTLE_LOG_Y  :: i32(98)
+BATTLE_LOG_LH :: i32(19)
+BATTLE_LOG_LINES :: 5
+
+// The gap between the two corner panels, which is where the log lives.
+battle_log_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	l := PANEL_MARGIN + PANEL_W + 8
+	return rl.Rectangle{l, f32(BATTLE_LOG_Y) - 4, sw - 2*l, f32(BATTLE_LOG_LINES*BATTLE_LOG_LH) + 8}
+}
+
+// How many messages are hidden above the window.
+battle_log_hidden :: proc(b: ^Battle) -> int {
+	return clamp(b.log_scroll, 0, max(len(b.log) - BATTLE_LOG_LINES, 0))
+}
+
+battle_log_scroll :: proc(b: ^Battle, step: int) {
+	b.log_scroll = clamp(b.log_scroll + step, 0, max(len(b.log) - BATTLE_LOG_LINES, 0))
+}
+
+// ----------------------------------------------------------------------------
+// Active effects, in full
+//
+// The chip rows are deliberately tiny and a buffed monster overflows them fast,
+// so this is where the whole list lives: every creature on the field, every
+// effect it is carrying, each with the same explanation its chip's tooltip
+// gives. Scrollable, because six creatures' worth is a lot of text.
+// ----------------------------------------------------------------------------
+
+battle_effects_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	return rl.Rectangle{sw / 2 - 410, sh / 2 - 280, 820, 560}
+}
+
+// One creature's block. Returns the y it finished at.
+draw_one_effects :: proc(c: ^Creature, x, y_in, w: f32, col: rl.Color) -> f32 {
+	y := y_in
+	rl.DrawText(fmt.ctprintf("%s   %d/%d hp", c.name, max(c.hp, 0), c.max_hp), i32(x), i32(y), 16, col)
+	y += 22
+	effs, ne := build_effects(c)
+	if ne == 0 {
+		rl.DrawText("nothing active", i32(x) + 12, i32(y), 14, rl.Color{120, 120, 140, 255})
+		return y + 20
+	}
+	for e in effs[:ne] {
+		txt := effect_chip_text(e)
+		cw := draw_effect_chip(x + 12, y, txt, effect_chip_color(e))
+		y = f32(draw_text_wrapped(effect_tooltip_text(e), i32(x) + i32(cw) + 20, i32(y) + 1, 14,
+			i32(w) - i32(cw) - 24, rl.Color{205, 208, 225, 255}))
+		y += 5
+	}
+	return y + 8
+}
+
+draw_battle_effects :: proc(b: ^Battle) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 190})
+
+	p := battle_effects_rect()
+	rl.DrawRectangleRounded(p, 0.04, 8, rl.Color{20, 22, 30, 250})
+	rl.DrawRectangleRoundedLinesEx(p, 0.04, 8, 3, rl.Color{150, 180, 230, 255})
+	rl.DrawText("ACTIVE EFFECTS", i32(p.x) + 24, i32(p.y) + 16, 26, rl.Color{220, 228, 245, 255})
+	rl.DrawText("S or Esc to close   -   wheel to scroll", i32(p.x) + 24, i32(p.y) + 50, 14, rl.Color{160, 170, 195, 255})
+
+	col_w := (p.width - 56) / 2
+	lx := p.x + 24
+	rx := p.x + 32 + col_w
+	top := p.y + 84
+	inner := rl.Rectangle{p.x + 16, top, p.width - 32, p.height - 116}
+	scissor_begin(inner)
+
+	ly := top - b.effects_scroll
+	rl.DrawText("YOUR PARTY", i32(lx), i32(ly), 15, rl.Color{150, 200, 160, 255})
+	ly += 24
+	for c in b.party {
+		if c.hp <= 0 {
+			continue
+		}
+		ly = draw_one_effects(c, lx, ly, col_w, rl.Color{210, 235, 215, 255})
+	}
+	ry := top - b.effects_scroll
+	rl.DrawText("THE WILD", i32(rx), i32(ry), 15, rl.Color{220, 160, 150, 255})
+	ry += 24
+	for c in b.enemies {
+		if c.hp <= 0 {
+			continue
+		}
+		ry = draw_one_effects(c, rx, ry, col_w, rl.Color{240, 210, 205, 255})
+	}
+	scissor_end()
+
+	// Clamp the scroll to what was actually drawn (self-correcting, so the
+	// height never has to be predicted).
+	content := max(ly, ry) - top
+	max_scroll := max(content - inner.height, 0)
+	b.effects_scroll = clamp(b.effects_scroll, 0, max_scroll)
+	if max_scroll > 0 {
+		rl.DrawText(fmt.ctprintf("scrolled %.0f / %.0f", b.effects_scroll, max_scroll),
+			i32(p.x + p.width) - 190, i32(p.y + p.height) - 26, 13, rl.Color{130, 140, 165, 255})
+	}
+}
+
 draw_battle_log :: proc(b: ^Battle) {
+	n := len(b.log)
+	if n == 0 {
+		return
+	}
+	hidden := battle_log_hidden(b)
+	last := n - hidden
+	first := max(last - BATTLE_LOG_LINES, 0)
+	w := battle_log_rect().width
 	for msg, i in b.log {
-		rl.DrawText(fmt.ctprintf("%s", msg), 16, 196 + i32(i) * 21, 15, COL_MUTED)
+		if i < first || i >= last {
+			continue
+		}
+		rl.DrawText(fit_text(msg, 14, i32(w)), BATTLE_LOG_X, BATTLE_LOG_Y + i32(i-first)*BATTLE_LOG_LH, 14, COL_MUTED)
+	}
+	if hidden > 0 {
+		hint := fmt.ctprintf("%d older  (wheel / PgUp)", hidden)
+		hw := rl.MeasureText(hint, 12)
+		rl.DrawText(hint, i32(BATTLE_LOG_X) + i32(w) - hw,
+			BATTLE_LOG_Y + i32(BATTLE_LOG_LINES*BATTLE_LOG_LH) + 1, 12, rl.Color{120, 120, 145, 255})
 	}
 }
 

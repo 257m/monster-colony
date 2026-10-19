@@ -20,7 +20,7 @@ Synth_Kind :: enum { SINE, SQUARE, SAW, TRIANGLE, NOISE }
 
 Sfx :: enum {
 	CLICK, CONFIRM, CANCEL, BUILD, ERROR, COIN, FOOD, CRYSTAL,
-	HIT, HEAL, LEVELUP, VICTORY, DEFEAT, NOTIFY, TURN, RAID,
+	HIT, HEAL, BUFF, BLOCK, DOT, LEVELUP, VICTORY, DEFEAT, NOTIFY, TURN, RAID,
 	DISCOVER, ROAR, DRIP, WIND, CHIRP, HEARTBEAT,
 }
 
@@ -174,6 +174,21 @@ audio_make_sfx :: proc(kind: Sfx) -> []i16 {
 	case .HEAL:
 		b := audio_buf(0.28)
 		audio_note(b, 0.00, 520, 980, 0.24, 0.26, .SINE, 6.0, 0.006, &audio.rng)
+		return b
+	case .BUFF:
+		b := audio_buf(0.30)
+		audio_note(b, 0.00, 620, 780, 0.10, 0.24, .SINE, 10.0, 0.004, &audio.rng)
+		audio_note(b, 0.06, 930, 1170, 0.16, 0.22, .SINE, 8.0, 0.004, &audio.rng)
+		return b
+	case .BLOCK:
+		b := audio_buf(0.16)
+		audio_note(b, 0.00, 320, 190, 0.12, 0.30, .TRIANGLE, 16.0, 0.002, &audio.rng)
+		audio_note(b, 0.00, 0, 0, 0.04, 0.16, .NOISE, 34.0, 0.001, &audio.rng)
+		return b
+	case .DOT:
+		b := audio_buf(0.26)
+		audio_note(b, 0.00, 0, 0, 0.20, 0.18, .NOISE, 14.0, 0.010, &audio.rng)
+		audio_note(b, 0.02, 180, 110, 0.16, 0.22, .SAW, 9.0, 0.010, &audio.rng)
 		return b
 	case .LEVELUP:
 		b := audio_buf(0.42)

@@ -1,5 +1,7 @@
 package main
 
+import "core:math"
+
 // ============================================================================
 // CRYSTAL PROGRESSION TREE (Phase C)
 //
@@ -57,6 +59,10 @@ Upgrade_Info :: struct {
 	max_level: int,
 	cost:      int, // crystals for the first level
 	cost_step: int, // added per level already owned
+	// Extra multiplier applied per level already owned. 0 or 1 = the flat
+	// linear curve; uncapped nodes use >1 so a long run has a real sink and
+	// keeps answering the escalating threats.
+	cost_growth: f32,
 	prereq:    Upgrade,
 	req_level: int, // level of `prereq` needed to unlock
 }
@@ -65,8 +71,8 @@ UPGRADES := [Upgrade]Upgrade_Info{
 	.NONE = {name = "-", desc = "", max_level = 0},
 
 	// --- roots ---
-	.Green_Thumb = {name = "Green Thumb", desc = "Farm/Well/Lumber: +2 food per level.", max_level = 3, cost = 5, cost_step = 5},
-	.Rich_Seams  = {name = "Rich Seams",  desc = "Mines and Quarries: +2 gold per level.", max_level = 3, cost = 5, cost_step = 5},
+	.Green_Thumb = {name = "Green Thumb", desc = "Farm/Well/Mill food: +25% per level. Uncapped.", max_level = 99, cost = 5, cost_step = 5, cost_growth = 1.20},
+	.Rich_Seams  = {name = "Rich Seams",  desc = "Mine/Quarry gold: +25% per level. Uncapped.", max_level = 99, cost = 5, cost_step = 5, cost_growth = 1.20},
 	.Masonry     = {name = "Masonry",     desc = "Builds and repairs cost 5% less per level.", max_level = 3, cost = 4, cost_step = 4},
 	.Bounty      = {name = "Bounty",      desc = "Defeated wilds drop +12% gold per level.", max_level = 3, cost = 4, cost_step = 4},
 	.Vigilance   = {name = "Vigilance",   desc = "Watchtowers/Beacons: +1 reveal and deter.", max_level = 3, cost = 4, cost_step = 4},
@@ -86,10 +92,10 @@ UPGRADES := [Upgrade]Upgrade_Info{
 	.Fortify       = {name = "Fortify",       desc = "Walls and Gates gain +15 HP per level.", max_level = 3, cost = 7, cost_step = 6, prereq = .Masonry, req_level = 1},
 	.Foundations   = {name = "Foundations",   desc = "Granary/Treasury/Silo store +25 per level.", max_level = 3, cost = 6, cost_step = 5, prereq = .Masonry, req_level = 2},
 	.Spikecraft    = {name = "Spikecraft",    desc = "Spike Traps deal +5% max HP per level.", max_level = 2, cost = 6, cost_step = 6, prereq = .Fortify, req_level = 1},
-	.Turret_Damage = {name = "Focused Barrels", desc = "Turrets deal +6 damage per level.", max_level = 5, cost = 8, cost_step = 7, prereq = .Armory, req_level = 1},
-	.Turret_Health = {name = "Reinforced Mounts", desc = "Turrets gain +12 HP per level.", max_level = 3, cost = 6, cost_step = 6, prereq = .Armory, req_level = 1},
+	.Turret_Damage = {name = "Focused Barrels", desc = "Turrets deal +6 damage per level. Uncapped.", max_level = 99, cost = 8, cost_step = 7, cost_growth = 1.22, prereq = .Armory, req_level = 1},
+	.Turret_Health = {name = "Reinforced Mounts", desc = "Turrets gain +12 HP per level. Uncapped.", max_level = 99, cost = 6, cost_step = 6, cost_growth = 1.20, prereq = .Armory, req_level = 1},
 	.Turret_Range  = {name = "Long Barrels",  desc = "Turrets shoot +1 tile further per level.", max_level = 2, cost = 10, cost_step = 8, prereq = .Armory, req_level = 2},
-	.Reservoir     = {name = "Reservoir",     desc = "Turrets store +2 more charge per level.", max_level = 3, cost = 7, cost_step = 6, prereq = .Hydraulics, req_level = 1},
+	.Reservoir     = {name = "Reservoir",     desc = "Turrets store +2 more charge per level. Uncapped.", max_level = 99, cost = 7, cost_step = 6, cost_growth = 1.18, prereq = .Hydraulics, req_level = 1},
 	.Forage        = {name = "Forage",        desc = "Defeated wilds drop +1 food per level.", max_level = 3, cost = 7, cost_step = 6, prereq = .Logistics, req_level = 2},
 	.Spoils        = {name = "Spoils",        desc = "Arena/Boss wins: +1 crystal per level.", max_level = 3, cost = 10, cost_step = 9, prereq = .Bounty, req_level = 2},
 	.Veterans      = {name = "Veterans",      desc = "Barracks grant +1 more XP per level.", max_level = 2, cost = 7, cost_step = 6, prereq = .Academy, req_level = 2},
@@ -124,10 +130,15 @@ UPGRADE_ORDER := [?]Upgrade{
 upgrade_name :: proc(u: Upgrade) -> cstring { return UPGRADES[u].name }
 upgrade_desc :: proc(u: Upgrade) -> cstring { return UPGRADES[u].desc }
 
-// Crystals to buy the next level, given how many are already owned.
+// Crystals to buy the next level, given how many are already owned. Capped
+// nodes climb linearly; uncapped ones compound by `cost_growth`.
 upgrade_cost :: proc(u: Upgrade, level: int) -> int {
 	info := UPGRADES[u]
-	return info.cost + info.cost_step * level
+	base := f32(info.cost + info.cost_step * level)
+	if info.cost_growth > 1.0 {
+		base *= math.pow(info.cost_growth, f32(level))
+	}
+	return max(int(base), 1)
 }
 
 // A node is available once its parent reaches the required level. Roots are
@@ -157,9 +168,11 @@ colony_buy_upgrade :: proc(c: ^Colony, u: Upgrade) -> int {
 
 // --- effect readers --------------------------------------------------------
 
-upgrade_food_bonus :: proc(c: ^Colony) -> int { return c.upgrades[.Green_Thumb] * 2 }
+// Green Thumb and Rich Seams are *percentage* lines: they scale with the base
+// yield, so they stay meaningful as the colony grows (and they are uncapped).
+upgrade_food_mult :: proc(c: ^Colony) -> f32 { return 1.0 + 0.25 * f32(c.upgrades[.Green_Thumb]) }
 upgrade_farm_food_bonus :: proc(c: ^Colony) -> int { return c.upgrades[.Bumper_Crop] * 3 }
-upgrade_gold_bonus :: proc(c: ^Colony) -> int { return c.upgrades[.Rich_Seams] * 2 }
+upgrade_gold_mult :: proc(c: ^Colony) -> f32 { return 1.0 + 0.25 * f32(c.upgrades[.Rich_Seams]) }
 upgrade_deep_core_bonus :: proc(c: ^Colony) -> int { return c.upgrades[.Deep_Core] * 3 }
 upgrade_masonry_mult :: proc(c: ^Colony) -> f32 { return max(1.0 - 0.05 * f32(c.upgrades[.Masonry]), 0.5) }
 upgrade_bounty_mult :: proc(c: ^Colony) -> f32 { return 1.0 + 0.12 * f32(c.upgrades[.Bounty]) }

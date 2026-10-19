@@ -101,19 +101,29 @@ Self-buffs and enemy debuffs share the same stat model, so a card can push a
 stat either way:
 
 - **Strength** — each point is **+10%** damage dealt (can go negative). Raised
-  by **Hone** (+5 str) and **Warcry** (+4 str, +1 def); lowered by **Weaken**
-  (−2 str) and **Disarm** (3 dmg, −2 str).
-- **Defense** — a temporary modifier on the defender. Raised by **Iron Skin /
-  Bark Skin / Warcry**; shredded by **Sunder** (5 dmg, −2 def) and **Corrode**
-  (−3 def).
+  by **Hone** (+5 str) and **Warcry** (+2 str, draw 1); lowered by **Depower**
+  (−2 str, −2 dex).
+- **Defense** — a temporary modifier on the defender. Raised by **Iron Skin**
+  (+3 def); shredded by **Sunder** (4 dmg, −3 def) and **Expose** (2 vuln,
+  −2 def).
+- **Dexterity** — a duration; each point adds **+1 Block** to every Block card.
+  Raised by **Footwork** (+2); lowered by **Disarm** (−3 dex) and **Depower**.
 - **Block** — a per-turn pool that absorbs damage, reset each round.
-- **Vulnerable** — each stack adds **+50%** damage taken (**×2.0** at 2 stacks,
-  etc.), ticking down one per turn (Screech, Cinder…).
+- **Vulnerable** — a **duration in turns** at a fixed **×1.5** damage taken (it
+  does not stack multiplicatively), ticking down one per turn (**Mark**, 3).
+- **Poison / Burn** — damage-over-time that decays each round. **Poison** phases
+  through Block (2%/stack of max HP); **Burn** is absorbed by Block (3%/stack)
+  *and* weakens the burned creature's damage (5%/stack, cap 50%).
+- **Stun (daze)** — loses card plays: it fumbles N cards at turn start, costs no
+  energy, and the turn continues (**Concuss**).
+- **Thorns** — reflects a **% of the attacker's max HP** on a diminishing curve,
+  spending a stack per hit.
+- **Haze** clears **stat boosts only**; **cleanse** (Antidote, Purify) clears
+  Poison / Burn / Stun.
 
-Weaken / Disarm / Sunder / Corrode are available to every species as **reward
-cards** (in `COMMON_MOVES`) and also sit in the starter decks of **Gloomling**
-(Weaken), **Wispling** (Disarm), **Bogfang** (Weaken), **Stonepaw** (Sunder) and
-**Venomtail** (Corrode), so wild monsters use them too.
+These cards reach you as **reward drops** (drawn from each species' own
+`move_pool`) and also sit in learnsets and starter decks, so wild monsters use
+them too.
 
 ### Turn order
 
@@ -130,25 +140,39 @@ and Speed both matter.
 
 Every species has a pool of **three passive abilities** (`ABILITY_POOLS` in
 `src/abilities.odin`); when a creature spawns it **rolls one at random**, so two
-Emberlings can play differently. Abilities fire at battle start, each turn, or
-on dealing damage:
+Emberlings can play differently. A boss always rolls its **signature** (the
+first entry in its pool). There are **21** abilities:
 
 | Ability | Effect |
 |---|---|
-| **Berserk** | +2 Strength at battle start |
+| **Berserk** | +3 Strength at battle start |
 | **Guardian** | +8 Block at battle start |
-| **Thick Hide** | +2 Defense at battle start |
-| **Swift** | +2 Speed for initiative |
+| **Thick Hide** | +3 Defense at battle start |
+| **Swift** | +4 Speed for initiative |
 | **Lucky** | draws 1 extra card each turn |
-| **Vampiric** | heals 2 whenever it deals card damage |
-| **Regenerator** | heals 4 at the end of each turn |
-| **Intimidate** | enemies start the fight with −2 Strength |
+| **Vampiric** | heals 25% of the damage it deals |
+| **Regenerator** | heals 6% of max HP at the end of each turn |
+| **Intimidate** | enemies start the fight with −3 Strength |
+| **Momentum** | +1 Strength at the start of each turn |
+| **Ironclad** | +1 Dexterity at the start of each turn |
+| **Aftershock** | its first Attack each turn hits twice |
+| **Envenom** | its Attacks apply 1 Poison |
+| **Predator** | ×1.25 damage against foes below half HP |
+| **Vengeance** | +1 Strength whenever it takes a hit |
+| **Resilient** | once a battle, survives a lethal blow at 25% HP |
+| **Abyssal** *(boss)* | takes ×0.70 damage while above half HP |
+| **Inferno** *(boss)* | burns every foe for 2 at the end of each turn |
+| **Colossus** *(boss)* | its Block is not cleared between rounds |
+| **Dominion** *(boss)* | strips 1 Strength from every foe each turn |
 
 Battle-start abilities are applied in `battle_start` (after the per-battle
-reset); the rest hook into `creature_begin_round` (Lucky), `creature_end_round`
-(Regenerator; Block is cleared here so **Guardian** keeps its Block through turn
-one), and `apply_damage` (Vampiric). The player panel and enemy rows show each
-fighter's ability, and the encyclopedia (`M`) lists every species' pool.
+reset). The rest hook in through `ability_begin_round` (Lucky, Momentum,
+Ironclad), `ability_defense_mult` / `ability_attack_mult` (Predator, Abyssal),
+`ability_on_hit_taken` (Vengeance), `ability_on_hit_poison` (Envenom),
+`ability_first_attack_doubles` (Aftershock), `ability_try_survive` (Resilient),
+`ability_keeps_block` (Colossus) and the end-of-turn pass (Regenerator,
+Inferno, Dominion). The player panel and enemy rows show each fighter's ability,
+and the encyclopedia (`M`) lists every species' pool.
 
 ### Items
 
@@ -406,8 +430,9 @@ it stored, is lost).
   streamed with `LoadMusicStreamFromMemory` so it loops seamlessly.
 - `audio` is a package-level singleton: any file fires a cue with
   `audio_play(.BUILD)`. Cues are hooked on build/repair, card play and battle
-  hits, victory/defeat, level-up, crystals, raids, end-turn, save/load and
-  starter choice.
+  hits — plus **BUFF / BLOCK / DOT** cues for the battle effects — as well as
+  victory/defeat, level-up, crystals, raids, end-turn, save/load and starter
+  choice. In battle `battle_sfx` keeps headless skirmishes silent.
 - If the device can't open, everything no-ops. **`F2`** toggles mute.
 
 ## Rewards & deck-building choices
@@ -415,7 +440,10 @@ it stored, is lost).
 - Reward cards are **no longer given after every battle** — they become **rare
   drops**.
 - Drop tables are **per species and per level**.
-- Many **special moves** only come from reward cards.
+- Reward drops draw **only** from a species' own `move_pool` (rarity-weighted),
+  so what you are offered always fits the monster. There is no shared pool of
+  generic cards: a move lives in the `move_pool` of every species that should
+  be able to learn it, and a card can appear both in a learnset and as a drop.
 - **You choose your cards — or decline.** Every level that unlocks a move raises
   a **`LEVEL UP!` prompt** (one card if the level unlocks one, up to 3 if
   several), and a **reward drop** offers **3 cards**. In both cases you can
@@ -805,4 +833,623 @@ it stored, is lost).
   `Discard N` readout, `draw_pile_readout`) opens `draw_piles` — a modal listing
   the active monster's **draw pile** and **discard pile** (name, cost, element).
   The stale "V deck" hint became "D piles".
+- Phase 32 ✅ **card systems & powers**: the `Move` struct grew a whole
+  vocabulary — **X-cost** cards (`x_cost`), **Retain**, **Ethereal**,
+  discard-hand / exhaust-hand, energy sabotage and self-energy, block/strength/
+  poison/burn **doublers**, `scale_per_exhausted`, **Dexterity** and **Speed**
+  modifiers, `offense_stat` (Body Press: damage from Defense), `unplayable` +
+  `hand_damage` (Wound), junk-card generation and `cleanse_status`. Cards carry
+  a `Card_Kind` (ATTACK / SKILL / POWER). **Powers** (`src/powers.odin`) are
+  per-battle permanent effects granted by POWER cards — Barricade, Juggernaut,
+  Demon Form, Metronome, Sanguine, Scavenger, Rage, Combustion, Toxic, Bastion
+  and Flow — shown as purple chips. Targeting collapsed into one `Move.targets`
+  bit set (empty = enemy-only).
+- Phase 33 ✅ **status & combat rework**: **Stun** became **daze** — it loses
+  card plays (fumbles N cards at turn start; no energy cost, turn continues).
+  **Vulnerable** is now a **duration in turns** at a fixed **×1.5**, not a
+  stacking multiplier. **Thorns** reflects a **% of the attacker's max HP** on a
+  diminishing curve (never reaching 100%), spending a stack per hit. **Burn**
+  and **Poison** split: Poison phases through Block (2%/stack), while Burn is
+  absorbed by Block (3%/stack) *and* weakens the burned creature's damage
+  (5%/stack, cap 50%). **Haze** clears stat boosts only; the new **cleanse**
+  clears Poison/Burn/Stun (Antidote, Purify). Lifesteal and thorns fire **per
+  hit**, so multi-hit cards interact correctly. Skirmishes and predation run
+  the **real battle engine headlessly** (`src/skirmish.odin`,
+  `run_headless_battle`, budgeted at 8 battles a turn then a stat fallback),
+  crowd fights split a tile into two sides and run one battle, and the world
+  events are now **Tremor / Stampede / Distant Roar / Migration** (never
+  rewriting terrain). A camera-based **UI scale factor** (`src/screen.odin`)
+  renders a 1280×720 design space scaled to the window, so text stays crisp at
+  any size.
+- Phase 34 ✅ **content revamp — roster, builds & evolutions**: the roster was
+  rebuilt from scratch around **3 starter lines + 5 bosses + 40 wild species**.
+  Each starter line runs three stages and **stages 2 and 3 are dual-typed**
+  (Emberling → Cinderscale → Magmalisk, Ember/Ground; Tidepup → Ripfin →
+  Tidewyrm, Aqua/Ice; Sproutle → Thornbud → Blightbloom, Flora/Poison). Every
+  species' learnset is a **build menu**: each level offers **three moves, one
+  per build column**, so a level-up commits a direction (the fire line's Fury /
+  Pyre / Ruin, and so on), and evolved stages add further tiers per column.
+  **Evolutions** are data (`Species.evolves_to` / `evolve_level`) and the
+  encyclopedia draws the **whole chain** with the levels between stages. **32
+  wilds** spawn from per-terrain tables and **8 of them evolve** (Grubling →
+  Rotshell, Vesperling → Nightwing, Thornkit → Thornmaw, Bubblet → Bubblord,
+  Snowpup → Frostfang, Magmite → Magmaw, Sporeling → Sporelord, Sparkit →
+  Voltail); a wild spawned at or past its evolve level may arrive **already
+  evolved** (`wild_mature_species`), and boss packs field a themed retinue of
+  real wilds. The ability roster grew to **21** (adding Momentum, Ironclad,
+  Aftershock, Envenom, Predator, Vengeance and Resilient, plus the boss-only
+  Abyssal, Inferno, Colossus and Dominion). Reward drops come **only** from a
+  species' own `move_pool` — there is no shared generic card pool.
+  **`SAVE_VERSION` is 5** — the rework reordered species and move ordinals, so
+  older saves are rejected rather than loaded corrupt.
+- Phase 35 ✅ **effect feedback everywhere**: every battle effect now announces
+  itself with a popup + burst + cue, including the ones that used to fire
+  silently. The per-turn triggers — **Momentum**, **Ironclad**, **Demon Form**,
+  **Bastion**, **Flow** and **Metronome** — pop their gain each round;
+  **Vengeance** pops when it gains Strength from a hit; and **Resilient** now
+  visibly saves you (popup, gold burst, cue and a log) instead of surviving
+  quietly, since `apply_damage` had no battle handle to report through. The
+  battle-start buffs (**Berserk**, **Guardian**, **Thick Hide**, **Swift**,
+  **Intimidate** and item buffs) pop as the fight opens. Card flow got popups
+  too: **draws** (Lucky, Warcry, Gambit, Scavenger), **junk cards** handed to a
+  hand, **discard / exhaust hand**, and **Haze / cleanse** now report how much
+  they wiped. Three new popup kinds (DRAW, JUNK, CLEAR) and three new cues
+  (BUFF, BLOCK, DOT) back it, and `battle_sfx` keeps headless skirmishes quiet.
+- Phase 36 ✅ **battle UI for big fights**: the HUD keeps a panel in each top
+  corner — yours left, the **selected target right** — and the enemy row now
+  lives in the band **between** them, so no enemy card can run under a panel or
+  off the screen. The row shows as many foes as fit (`enemy_visible_count`) and
+  scrolls the rest into view with the wheel, `[` / `]`, or a click, with a
+  `first-last of N` hint and edge arrows; it auto-scrolls to keep the target on
+  screen, and only on-screen foes are clickable. Enemy cards are compact —
+  avatar, name, level, type chips, ability, HP and energy — with their boosts
+  reduced to small colour-coded dots, since a full chip row ran hundreds of
+  pixels wide. The target panel mirrors the player panel exactly (avatar, name,
+  ability, level/type/stats, HP, energy, rarity, **active boosts**), and the
+  panel's stat line is split across two rows because `Lvl / type / PWR / DEF /
+  SPD` on one line overflowed the box. The initiative bar is capped to the gap
+  between the two panels.
+- Phase 37 ✅ **move dex, readable key hints & a tutorial**: **`L`** opens a
+  **move dex** — every card in the game in a scrolling list (cost on the right),
+  with a detail panel showing element / rarity / kind chips, the flavour line,
+  and an **effect breakdown generated from the card's own data**
+  (`move_lines`) rather than hand-written prose, plus a **LEARNED BY** line
+  listing the species whose `move_pool` carries it. The map's key hints were two
+  full-width lines that overflowed the screen; they are now **one centred line
+  of the most useful keys**, with the full list left to `K`. And the opening
+  turns now show a **tutorial tip** — one short contextual hint per turn for the
+  first eight turns (`TUTORIAL_HINTS`, **build first**), in a box the player can
+  click to open the **TIPS window**: all eight hints again in order, reachable
+  any time from the `K` help panel (and carrying a **show-at-start** toggle).
+- Phase 38 ✅ **temp-allocator leak fixed**: `fmt.ctprintf` (used ~260 times in
+  the draw code) allocates from `context.temp_allocator`, and the frame loop
+  never reset it, so the process climbed by ~12MB per 600k calls — a steady leak
+  while playing. Both loops (desktop and web) now `free_all` the temp allocator
+  at the end of every frame, and `set_status` **copies** its text into an owned
+  buffer (`Game.status_buf`) rather than keeping the pointer, so the two
+  `set_status(g, fmt.ctprintf(...))` callers can no longer dangle.
+- Phase 39 ✅ **revamp batch 1 — dead content wired up**: three finished things
+  had no delivery. **Dazzle** (1 Stun + 2 `Dazed` into the foe's hand) finally
+  creates the `Dazed` junk card, which nothing could produce before.
+  **Metronome** and **Scavenger** are now POWER cards (combo Strength /
+  draw-on-exhaust), so every power has a granting card, and **Slime Spit**
+  (Poison: 5 damage + 2 `Dazed`) spreads the daze as an attack. **Intimidate**
+  finally sits in a species pool (Sentinel, Slagbeast). New cards append to the
+  end of `Move_Id` so existing save ordinals don't shift.
+- Phase 40 ✅ **revamp batch 2 — elemental top-ups**: Electric, Flora, Ice and
+  Air were thin (2–3 cards each), so **twelve new cards** fill them out at
+  roughly the existing rate (~5 damage / 8–10 Block per energy). **Electric**
+  gets a real identity — chip damage (**Jolt**), stun (**Static Shock**), energy
+  denial (**Short Circuit**), chain (**Chain Lightning**), a battery
+  (**Capacitor**) and an X-cost finisher (**Overcharge**) — going from 2 cards
+  to 8. **Flora** gains **Thorn Volley** and **Photosynthesis**, **Ice** gains
+  **Frost Nova** and **Ice Wall**, **Air** gains **Updraft** and **Tailwind**,
+  so every element now has 5 or more. **Every element also gets a premium
+  attack** at the 6-damage-per-energy rate with a twist of its own —
+  **Firestorm** (15 + 3 Burn), **Tidal Crash** (18), **Bramble Crush** (16 + 2
+  Thorns), **Avalanche** (15 + 3 Vulnerable), **Fault Line** (16 + −3 Def),
+  **Supercell** (15 + Stun), **Gale Force** (6×3), **Venom Fang** (12 + 4
+  Poison) — plus **Riptide** (4×2, drain) rounding Aqua up to 6. The baseline
+  card is 5 damage per energy; these are the 15–18 damage finishers.
+- Phase 41 ✅ **AoE cards**: `Move.aoe` makes a card hit **every living foe at
+  once** — damage and hostile statuses loop over all of them, while the
+  caster-side effects (Block, buffs, powers) still land once. **Earthquake**
+  (Ground, 3.0, RARE) is the first: 12 damage to every foe. Single-target
+  resolution is unchanged, and the AI values an AoE well above its per-target
+  number (`move_value` +28) so wilds will actually use one.
+- Phase 42 ✅ **staggered hit feedback**: damage still resolves instantly, so
+  the game logic never waits, but the *feedback* now goes through a queue
+  (`Battle.hit_fx`) that plays out in `battle_update`. Events are grouped into
+  **waves by hit index**, so a multi-hit card reads as several impacts — one
+  popup, spark, flinch and cue per hit, 60ms apart — while a **spread (AoE)**
+  card is a single wave, hitting every victim at the same instant. The old
+  aggregated per-victim damage number is gone in favour of per-hit numbers, and
+  `drain_hit_fx` runs in every phase (including headless skirmishes).
+- Phase 43 ✅ **revamp batch 3 — held items**: the 12 items were flat stat
+  sticks; they are now **held items**, each a rule that hooks a specific
+  synergy. Offense: **Bloodstone** (+30% damage, 3% max-HP recoil per Attack),
+  **Weakpoint Lens** (+25% on super-effective hits), **Ricochet Charm**
+  (multi-hit Attacks land one extra hit). Synergy: **Siphon Gland** (+50% drain
+  / lifesteal), **Venom Sac** (+1 Poison/Burn stack), **Spiked Carapace** (start
+  with 2 Thorns). Sustain and defense: **Ration Pouch** (4%/turn), **Amber
+  Fruit** (once, heal 25% below half HP), **Cleansing Bloom** (cleanse each
+  turn), **Grit Charm** (survive one lethal blow at 1 HP) and **Grudge Idol**
+  (+2 Strength when hit super-effectively). **Snare Kit** stays colony-facing.
+  The enum keeps its 12 slots in order, so old saves still load.
+- Phase 44 ✅ **revamp batch 4 — Relic Towers**: relics are no longer
+  colony-wide. Each one must be slotted into a **Relic Tower** (a new
+  improvement, 60g, 3 slots, 60 HP) and then projects over a **5-tile radius**
+  around it, so relics became a base-building decision rather than a passive
+  pile. The 10 relics were reworked around what "in range" means: **battle**
+  relics (**War Banner** +2 Str, **Iron Idol** +10 Block, **Swift Totem** +4
+  Speed, **Mana Shard** +1 energy regen, **Warden's Seal** +2 Thorns) buff your
+  party for a fight inside the radius, **economy** relics (**Coin of Plenty**,
+  **Harvest Charm**, **Siege Core**) boost the Mines, Farms and Turrets inside
+  it, and **post-battle** relics (**Crystal Prism**, **Beast Fang**) pay out for
+  wins there. Copies stack. The `J` panel gained **Place** / **Take** buttons
+  (Place arms a click-on-the-tower mode with an on-map banner), the build panel
+  and tile readout list a tower's contents, and `SAVE_VERSION` is **6** because
+  tiles now carry their slots.
+- Phase 45 ✅ **revamp batch 4b — one inventory**: relics became **bag entries**
+  instead of a separate count array (`Colony.relic_bag` replaces
+  `Colony.relics`), so items and relics live in one place and the `J` relic
+  panel is gone (`J` is now an alias for the inventory). The bag panel was
+  rewritten as a proper **inventory screen**: a **slot grid** (items first, then
+  relics) with a per-slot procedural icon, a detail pane showing the name, kind,
+  description and full effect breakdown, and action buttons — **Equip** /
+  **Unequip** for items (onto the map-selected monster) and **Place** /
+  **Take back** for relics. `SAVE_VERSION` is **7** for the new bag layout.
+- Phase 46 ✅ **revamp batch 5 — the quest board**: the 10 easy milestones
+  became a **20-entry ladder** running from "build your first Farm" out to
+  **slaying each of the five bosses**, surviving **150 turns**, winning **50
+  battles**, weathering **10 raids** and commanding **20 monsters**. Rewards
+  scale with the target (96 crystals total, up from 27), and the board pays into
+  `crystals_earned` too. Per-boss quests needed boss tracking, so the colony
+  gained `bosses_slain[Species_Id]` (set on a `.BOSS` kill, saved —
+  `SAVE_VERSION` is **8**), and the panel is now a **two-column** board. The
+  Deep One was also missing from the boss spawn table, so it could never be
+  fought — that is fixed (5 bosses, 5 spawns).
+- Phase 47 ✅ **energy, and rewards scoped to the fight**: creatures were created
+  with `energy = 0` against a bank of 10–17 and ~2 regen a turn, so a wild
+  spawned that turn fought on fumes (and so did a fresh starter). Every creature
+  now spawns **charged** (`energy = energy_max`). Separately, `resolve_won` paid
+  the **Arena** bounty from the *tile* — any wandering wild standing on an Arena
+  paid 5 crystals — and the **Boss** bounty likewise. Both are now scoped to the
+  fight: the Arena reward needs a **paid challenge** (`Game.battle_arena`, since
+  `finish_battle` clears it mid-resolve it is captured up front) and the Boss
+  reward needs an actual **`.BOSS` kill**. The hovered-tile readout now explains
+  Arena / Trading Post / Boss Room tiles, which is how you start an Arena fight:
+  stand a monster there and press **T**.
+- Phase 48 ✅ **wild fight-readiness**: a plain wild that wanders onto one of
+  your monsters starts the fight, so wilds now **hold off unless they are
+  charged** — below **40%** of their energy bank they will not step onto your
+  monsters (or start a crowded-tile brawl), and above that the odds scale with
+  energy, so a full wild almost always commits. Verified: 0–39% energy = never,
+  50% = ~48%, 80% = ~79%, 100% = always. Raiders, alphas and sieges still hunt
+  deliberately. (A procedural creature-sprite pass was tried here and reverted —
+  the circles keep their letter until per-species art exists.)
+- Phase 49 ✅ **revamp batch 6 — base building**: a proper perimeter is
+  affordable now — **Wall 15→6**, **Gate 12→5**, **Drawbridge 16→8**, Spike Trap
+  18→9, Scarecrow 8→5, Road 10→6 — and the repeat-build divisor for Walls and
+  Gates went **6 → 16**, so the eleventh wall still costs 6. Three new
+  improvements round out a base: **Ward Stone** (every Relic Tower within 4
+  projects 2 tiles further, so a ring of stones turns one tower into a
+  district-wide aura), **Training Yard** (a monster standing on it gains 8 XP a
+  turn, for bringing a recruit up without feeding it to fights) and **Caltrops**
+  (a nastier Spike Trap at 24% max HP/turn). Finally, the crystal tree gained
+  **uncapped nodes**: `Upgrade_Info.cost_growth` compounds the price per level,
+  and Focused Barrels, Reinforced Mounts, Reservoir, Green Thumb and Rich Seams
+  are now unlimited (Focused Barrels: 8 → 116 → 1000 → 7896 crystals at levels
+  0/5/12/20) so Turrets can keep pace with the escalating threats. The panel
+  caps its pips at 8 and shows a `Lv N` readout for those nodes.
+- Phase 50 ✅ **percentage lines, a Battery, and a reason to fight the Arena**:
+  **Green Thumb** and **Rich Seams** are now **percentage** lines (**+25%** food
+  / gold per level) instead of flat +2s, so they scale with the base yield as
+  the colony grows — verified a staffed Farm goes 6 → 12 food at 4 levels. New
+  improvement **Battery**: when every Turret and Mender in a Fountain's reach is
+  already full, the surplus pours into a Battery within 4 tiles instead of being
+  wasted, and Turrets within 4 draw from it whenever their own cells run dry.
+  Verified: a full Turret banked 3 charge, and a dry Turret drew 2 back to fire.
+  Energy transfers are now **visible**: charging a Turret / Mender / Battery
+  floats a `+N en`, a Turret drawing from a Battery floats what it took, and
+  Menders and Batteries carry a small **charge bar** under their icon (plus a
+  Battery link ring) so you can see a tank filling or running dry.
+  Finally, the **Arena** is now worth entering: it is the hardest fight in the
+  game, so it pays **12 crystals** (double a boss) and **always drops an item**,
+  making it the crystal farm while Boss Rooms stay the relic source. Bosses
+  re-lair every **30** turns.
+- Phase 51 ✅ **battle HUD, ring clarity & a fair Arena**: the initiative bar's
+  `NEXT` label moved back under the chips (it was touching the turn counter),
+  and the party field now gives the **acting** monster the big outer ring while
+  the selected teammate only gets a thin inner border — the yellow halo used to
+  be the most prominent thing on the field, so it read as "this one is moving".
+  An
+  **Arena** fight now also strips every colony-side battle effect: no relics, no
+  Watchtower guard Block, no Drills, no Beacon mark, no Kitchen rations and
+  no Scout capture edge. Only monsters, decks, abilities and items decide it.
+  Verified: the same fight gives 22 Block outside the Arena and **0** inside.
+- Phase 52 ✅ **damage estimates always show**: the hover readout on an attack
+  card was gated on `Battle.sel_kind == .ENEMY`, and that flag is **sticky** —
+  once you targeted one of your own monsters to play a support card, every
+  attack card silently stopped showing its damage. The readout now follows
+  `pick_card_target`, i.e. whoever the card would *actually* land on, so an
+  enemy-only attack always shows its estimate while a self/ally card correctly
+  shows none.
 
+- Phase 53 ✅ **heat drives difficulty, and the Arena becomes a tower**: wild and
+  boss level no longer uses turn escalation at all — `wild_threat_level` reads
+  **heat** (your footprint: improvements and monster levels), so a quiet colony
+  faces quiet wilds and a loud one draws monsters grown to match. Verified:
+  heat 0 at turn 5 and at turn 300 both give level 1, while heat 60 gives 21 —
+  camping no longer hardens the underground. The **Arena** is now a **ladder of
+  curated teams**: each win takes you a floor higher, teams grow (2 → 6) and
+  step through four species tiers (basics → mid forms → finals → the bosses),
+  and the level is `max(base + floor, the average level of the party you brought
+  +
+  floor/2)` — so the tower is built to beat *you*, which is what finally gives
+  breeding and late game deck-building something to aim at. The entry fee and
+  purse both climb with the floor (floor 100: 440g in, 212 crystals out). Losing
+  drops you to floor 1 but **keeps your best floor** as the high score, and four
+  new milestones reward reaching floors 10 / 25 / 50 / **100**. `SAVE_VERSION`
+  is **9**.
+
+- Phase 54 ✅ **the Arena is a run**: one **flat** entry fee (40g) buys a chain
+  of floors that always starts at **floor 1**. Each cleared floor **banks** its
+  purse instead of paying it; the run ends when you **cash out** (banking the
+  winnings) or when your party **wipes** (losing them, and dropping you to
+  floor 1 — your best floor stays as the record). The payout is therefore a
+  function of how deep you got. Arenas **drop gold** too (25 + 2·floor per
+  cleared floor, on top of kill loot). And the tower gets **stingier as you
+  climb**: a between-floor party heal comes every **1 / 2 / 5 / 10 / 20** floors
+  (below 10, 30, 60, 120, then every 20), which is how difficulty scales without
+  a brutal level curve. New capstone milestone: **reach Arena floor 1000**
+  (+100 crystals), and the quest board is now three columns to hold it.
+  `SAVE_VERSION` is **10**.
+- Phase 55 ✅ **full restores, two cadences**: the tower's between-floor rest is
+  now a **complete** heal (HP to max, and every ailment cleansed) rather than a
+  percentage, and the **energy refill is a separate, later cadence** — not a
+  change to in-battle regen. HP comes back every **1 / 2 / 5 / 10 / 20** floors
+  (below 10, 30, 60, 120, then every 20); energy refills after *every* floor at
+  first, and only thins below floors **20 / 50 / 100 / 200** (then every 20).
+  The gap between the two is the tower's curve: level numbers stay sane while
+  your team stops being topped up.
+
+- Phase 56 ✅ **Arena sets and a weighted roster** (`src/sets.odin`): the tower
+  no longer fields curated tier teams. Every species owns **three sets**, each a
+  loadout of **ability + item + deck** (generated from that species' own move
+  pool as a starting point, and meant to be hand-edited). The builder rolls a
+  set per challenger, so one species can turn up as a **Striker**, a
+  **Controller** or a **Bulwark**. Species are picked by a **soft band over
+  roster rank**: the power the tower wants lerps from the weakest species to the
+  strongest across `ARENA_RAMP_FLOORS` (250) floors, and a species' weight falls
+  off with its distance *in rank* from that target — rank, not raw power,
+  because two thirds of the roster is near-identical weak wilds that would
+  otherwise swamp any power-based band. So floor 1 is weak wilds, the middle is
+  the evolved lines, and the deep floors are the bosses. **Rarity plays no
+  part** (it governs findability, not strength), a species already on the team
+  is down-weighted rather than banned (`ARENA_REPEAT`), and challengers skip
+  wild maturation since the builder already picks by strength.
+- Phase 57 ✅ **the tower's level curve is logarithmic**: the challengers are
+  levelled from the party's average level **at the moment the run started**
+  (`arena_base_level`, so the tower doesn't drift up under you mid-run), scaled
+  by `1 + 0.3·ln(floor)` — the same slow shape as `energy_scale`. A party of
+  level 30 meets level 30 on floor 1, 71 on floor 100 and 92 on floor 1000. A
+  flat "+1 per floor" put floor 1000 thousands of levels away; this keeps the
+  whole tower reachable and lets the attrition carry the difficulty.
+
+- Phase 58 ✅ **deep floors stay varied**: the tower no longer collapses to
+  nothing but bosses. Two changes. First, the pick band **widens as you climb**
+  (`arena_spread`, 4.5 ranks up to 11), so the strong regulars stay in the
+  lineup. Second, a non-boss challenger is levelled by a **multiplier** that
+  ramps in with the floor (`1 + floor/800`, so 1.0× on floor 1 and 2.25× at
+  floor 1000) to stand beside the bosses' unique abilities and much larger base
+  stats. Floor 1 is still an even fight; floor 1000 is roughly half bosses and
+  half levelled regulars.
+
+- Phase 59 ✅ **synergy sets**: `src/sets.odin` is regenerated so every set is
+  built around a real **synergy** from that species' own move pool — a poison
+  engine ending in Catalyst, a block wall that swings with Body Press, a thorn
+  shell, a strength ramp, a multi-hit swarm, a vulnerable ambush, a tempo loop,
+  an exhaust payoff (Finale), a stun lock, a sustain grind, a reckless low-HP
+  gamble, a defence-shred sweep, a speed package. The held item and the ability
+  are chosen to reinforce the plan. A species' three sets are its three best
+  fits; if a pool cannot support three real synergies it gets honest generic
+  ones (**Bruiser** / **Warden** / **Skirmisher**) instead of a synergy it
+  cannot run. So a challenger is never just a wild with a bigger number.
+
+- Phase 60 ✅ **the battle row fits a whole Arena team**: the enemy row is now a
+  **full-width band below the two corner panels** instead of the gap between
+  them, so **nine** challengers are on screen at once and a six-monster team
+  never needs scrolling. The cards are slightly more compact (smaller avatars,
+  tighter text) to fit, a pack smaller than the row is **centred** rather than
+  bunched left, and the scroll arrows either side are now **clickable**
+  (alongside the wheel and `[` / `]`).
+- Phase 61 ✅ **the tower levels on *your* curve, and never looks at your
+  team**: the challenger level is a **pure function of the current floor and the
+  party average you walked in with** (`arena_base_level`, recorded when the run
+  starts). Nothing in it reads your monsters as they stand, so there is nothing
+  to be gained by holding them back to keep the challengers weak.
+  The shape is the shape of levelling. Walk the floors letting the tower earn
+  what a monster earns from the same fights — one kill's XP per challenger
+  (`ARENA_XP_PER_KILL`, the same `killed_levels * 10` the colony uses) at the
+  level being fielded — and spend it on `xp_to_next`. A level-30 entry meets 37
+  on floor 10, 103 on floor 50 and 2001 on floor 1000; a monster that actually
+  fought every one of those floors lands at 37 / 102 / 1995. So the tower climbs
+  with you, at about one level per three challengers. (An earlier version banked
+  the XP your team earned, which quietly rewarded keeping monsters underlevelled
+  — hence the pure function.)
+
+- Phase 62 ✅ **the party field sits lower**: the enemy row's bars and boost dots
+  were crowding the ring around the acting monster. The field is 10px shorter
+  and 16px lower, the hovered-card tooltip tucks in closer to the hand, and the
+  enemy row drops with it — 8px of clear air between the row and the ring now,
+  and nothing overlaps the tooltip.
+
+- Phase 63 ✅ **six strong wilds** (the elite tier, `Species_Role.ELITE` — the
+  role that had never been used). `Ashfang` (Ember/Air, fast striker),
+  `Stormwing` (Electric/Air, storm flier), `Bogmaw` (Poison/Aqua, poison
+  engine), `Dreadhorn` (Ground/Ember, charger), `Rimewarden` (Ice/Ground,
+  glacier tank) and `Gravemaw` (Neutral/Ground, the heaviest). They are regular
+  monsters, not bosses, but built to stand beside one — their power scores
+  (4.99, 5.32, 5.61, 6.09, 6.65, 7.50) fill the stretch between the evolved
+  lines (4.28) and the bosses (6.2–10.2) that was previously empty, which is
+  what makes the deep floors varied instead of a parade of five bosses. Each
+  spawns rarely in one fitting terrain (lava, crystal cove, jungle, desert,
+  tundra, dungeon) and each gets three synergy sets of its own. `SAVE_VERSION`
+  is **12**.
+- Phase 64 ✅ **Arena trials**: every tenth floor is a set-piece. Most are
+  **gyms** — a fixed, hand-built team from a cycling list of eight, each with a
+  theme, one boss leading it and members fighting as *named* sets (so the list
+  survives the generator reshuffling), at `ARENA_GYM_LEVEL_MULT` (1.25) above
+  the floor. Every third trial is instead an **event**: a decision floor with no
+  fight. The tower offers three concrete changes to the team you brought — trade
+  a card for a better one from that monster's move pool, swap an ability for
+  another its species can have, take a held item, take a relic, or mend the
+  party — and you may always **walk on unchanged**. Offers are seeded off the
+  floor alone, so backing out and coming back never re-rolls them. Floors
+  10/20/40/50/70/80… are gyms; 30/60/90/120… are events.
+
+- Phase 65 ✅ **a sample team, for testing** (`SAMPLE_TEAM`): press **`** in the
+  colony view and six ready-made monsters arrive at your entrance — Gravemaw
+  (Bulwark/Grit Charm), Rimewarden (Bramble/Spiked Carapace), Bogmaw
+  (Blight/Venom Sac), Stormwing (Daze/Cleansing Bloom), Ashfang (Fury/
+  Bloodstone) and Dreadhorn (Ambush/Weakpoint Lens), each running its named set
+  at your best monster's level, so the tower is an even fight.
+- Phase 66 ✅ **trials are seeded per run, and announced**: entering the tower
+  draws an `arena_run_seed`, and both the gym order and the event offers are
+  derived from it — so a run is coherent (no gym repeats until the whole list
+  has been seen, and the same floor offers the same thing however many times you
+  look) while the next run is different. The panel now shows what is coming
+  (`Ahead: 10 Emberworks  20 a decision  30 Tidehollow`), so a run can be
+  planned around its gyms rather than reacted to. And **entering floor 1
+  refills the party's energy** (`arena_refill_party`), so the energy spent
+  walking to the Arena tile does not come out of the first fight.
+  `SAVE_VERSION` is **14**.
+- Phase 67 ✅ **six is the party, and the picker says so**: the Arena is a
+  formal challenge, so it is fought by the monsters **standing on the tile**
+  (`build_attack` radius 0) rather than everyone within a hex of it — and a tile
+  holds six (`MAX_MONSTERS_PER_TILE`), so the party can never exceed a battle's
+  `PARTY_MAX`. The attacker picker also **refuses a seventh tick** instead of
+  quietly dropping it. And its rows are now two-line — name on the first line
+  (clipped with `fit_text`, so a long name can never run into the HP and
+  distance), level/HP/distance on the second — with enemy names clipped before
+  their element chips. Long names no longer overrun the panel.
+
+- Phase 68 ✅ **relics gained in a run are temporary**: an event's relic offer no
+  longer puts a permanent relic in the bag (which could be farmed — enter, take
+  a relic on floor 30, cash out, repeat). It grants a **run boon**
+  (`Colony.arena_boons`, capped at `ARENA_BOON_CAP` 6): it works for the rest of
+  the run — the Arena strips colony relics, so a boon is the one relic effect
+  that *does* apply there — and it is dropped the moment the run ends, whether
+  you cash out or wipe. The panel lists them (`Run boons:  Mana Shard x2, ...`),
+  the offer is replaced by a rest once you're full, and they survive a mid-run
+  save. `SAVE_VERSION` is **15**.
+- Phase 69 ✅ **the party is always six, and the screens say so**: every floor
+  fields a full team of `ARENA_TEAM_SIZE` (the ramp from two challengers up is
+  gone — the tower is meant to be an even fight against a rival colony, not a
+  warm-up), and the AMBUSH/ATTACK panel lays its attacker and defender names out
+  in a **grid** (three columns, two rows) so a full party can never run off the
+  side. Its panel grew to hold them. The enemy card's avatar shrank to a radius
+  of 26, which gives the ability line its own row above it instead of touching
+  the art, and the **battle log** moved back into a column of its own at the
+  left (the enemy row now starts at `ENEMY_ROW_LEFT`, still seven cards wide, so
+  six are always visible). Log messages **word-wrap** into that column rather
+  than being clipped, and the oldest lines fall off the top when it fills.
+
+- Phase 70 ✅ **the Arena is its own screen** (`Game_Mode.ARENA`): a run is no
+  longer a modal over the colony map. Entering the tower puts you on a dedicated
+  screen — floor and record on the left, **your party** on the right (level, HP,
+  energy, ability, item), and Enter / Cash out / Save / Abandon across the
+  bottom. A won floor returns you **here**, not to the map, so the party you
+  brought is the party you climb with: the colony is out of reach until the run
+  is settled, and Esc only backs out when there is nothing at stake. The run is
+  **autosaved after every floor** (and there is a Save button), so a long climb
+  can be put down and picked up — a loaded save with a run in progress resumes
+  on this screen. A wipe, a cash-out or an abandon all end the run and hand you
+  back the colony.
+- Phase 71 ✅ **the battle can no longer spin or stall**: three bugs, all found
+  by running 400 auto-fights to completion.
+  (1) `choose_enemy_card` skipped any card whose `move_value` was negative — and
+  a **Dazed** scores -4 because it exhausts — while the turn gate counted it as
+  playable, so a monster holding one got handed a turn it could never take, and
+  the fight span forever. The gate and both AIs now share one predicate
+  (`card_worth_playing`), and a chooser that still finds nothing retires the
+  monster for the round rather than letting `advance` hand it the same turn
+  back.
+  (2) A side that was **already wiped** but not marked so (killed by item
+  recoil, a poison tick, reflected thorns — not by the damage code) left the
+  other side taking turns at nobody; `advance` now settles a wiped side itself.
+  (3) **Auto-fights settle themselves** instead of waiting for a click that
+  never comes. The flat **30-round cap is gone**: a fight only ends early on a
+  genuine standstill (`STALL_ROUNDS` 12 rounds with no HP lost on either side),
+  with `SAFETY_ROUNDS` (200) as a last-ditch net so a bug can never freeze the
+  game. A 480-fight sample averages 2.9 rounds and tops out at 12.
+
+- Phase 72 ✅ **the tower pays far less, and pays late**: `arena_floor_purse` is
+  back-loaded — **nothing at all** for the first twenty floors, then a trickle
+  (1 crystal at floor 50, 4 at 100, 12 at 250, 29 at 500, 73 at 1000). A run to
+  floor 100 now banks **124 crystals** where it used to bank about ten thousand.
+
+- Phase 73 ✅ **the battle log moved into the gap above the enemies**, between
+  the two corner panels — it was touching the player panel and, once the enemy
+  row went full width, covering the left-hand avatars. That gap is 552px wide,
+  so a message fits on one line, and the log now keeps the **last 40** messages
+  and **scrolls** (wheel over it, or PgUp/PgDn; a new line snaps back to the
+  present). The enemy row is full width again.
+- Phase 74 ✅ **the Arena screen's columns no longer collide**: the left column's
+  lines ran under the party panel, and the party rows stacked their HP number,
+  HP bar, item and energy bar on top of each other. The party row is now three
+  clear bands — name and ability, then the HP bar with its number centred inside
+  it (shadowed so it reads over the fill), then a short energy bar with the held
+  item to its right — at `ARENA_ROW_H` (50). The panel grew to 900x520 so six
+  rows fit above the buttons, every left-column line is clipped to
+  `ARENA_COL_W` (430) with `fit_text`, and the two lines that were too long were
+  shortened. Longest line now measures 396px against 430.
+- Phase 75 ✅ **items: earned at trial floors, chosen by hand, swappable
+  mid-run**. Arena floors no longer drop items — a tower climb would otherwise
+  be an item faucet, and the trial floors are where a run hands out gear. And
+  the inventory is rebuilt around the thing it was actually missing: a way to
+  *choose*. It is now two columns — **your monsters** on the left (name, level
+  and what each is wearing, scrollable) and **your bag** on the right. Click a
+  monster, click an item, click Equip; a swap sends whatever it was wearing back
+  to the bag, and Unequip strips it. The selected slot's effects list (items) or
+  description and counts (relics) sit underneath. The old flow made you pick the
+  monster by selecting it out on the map first, which is why it read as "there
+  is just an Equip button". The Arena screen has an **Items** button, so a party
+  can be re-geared between floors without leaving the tower.
+- Phase 76 ✅ **the run's pack, and a Unequip that is always there**: the
+  inventory had no Unequip when the bag was empty — which is exactly when you
+  want it, since an empty bag means everything is already worn. Both action
+  buttons now draw regardless. And opened from the Arena screen the panel shows
+  something else entirely: only the monsters **standing on the tower tile**, and
+  only `Colony.arena_items` — the run's own pack, **unbounded** and separate
+  from the colony's bag, so the colony's inventory is genuinely out of reach
+  mid-climb and a long run can't be squeezed by the Vault cap. Trial floors put
+  their items into the pack rather than straight onto a monster (the event offer
+  now reads "Take the Bloodstone"), so you choose who wears what. **Cashing out
+  keeps the pack** — it transfers into the colony bag as far as it has room, and
+  tells you if something had to be left behind — while a wipe or an abandon
+  loses it along with the winnings. `SAVE_VERSION` is **16**.
+- Phase 77 ✅ **look things up mid-run, and while choosing**: the tower has
+  **Decks** (and the inventory, and `V` from anywhere), the read-only reference
+  panels open in `.ARENA` too (`M` monster dex, `L` dex, `I` improvements, `K`
+  help, `P` settings, `G`/`J` the pack), and the **level-up / reward-card
+  overlay has a "View deck" button** — with `V` working there too — because
+  deciding
+  which card to learn without seeing what the monster already runs is
+  guesswork. The deck viewer draws above the choice and takes input first.
+
+- Phase 78 ✅ **the dex grew tabs**: `L` is now **CARDS / ABILITIES / ITEMS**
+  (Tab or Left/Right, or click a tab). Abilities get a description and the list
+  of species that can have them; items get their icon, description and the
+  generated effect breakdown. 19 abilities and 12 items, all with real text.
+
+- Phase 79 ✅ **the deck viewer's Equip was blind**: it silently took
+  `colony.items[0]`, which is the real reason gearing read as "there is just an
+  Equip option". It now hands off to the inventory, focused on the monster you
+  were looking at, where the item is actually chosen. Unequip routes to the
+  run's pack mid-run.
+
+- Phase 80 ✅ **the tower pays a little sooner**: `ARENA_PURSE_DELAY` is 10 (was
+  20) and the curve starts paying from floor 11 — 1 crystal a floor at first,
+  bending up slowly (floor 50 -> 1, 100 -> 3, 250 -> 7, 500 -> 18, 1000 -> 49).
+  A run to floor 100 banks 150 crystals.
+- Phase 81 ✅ **honest card faces**: two cards read as something they are not.
+  **Toxic** said "attacks poison", which reads as "this attack poisons", when it
+  is a POWER card that grants *the caster* a lasting effect — "your hits poison"
+  now. **Overwhelm** said "8 dmg, +8 vuln", which reads as "applies 8
+  Vulnerable", when `vuln_bonus` is a *conditional damage bonus*: it deals +8
+  **if** the target is already Vulnerable (it is the payoff of the Mark / Expose
+  setup, and applies none itself) — now "8 dmg, +8 vs vuln". Five other vague
+  faces fixed too (Metronome, Scavenger, Barricade, Rage, Followup). And card
+  descriptions are **clipped** to the card face — 7 of the 116 were running off
+  it — with the hover tooltip and the dex's EFFECTS list carrying the full text
+  (both were already accurate).
+- Phase 82 ✅ **active effects get a real panel**: the chip rows are deliberately
+  tiny, and a buffed monster overflows them fast (the panel row fits about
+  four, then collapses into a `+N`). **`S` in battle** now opens a scrollable
+  **ACTIVE EFFECTS** panel — every living creature on both sides, every effect
+  it is carrying, each with the same explanation its chip's tooltip gives, laid
+  out in two columns and clipped to the panel with a self-correcting scroll. It
+  is modal, so nothing else takes input while it is up.
+
+- Phase 83 ✅ **the XP readout stopped colliding with the piles counter**: both
+  lived in the same corner of the player panel at a fixed offset. The XP bar is
+  shorter and the readout is laid out to the *left* of the piles text, clipped
+  to the room between them — verified against every combination of XP and deck
+  size, including six-figure totals (0 collisions). **Followup**'s description
+  went back to "5 dmg, +5 combo".
+- Phase 84 ✅ **one dex, four tabs**: the monster encyclopedia and the move dex
+  are now a single reference — **MONSTERS / CARDS / ABILITIES / ITEMS** — opened
+  with `L` from the map, the tower *or* mid-battle (looking a species up while a
+  fight is on is exactly when you want it), and with `M` straight to the monster
+  tab. The species detail (portrait, typing, evolution line, stats, starter
+  deck, learnset, ability pool, blurb) moved across wholesale, so the separate
+  encyclopedia panel is gone.
+
+- Phase 85 ✅ **one scrollbar**: `draw_scrollbar` is now a shared helper —
+  `draw_list_chrome` uses it for every list screen, the **inventory's monster
+  column** became a `List_View` (so it gets the same bar and "N / total" pager
+  as the dex), and the **upgrades tree** draws it too instead of scrolling
+  silently. Every list you can scroll now looks the same.
+- Phase 86 ✅ **the dex's chrome, fixed properly**: merging the two panels
+  reintroduced three layout faults. The list rows were as wide as their panel,
+  so the *selected row highlight* painted over the scrollbar — the bar is now
+  positioned off the **list** (`v.x + v.w + 6`), not the panel, so no caller can
+  make its rows cover it however it sizes the two (6px clear in both the dex and
+  the inventory). The tabs sat at y=62, right on top of the DEX title and
+  subtitle — they moved to `DEX_TAB_Y` (104), with the list panel at 140. And a
+  short list drew *no* scrollbar at all, so ABILITIES (19) and ITEMS (12) looked
+  nothing like MONSTERS (60) — `draw_scrollbar` now always draws the track, with
+  a full-height thumb when everything fits, so every list that can scroll looks
+  the same whether it needs to or not.
+- Phase 87 ✅ **documented sets, and two leaks closed**: `src/sets.odin`'s header
+  now spells out what every set name means (Blight, Pyre, Bulwark, Bramble,
+  Fury, Swarm, Ambush, Tempo, Void, Daze, Bloom, Ruin, Rubble, Zephyr, plus the
+  Bruiser / Warden / Skirmisher fallbacks) — and the generator that produces the
+  file carries the same header, so regenerating it no longer wipes the doc. Two
+  allocation faults went with it: the ACTIVE EFFECTS panel called
+  `effect_tooltip` (a heap `aprintf`) for every effect of every creature **every
+  frame** without freeing any of them — the text now has one definition,
+  `effect_tooltip_text`, on the temp allocator, with the owned version as a thin
+  wrapper; and the build-mode radius preview allocated a `[dynamic]Hex` per
+  frame, now on the temp allocator. Verified: 501 panel draws leak 0 blocks.
+- Phase 88 ✅ **smaller energy banks**: a battle used to open with a monster
+  holding its *whole* bank (8–12), so turn one dumped a hand and fights were
+  over in about three rounds. Every species' `base_energy_max` is now **4–6**
+  against an unchanged regen of ~1.5–2, so the opening burst is two or three
+  turns' worth instead of five to eight. Measured over 360 auto-fights with the
+  same party and seeds: average length **2.7 -> 4.1 rounds**, and card plays
+  made in round one fell from 74% to 68%. The three X-cost cards spend the whole
+  bank, so they were doubled to match (`All_In` 5 -> 10 damage per energy,
+  `Bulwark` 4 -> 8 Block, `Overcharge` 5 -> 10).
+
+- Phase 89 ✅ **the docs caught up**: `docs/` had drifted five days behind — it
+  still described the encyclopedia panel, the relics panel, `COMMON_MOVES`, the
+  30-round cap and the old energy model. `architecture.md`'s file table and
+  every core type are current (including the Arena's run state), the routing
+  order and the "move choice blocks everything except the deck viewer" rule are
+  written down, and the Arena, sets, powers, trials and the effects panel all
+  have entries. `hacking.md` gained a **Conventions** section — allocations
+  (`ctprintf` vs `aprintf`), the 1280×720 design space, and "use the shared
+  widgets" — because that is where the recent UI bugs came from. 1,446 -> 1,725
+  lines.
+- Phase 90 ✅ **no fudge factors on raw stats**: two global multipliers were
+  quietly adjusting data instead of the data saying what it meant.
+  `ENERGY_REGEN_FACTOR` (0.5) halved every species' regen on top of
+  `base_energy`; the field is a **`f32`** now and each species carries its real
+  number (1.5, or 2.0 for the one that should be quicker) — identical behaviour,
+  no constant. `MOVE_STEP_FACTOR` (0.8) did the same to every step's cost;
+  `terrain_move_cost` now holds the real per-tile costs (0.7 Grove … 1.45
+  Quicksand), within ±3% of the old effective values and with the same ordering.
+  Tuning the map's pace or the energy economy now means editing the species and
+  terrain tables, not a multiplier. The surviving `*_MULT` constants
+  (`VULN_MULT`, `ABILITY_PREDATOR_MULT`, `ROAD_MOVE_FACTOR`,
+  `ARENA_GYM_LEVEL_MULT`) are rules for a mechanic rather than flat adjustments
+  to base stats, and stay.
+- Phase 91 ✅ **fixing what the type change broke**: `base_energy` becoming an
+  `f32` (Phase 90) left two places formatting it with `%d` — the starter
+  picker's stat line and the dex's monster tab (which inherited it from the old
+  encyclopedia panel). Both print `fmt_num(sp.base_energy)` now, so they read
+  "Energy 1.5 regen / 4 max". Swept the rest: every other energy readout in the
+  game (`draw_energy`, the enemy row, the party field) already used `fmt_num`.

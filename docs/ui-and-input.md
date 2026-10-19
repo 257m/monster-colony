@@ -2,7 +2,12 @@
 
 ## Modes
 
-`Game_Mode :: enum { TITLE, STARTER, MAP, BATTLE, GAME_OVER }`.
+`Game_Mode :: enum { TITLE, STARTER, MAP, ARENA, BATTLE, GAME_OVER }`.
+
+**ARENA** is a real mode, not a modal: a live Arena run owns the screen (the
+colony is frozen until you cash out or abandon), and a won floor returns you
+there rather than to the map. A save with `arena_run` set reloads straight into
+it.
 
 The game opens on the **title screen** (`draw_title`): **New Game** → the starter
 picker (`reset_to_starter`), **Load Game** → the save/load panel, **Quit** → exit
@@ -11,39 +16,46 @@ until the window closes or `g.quit` is set. Esc is **not** the quit key
 (`rl.SetExitKey(.KEY_NULL)`); Esc closes the current panel instead.
 
 ### Update dispatch (`game_update`)
-Handled in this priority order, each returning early:
+Handled in this priority order, each returning early. Note that the **move
+choice is first** and blocks everything — except the deck viewer and the
+inventory, which it deliberately lets through so you can see what a monster
+already runs while picking its next card.
 ```
 tick status_timer
-show_deck         -> update_deck_viewer
-show_encyclopedia -> update_encyclopedia
-show_improvements -> update_improvements
-show_bag          -> update_bag
-show_upgrades     -> update_upgrades
-show_nursery      -> update_nursery
-show_storage      -> update_storage
-show_save         -> update_save_panel
-MAP|STARTER + M   -> open encyclopedia
-MAP + I / G / U   -> open improvements dex / bag / upgrades
-MAP + C / H / O   -> open nursery / storage / save panel
-MAP + F5 / F9     -> quick save / load slot 1
-attack_select_open-> update_attack_select
-battle_choice_open-> update_battle_choice
-results_open      -> update_results
-MAP + V           -> open deck viewer
+pending move choice -> update_move_choice   (but: show_deck / show_bag pass through)
+confirm_kind != NONE-> update_confirm
+attack_select_open  -> update_attack_select
+battle_choice_open  -> update_battle_choice
+results_open        -> update_results
+show_deck           -> update_deck_viewer
+show_dex            -> update_dex
+show_bag            -> update_inventory
+show_upgrades / show_quests / show_improvements / show_graveyard
+show_nursery / show_storage / show_save / unit_picker
+MAP|STARTER|ARENA|BATTLE + M -> open the dex on the MONSTERS tab
+MAP|ARENA|BATTLE + L         -> open the dex where it was
+MAP|ARENA + I / G / J / U    -> improvements dex / inventory / inventory / upgrades
+MAP + C / H / O              -> nursery / storage / save panel
+MAP + V (and ARENA/BATTLE)   -> open the deck viewer
 otherwise switch mode:
   TITLE   -> update_title
   STARTER -> update_starter
   MAP     -> update_colony
+  ARENA   -> update_arena
   BATTLE  -> update_battle
   GAME_OVER: N -> reset_to_starter, Esc -> goto_title
 ```
 
 ### Draw dispatch (`game_draw`)
 ```
-switch mode: TITLE | STARTER | MAP(+build/trade panels) | BATTLE | GAME_OVER
-then overlays on top: attack_select, battle_choice, results, deck viewer,
-encyclopedia, improvements dex, item bag, nursery, storage, save panel
+switch mode: TITLE | STARTER | MAP(+build/trade panels) | ARENA | BATTLE | GAME_OVER
+then overlays on top, in this order (later = on top):
+  arena event, attack_select, battle_choice, results, move choice,
+  deck viewer, inventory, dex, upgrades, quests, graveyard, nursery,
+  storage, save, unit picker, confirm, tips, tooltip
 ```
+The move choice draws *before* the deck viewer and inventory on purpose — those
+two are the ones you open from it, so they have to sit above it.
 
 **Checklist for a new overlay:** add a field to `Game`; an early-return branch
 in `game_update`; an `update_*`/`draw_*` proc; a `draw_*` call after the mode
@@ -116,21 +128,22 @@ Draws the world, then `draw_colony_hud`, `draw_roster_panel`,
 |---|---|---|---|
 | Build / repair / replace | `B`, then click a tile | `update_build` | `draw_build_panel` |
 | Trading Post | `T` when your monster stands on one | `update_trade` | `draw_trade_panel` |
-| Arena | `T` when your monster stands on one | `update_arena` | `draw_arena` |
+| **Arena screen** | `T` when your monster stands on one | `update_arena` | `draw_arena` |
+| Arena event floor | a trial floor that is an event | `update_arena_event` | `draw_arena_event` |
 | Choose attackers | attacking a tile | `update_attack_select` | `draw_attack_select` |
 | Ambush choice (Auto/Manual) | a wild ambush | `update_battle_choice` | `draw_battle_choice` |
 | Results | after a battle | `update_results` | `draw_results` |
-| Deck viewer | `V` | `update_deck_viewer` | `draw_deck_viewer` |
-| Encyclopedia | `M` | `update_encyclopedia` | `draw_encyclopedia` |
+| Deck viewer | `V` (also mid-battle, and during a move choice) | `update_deck_viewer` | `draw_deck_viewer` |
+| **Dex** (monsters/cards/abilities/items) | `L`, or `M` for the monster tab | `update_dex` | `draw_dex` |
 | Improvements dex | `I` | `update_improvements` | `draw_improvements` |
-| Item bag | `G` | `update_bag` | `draw_bag` |
+| **Inventory** (monsters ⇄ bag, two panes) | `G` or `J` | `update_inventory` | `draw_inventory` |
+| Active effects (in battle) | `S` | `battle_input` + scroll in `update_battle` | `draw_battle_effects` |
 | Upgrades | `U` | `update_upgrades` | `draw_upgrades` |
 | Nursery | `C` | `update_nursery` | `draw_nursery` |
 | Monster storage | `H` | `update_storage` | `draw_storage` |
 | Save / load | `O` | `update_save_panel` | `draw_save_panel` |
 | Quest journal | `Q` | `update_quests` | `draw_quests` |
 | Hall of the Fallen | `Y` | `update_graveyard` | `draw_graveyard` |
-| Relics | `J` | `update_relics` | `draw_relics` |
 | Controls help | `K` | `update_help` | `draw_help` |
 | Settings | `P` | `update_settings` | `draw_settings` |
 | Unit picker | clicking a shared tile | `update_unit_picker` | `draw_unit_picker` |
@@ -157,8 +170,10 @@ monsters cost no upkeep and don't count toward heat.
 
 The **save / load panel** (`draw_save_panel`, `O`) lists **3 slots** with their
 metadata (turn, gold, monsters, crystals, age) and **Save**/**Load** buttons.
-`F5`/`F9` quick-save/quick-load slot 1. Saving is disabled mid-battle (save on
-the map) and in the browser build (no filesystem). A **New Run** button below the
+`F` quick-saves slot 1 from the map. **No function keys are used anywhere** (they
+collide with the OS). Saving is disabled mid-battle and in the browser build (no
+filesystem) — but an Arena run autosaves after every cleared floor, and the Arena
+screen has a Save button. A **New Run** button below the
 slots (or the **`N`** key) returns to the **starter picker** (`reset_to_starter`)
 so you can choose a starter again and roll a fresh seed — handy for hunting a
 good start; while a run is in progress it needs a second click/press to confirm.
@@ -203,9 +218,9 @@ panel** (`F10`, `draw_settings`) holds the **last-turn summary**
 minimap / tooltips / FPS / autosave. The HUD shows **net food** (red when
 starving). `fmt_thousands` adds separators; `ui_want_hand`/`ui_cursor_apply`
 give a pointing-hand cursor. In battle, `draw_initiative` shows the upcoming
-turn order. The **relics panel** (`J`, `draw_relics`) lists the stackable
-boss-dropped relics. **No function keys are used** (they collide with the OS):
-help is `K`, settings `P`, mute `X`, and quick-save `F`.
+turn order. **Relics live in the inventory** (`G`/`J`) alongside items now — they
+are placed from there into a Relic Tower. **No function keys are used** (they
+collide with the OS): help is `K`, settings `P`, mute `X`, quick-save `F`.
 
 The **improvements dex** (`draw_improvements`, `I`) is a browsable reference for
 all 27 improvements: a scrolling list on the left and, on the right, the animated
@@ -213,11 +228,24 @@ icon, base cost, HP, category, the terrains it can be built on (chips coloured b
 terrain), the short effect line, and a long-form `improvement_detail` paragraph
 (word-wrapped by `draw_text_wrapped`).
 
-The **item bag** (`draw_bag`, `G`) lists the items in `Colony.items` with a
-colour-coded dot; the right side shows the selected item's icon, description and
-an **effect breakdown** (`draw_item_effects`), plus **Equip to selected monster**
-(`equip_bag_item` — swaps the item onto the map-selected monster, returning its
-old item to the bag). Items can also be cycled on in the deck viewer.
+The **inventory** (`draw_inventory`, `G` / `J`) is two panes: **your monsters**
+on the left (a `List_View`: name, level, and what each is wearing, scrollable)
+and **your bag** on the right (items + relics). Click a monster, click an item,
+click **Equip** — a swap returns the old item to the bag, and **Unequip** strips
+it. The selected slot's effects (`draw_item_effects`) or relic description sit
+underneath. Both action buttons are drawn even with an empty bag, because that is
+exactly when Unequip is the one you want.
+
+Opened from the **Arena screen** it shows something else entirely: only the
+monsters **standing on the tower tile**, and only the run's own pack
+(`Colony.arena_items`, unbounded, separate from `Colony.items`). `open_inventory(g,
+arena = true)` is what switches it.
+
+The **dex** (`draw_dex`, `L`, or `M` for the monster tab) is one reference with
+four tabs — MONSTERS / CARDS / ABILITIES / ITEMS — sharing one `List_View` and
+one `draw_scrollbar`. The monster tab carries the whole species detail (portrait,
+typing, evolution line, stats, starter deck, learnset grid, ability pool, blurb)
+that used to be the separate encyclopedia panel.
 
 Each panel has small `*_rect()` helpers returning `rl.Rectangle`s, used by both
 the hit-test (update) and the draw. Keep them in sync when you move things.
@@ -237,10 +265,11 @@ the hit-test (update) and the draw. Keep them in sync when you move things.
 | `Space` / `E` | end turn |
 | `B` | toggle build mode (`Esc` to exit) |
 | `T` | Trading Post (only if the selected monster is on one) |
-| `V` | deck viewer |
-| `M` | encyclopedia |
+| `V` | deck viewer (also works in the Arena and mid-battle) |
+| `M` | dex, on the MONSTERS tab |
+| `L` | dex, on whatever tab it was last on |
 | `I` | improvements dex |
-| `G` | item bag |
+| `G` / `J` | inventory (monsters ⇄ bag; in the Arena, the run's pack) |
 | `U` | crystal progression upgrades |
 | `C` | nursery (breeding) panel |
 | `H` | monster storage (Dens) |
@@ -248,13 +277,24 @@ the hit-test (update) and the draw. Keep them in sync when you move things.
 | `Q` | quest journal (milestones) |
 | `Y` | Hall of the Fallen (graveyard) |
 | `Z` | toggle the minimap |
-| `J` | relics panel |
 | `K` | controls / help overlay |
 | `P` | settings (sound, display, last turn) |
 | `X` | mute / unmute sound |
 | `F` | quick-save to slot 1 |
-| `F2` | mute / unmute sound |
 | `N` | new run — back to the starter picker (**game-over screen or save panel**) |
+
+### Arena screen (`update_arena`)
+The colony is frozen while a run is live, so this screen has its own row of
+buttons rather than reusing the map's keys.
+| Input | Action |
+|---|---|
+| **Enter the tower** / **Fight floor N** | start a run (flat `ARENA_ENTRY_COST`) or fight the next floor; a trial floor shows its gym name or "a decision" |
+| **Cash out** | bank the winnings and end the run |
+| **Save the run** | write the autosave slot (every cleared floor also autosaves) |
+| **Items** | `open_inventory(g, arena = true)` |
+| **Decks** | the deck viewer |
+| **Abandon** / **Walk away** | end the run and lose the pack, or (with no run) go back to the map |
+| `Esc` | only backs out when there is nothing at stake |
 
 ### Starter picker
 | Input | Action |
@@ -269,6 +309,15 @@ the hit-test (update) and the draw. Keep them in sync when you move things.
 | `Space` / `E` / button | end your turn |
 | `C` / button | use a capture card |
 | `D` / click the pile readout | view the draw & discard piles |
+| `S` | the scrollable ACTIVE EFFECTS panel (Esc or `S` closes) |
+| `V` | deck viewer — including **during a level-up / reward card choice** |
+| `L` / `M` | the dex (cards / monsters) |
+| `[` `]` / wheel | scroll the enemy row when a pack is wider than the field |
+| PgUp / PgDn, or the wheel over it | scroll the battle log |
+
+The reward-card overlay has a **View deck** button for the same reason `V` works
+there: deciding which card to learn without seeing what the monster already runs
+is guesswork. Both it and the inventory draw above the choice.
 
 Every one of your monsters takes its own turn in the Speed queue — the player
 panel and hand follow whichever monster is currently acting, and **End Turn**

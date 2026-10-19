@@ -5,7 +5,7 @@ import "core:time"
 import "core:math"
 import "core:fmt"
 
-Game_Mode :: enum { TITLE, STARTER, MAP, BATTLE, GAME_OVER }
+Game_Mode :: enum { TITLE, STARTER, MAP, ARENA, BATTLE, GAME_OVER }
 
 Battle_Results :: struct {
 	gold:    int,
@@ -34,6 +34,7 @@ Game :: struct {
 	view_scroll: f32,
 
 	status:       cstring,
+	status_buf:   [256]u8, // owns whatever `set_status` was handed
 	status_timer: f32,
 
 	// build / trade overlays
@@ -42,21 +43,34 @@ Game :: struct {
 	has_build:  bool,
 	build_preview: Improvement, // hovered build option (for radius preview)
 	trade_open: bool,
-	arena_open: bool,
+	arena_event_open: bool,
 
 	// monster encyclopedia
-	show_encyclopedia:  bool,
-	encyclopedia_index: int,
-	encyclopedia_first: int,
+
 
 	// improvements dex
 	show_improvements:  bool,
 	improvement_index:  int,
 	improvement_first:  int,
 
+	// move dex
+	show_dex:    bool,
+	dex_tab:     int,
+	dex_index:   int,
+	dex_first:   int,
+
+	// tutorial tips window
+	show_tips: bool,
+	// relic placement: a relic is "in hand" until it's slotted into a tower
+	relic_place_active: bool,
+	relic_place:        Relic,
+
 	// item bag viewer
 	show_bag:  bool,
 	bag_index: int,
+	bag_mon:   int, // the monster selected in the inventory
+	bag_mon_first: int,
+	bag_arena: bool, // the inventory is showing a run's pack, not the colony's
 	bag_first: int,
 
 	// crystal progression panel
@@ -69,7 +83,7 @@ Game :: struct {
 	show_quests: bool,
 
 	// relics panel (Phase 25)
-	show_relics: bool,
+
 
 	// hall of the fallen (graveyard) — Phase 22
 	show_graveyard: bool,
@@ -100,6 +114,8 @@ Game :: struct {
 	show_fps:            bool,
 	show_terrain_legend: bool,
 	show_key_hints:      bool,
+	// first-turns tutorial hints (dismissed by clicking the box)
+	tutorial_done:       bool,
 
 	// modal yes/no confirmation for destructive actions
 	confirm_kind: Confirm_Kind,
@@ -128,6 +144,7 @@ Game :: struct {
 	battle_choice_open: bool,
 	battle_hex:         Hex,
 	battle_forced:      bool, // true when a wild is attacking you (can't back out)
+	battle_arena:       bool, // true for a paid Arena challenge (Arena rewards only then)
 	battle_auto:        bool,
 	results_open:       bool,
 	results:            Battle_Results,
@@ -200,6 +217,10 @@ main :: proc() {
 		screen_begin()
 		game_draw(&g)
 		screen_end()
+
+		// `fmt.ctprintf` (used all over the draw code) allocates from the temp
+		// allocator; without this reset every frame leaks.
+		free_all(context.temp_allocator)
 	}
 }
 
@@ -223,8 +244,9 @@ end_run :: proc(g: ^Game) {
 
 close_all_panels :: proc(g: ^Game) {
 	g.show_deck = false
-	g.show_encyclopedia = false
 	g.show_improvements = false
+	g.show_tips = false
+	g.relic_place_active = false
 	g.show_bag = false
 	g.show_upgrades = false
 	g.show_quests = false
@@ -278,7 +300,15 @@ choose_starter :: proc(g: ^Game, species_idx: Species_Id) {
 }
 
 set_status :: proc(g: ^Game, msg: cstring) {
-	g.status = msg
+	// Copy into an owned buffer: callers may hand us a temp-allocated string
+	// (the temp allocator is reset every frame), so we never keep the pointer.
+	bytes := cstring_bytes(msg)
+	n := min(len(bytes), len(g.status_buf) - 1)
+	for i in 0 ..< n {
+		g.status_buf[i] = bytes[i]
+	}
+	g.status_buf[n] = 0
+	g.status = cstring(&g.status_buf[0])
 	g.status_timer = 3.0
 }
 
@@ -305,14 +335,33 @@ game_update :: proc(g: ^Game, dt: f32) {
 		set_status(g, audio_toggle_mute() ? "Sound muted." : "Sound on.")
 	}
 
-	// A pending move choice (level-up / battle reward) blocks everything else.
+	// A pending move choice (level-up / battle reward) blocks everything else —
+	// except the deck viewer, which is the one thing you want while choosing.
 	if len(g.colony.choices) > 0 {
+		if g.show_deck {
+			update_deck_viewer(g, dt)
+			return
+		}
+		if g.show_bag {
+			update_inventory(g)
+			return
+		}
+		if rl.IsKeyPressed(.V) && len(g.colony.roster) > 0 {
+			g.show_deck = true
+			g.view_index = clamp(monster_by_id(&g.colony, g.colony.choices[0].monster_id), 0, len(g.colony.roster) - 1)
+			g.view_scroll = 0
+			return
+		}
 		update_move_choice(g)
 		return
 	}
 
 	if g.confirm_kind != .NONE {
 		update_confirm(g)
+		return
+	}
+	if g.show_tips {
+		update_tips(g)
 		return
 	}
 	if g.show_help {
@@ -327,16 +376,17 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_deck_viewer(g, dt)
 		return
 	}
-	if g.show_encyclopedia {
-		update_encyclopedia(g)
-		return
-	}
+
 	if g.show_improvements {
 		update_improvements(g)
 		return
 	}
+	if g.show_dex {
+		update_dex(g)
+		return
+	}
 	if g.show_bag {
-		update_bag(g)
+		update_inventory(g)
 		return
 	}
 	if g.show_upgrades {
@@ -347,10 +397,7 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_quests(g)
 		return
 	}
-	if g.show_relics {
-		update_relics(g)
-		return
-	}
+
 	if g.show_graveyard {
 		update_graveyard(g)
 		return
@@ -371,30 +418,31 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_unit_picker(g)
 		return
 	}
-	if (g.mode == .MAP || g.mode == .STARTER) && rl.IsKeyPressed(.K) {
+	if (g.mode == .MAP || g.mode == .STARTER || g.mode == .ARENA) && rl.IsKeyPressed(.K) {
 		g.show_help = true
 		return
 	}
-	if (g.mode == .MAP || g.mode == .STARTER) && rl.IsKeyPressed(.P) {
+	if (g.mode == .MAP || g.mode == .STARTER || g.mode == .ARENA) && rl.IsKeyPressed(.P) {
 		g.show_settings = true
 		return
 	}
-	if (g.mode == .MAP || g.mode == .STARTER) && rl.IsKeyPressed(.M) {
-		g.show_encyclopedia = true
-		g.encyclopedia_index = 0
-		g.encyclopedia_first = 0
+	// M goes straight to the monster tab; L opens the dex where it was.
+	if (g.mode == .MAP || g.mode == .STARTER || g.mode == .ARENA || g.mode == .BATTLE) && rl.IsKeyPressed(.M) {
+		open_dex(g, DEX_MONSTERS)
 		return
 	}
-	if g.mode == .MAP && rl.IsKeyPressed(.I) {
+	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.I) {
 		g.show_improvements = true
 		g.improvement_index = 0
 		g.improvement_first = 0
 		return
 	}
-	if g.mode == .MAP && rl.IsKeyPressed(.G) {
-		g.show_bag = true
-		g.bag_index = 0
-		g.bag_first = 0
+	if (g.mode == .MAP || g.mode == .ARENA || g.mode == .BATTLE) && rl.IsKeyPressed(.L) {
+		open_dex(g, g.dex_tab)
+		return
+	}
+	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.G) {
+		open_inventory(g, arena = g.mode == .ARENA)
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.U) {
@@ -405,8 +453,9 @@ game_update :: proc(g: ^Game, dt: f32) {
 		g.show_quests = true
 		return
 	}
-	if g.mode == .MAP && rl.IsKeyPressed(.J) {
-		g.show_relics = true
+	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.J) {
+		// Relics live in the inventory now, alongside items.
+		open_inventory(g, arena = g.mode == .ARENA)
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.Z) {
@@ -450,7 +499,7 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_results(g)
 		return
 	}
-	if g.mode == .MAP && len(g.colony.roster) > 0 && rl.IsKeyPressed(.V) {
+	if (g.mode == .MAP || g.mode == .ARENA) && len(g.colony.roster) > 0 && rl.IsKeyPressed(.V) {
 		g.show_deck = true
 		g.view_index = clamp(g.selected, 0, len(g.colony.roster) - 1)
 		g.view_scroll = 0
@@ -464,6 +513,8 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_starter(g)
 	case .MAP:
 		update_colony(g, dt)
+	case .ARENA:
+		update_arena(g)
 	case .BATTLE:
 		update_battle(g, dt)
 	case .GAME_OVER:
@@ -519,7 +570,7 @@ update_colony :: proc(g: ^Game, dt: f32) {
 	if rl.IsKeyPressed(.B) {
 		g.build_mode = !g.build_mode
 		g.trade_open = false
-		g.arena_open = false
+		g.arena_event_open = false
 		g.has_build = false
 		g.build_preview = .NONE
 		g.build_scroll = 0
@@ -528,6 +579,26 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		}
 		return
 	}
+	// Relic placement: a relic is in hand; click a Relic Tower to slot it.
+	if g.relic_place_active {
+		if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.RIGHT) {
+			g.relic_place_active = false
+			set_status(g, "Relic placement cancelled.")
+			return
+		}
+		if rl.IsMouseButtonPressed(.LEFT) {
+			h := hex_renderer_hovered(&g.renderer)
+			t := tile_at(&g.colony, h)
+			if place_relic(&g.colony, t, g.relic_place) {
+				g.relic_place_active = false
+			} else {
+				set_status(g, "Relic Towers only, and they need a free slot.")
+			}
+			return
+		}
+		return
+	}
+
 	if g.build_mode {
 		update_build(g)
 		return
@@ -538,8 +609,8 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		update_trade(g)
 		return
 	}
-	if g.arena_open {
-		update_arena(g)
+	if g.arena_event_open {
+		update_arena_event(g)
 		return
 	}
 	if rl.IsKeyPressed(.T) && selected_on_trading_post(g) {
@@ -547,7 +618,14 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		return
 	}
 	if rl.IsKeyPressed(.T) && selected_on_arena(g) {
-		g.arena_open = true
+		// A run has its own screen: the colony is out of reach while it is on.
+		g.mode = .ARENA
+		return
+	}
+
+	// Testing aid: drop a ready-made team at the entrance (see SAMPLE_TEAM).
+	if rl.IsKeyPressed(.GRAVE) {
+		colony_grant_sample_team(&g.colony)
 		return
 	}
 
@@ -826,7 +904,6 @@ update_trade :: proc(g: ^Game) {
 		}
 	}
 	g.trade_open = false
-	g.arena_open = false
 }
 
 do_end_turn :: proc(g: ^Game) {
@@ -922,15 +999,17 @@ game_draw :: proc(g: ^Game) {
 		if g.trade_open {
 			draw_trade_panel(g)
 		}
-		if g.arena_open {
-			draw_arena(g)
-		}
+	case .ARENA:
+		draw_arena(g)
 	case .BATTLE:
 		draw_battle(&g.battle)
 	case .GAME_OVER:
 		draw_colony_game_over(g.colony.turn)
 	}
 
+	if g.arena_event_open {
+		draw_arena_event(g)
+	}
 	if g.attack_select_open {
 		draw_attack_select(g)
 	}
@@ -946,17 +1025,11 @@ game_draw :: proc(g: ^Game) {
 	if g.show_settings {
 		draw_settings(g)
 	}
-	if g.show_deck {
-		draw_deck_viewer(g)
-	}
-	if g.show_encyclopedia {
-		draw_encyclopedia(g)
-	}
 	if g.show_improvements {
 		draw_improvements(g)
 	}
-	if g.show_bag {
-		draw_bag(g)
+	if g.show_dex {
+		draw_dex(g)
 	}
 	if g.show_upgrades {
 		draw_upgrades(g)
@@ -964,9 +1037,7 @@ game_draw :: proc(g: ^Game) {
 	if g.show_quests {
 		draw_quests(g)
 	}
-	if g.show_relics {
-		draw_relics(g)
-	}
+
 	if g.show_graveyard {
 		draw_graveyard(g)
 	}
@@ -985,8 +1056,17 @@ game_draw :: proc(g: ^Game) {
 	if len(g.colony.choices) > 0 {
 		draw_move_choice(g)
 	}
+	if g.show_deck {
+		draw_deck_viewer(g)
+	}
+	if g.show_bag {
+		draw_inventory(g)
+	}
 	if g.confirm_kind != .NONE {
 		draw_confirm(g)
+	}
+	if g.show_tips {
+		draw_tips(g)
 	}
 	tooltip_draw()
 	ui_cursor_apply()

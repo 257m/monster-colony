@@ -58,10 +58,13 @@ attack_panel_rect :: proc() -> rl.Rectangle {
 }
 
 ATTACK_MAX_ROWS :: 12
+// Your monsters get two-line rows (name, then its numbers) so a long name can
+// never run into the HP and distance beside it.
+ATTACK_ROW_H :: f32(40)
 
 attack_row_rect :: proc(i: int) -> rl.Rectangle {
 	p := attack_panel_rect()
-	return rl.Rectangle{p.x + 24, p.y + 100 + f32(i) * 30, 340, 26}
+	return rl.Rectangle{p.x + 24, p.y + 100 + f32(i) * ATTACK_ROW_H, 340, ATTACK_ROW_H - 6}
 }
 
 enemy_row_rect :: proc(i: int) -> rl.Rectangle {
@@ -94,6 +97,12 @@ update_attack_select :: proc(g: ^Game) {
 			break
 		}
 		if rl.CheckCollisionPointRec(mp, attack_row_rect(i)) {
+			// A fight is fought by at most PARTY_MAX monsters, so don't let a
+			// seventh be ticked and then silently dropped.
+			if !g.attack_chosen[i] && attack_chosen_count(g) >= PARTY_MAX {
+				set_status(g, "A party is six monsters. Untick one first.")
+				return
+			}
 			g.attack_chosen[i] = !g.attack_chosen[i]
 			return
 		}
@@ -171,13 +180,15 @@ draw_attack_select :: proc(g: ^Game) {
 			rl.DrawRectangleRec(rl.Rectangle{box.x + 4, box.y + 4, 8, 8}, rl.Color{130, 235, 170, 255})
 		}
 
-		line := fmt.ctprintf("%s  Lvl %d", m.creature.name, m.creature.level)
-		rl.DrawText(line, i32(rec.x) + 34, i32(rec.y) + 4, 16, rl.Color{225, 225, 240, 255})
-		hp := fmt.ctprintf("%d/%d hp", m.creature.hp, m.creature.max_hp)
-		rl.DrawText(hp, i32(rec.x + rec.width) - 150, i32(rec.y) + 5, 14, rl.Color{210, 140, 140, 255})
+		// Name on the first line, clipped so it can never overrun the row.
+		rl.DrawText(fit_text(m.creature.name, 16, i32(rec.width) - 46), i32(rec.x) + 34, i32(rec.y) + 2, 16, rl.Color{225, 225, 240, 255})
+		// Its numbers on the second.
 		dist := hex_distance(m.pos, g.battle_hex)
 		loc := dist == 0 ? cstring("on tile") : fmt.ctprintf("%d away", dist)
-		rl.DrawText(loc, i32(rec.x + rec.width) - 74, i32(rec.y) + 5, 14, rl.Color{150, 150, 170, 255})
+		rl.DrawText(fmt.ctprintf("Lvl %d    %d/%d hp", m.creature.level, m.creature.hp, m.creature.max_hp),
+			i32(rec.x) + 34, i32(rec.y) + 20, 14, rl.Color{200, 200, 220, 255})
+		lw := rl.MeasureText(loc, 14)
+		rl.DrawText(loc, i32(rec.x + rec.width) - lw - 10, i32(rec.y) + 20, 14, rl.Color{150, 150, 170, 255})
 	}
 
 	// The wilds you would actually be fighting.
@@ -197,9 +208,10 @@ draw_attack_select :: proc(g: ^Game) {
 		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 5, 2, border)
 		name_col := m.role == .ALPHA ? rl.Color{255, 215, 95, 255} : rl.Color{240, 222, 212, 255}
 		suffix := wild_role_tag(m.role)
-		rl.DrawText(fmt.ctprintf("%s  Lvl %d%s", m.creature.name, m.creature.level, suffix), i32(rec.x) + 12, i32(rec.y) + 5, 16, name_col)
 		el := elements_label(creature_elements(&m.creature))
 		ew := rl.MeasureText(el, 14)
+		head := fmt.ctprintf("%s  Lvl %d%s", m.creature.name, m.creature.level, suffix)
+		rl.DrawText(fit_text(string(head), 16, i32(rec.width) - 24 - ew - 10), i32(rec.x) + 12, i32(rec.y) + 5, 16, name_col)
 		rl.DrawText(el, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 7, 14, element_color(creature_element(&m.creature)))
 		rl.DrawText(fmt.ctprintf("%d/%d hp", m.creature.hp, m.creature.max_hp), i32(rec.x) + 12, i32(rec.y) + 25, 13, rl.Color{215, 150, 150, 255})
 		if m.creature.ability != .NONE {
@@ -270,17 +282,32 @@ start_next_attack :: proc(g: ^Game) {
 choice_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	return rl.Rectangle{sw / 2 - 250, sh / 2 - 160, 500, 320}
+	return rl.Rectangle{sw / 2 - 310, sh / 2 - 190, 620, 380}
+}
+
+// The name lists are laid out in a grid, so a full party of six can never run
+// off the side of the panel.
+CHOICE_COLS :: 3
+CHOICE_COL_W :: 190
+CHOICE_ROW_H :: 22
+
+// Draw up to CHOICE_COLS x 2 names starting at (x, y).
+draw_choice_names :: proc(x, y: i32, names: []cstring, n: int, col: rl.Color) {
+	for i in 0..<n {
+		c := i % CHOICE_COLS
+		r := i / CHOICE_COLS
+		rl.DrawText(names[i], x + i32(c*CHOICE_COL_W), y + i32(r*CHOICE_ROW_H), 15, col)
+	}
 }
 
 choice_auto_rect :: proc() -> rl.Rectangle {
 	p := choice_panel_rect()
-	return rl.Rectangle{p.x + 30, p.y + 190, 200, 58}
+	return rl.Rectangle{p.x + 30, p.y + 248, 260, 58}
 }
 
 choice_manual_rect :: proc() -> rl.Rectangle {
 	p := choice_panel_rect()
-	return rl.Rectangle{p.x + p.width - 230, p.y + 190, 200, 58}
+	return rl.Rectangle{p.x + p.width - 290, p.y + 248, 260, 58}
 }
 
 update_battle_choice :: proc(g: ^Game) {
@@ -369,6 +396,15 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 	}
 
 	g.battle = battle_start(defs[:], enemies[:], ids[:], &g.seed_rng)
+	// Relic Towers in range of this fight project their battle relics onto the
+	// party (see `battle_apply_relics`) — but not in the Arena, which is meant to
+	// be a fair fight. The Arena projects only the boons you picked up on the way
+	// up, and those die with the run.
+	if g.battle_arena {
+		battle_apply_relics(&g.battle, arena_boon_counts(&g.colony))
+	} else {
+		battle_apply_relics(&g.battle, relics_in_range(&g.colony, g.battle_hex))
+	}
 	// Fighting ends the turn for the monsters that take part, so you can't
 	// chain fights to keep moving on battle-refilled energy.
 	for &m in g.colony.roster {
@@ -382,27 +418,33 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 			}
 		}
 	}
-	// Watchtower guard bonus: applied after the opening draw/reset.
-	// Drills: the colony's defenders start every fight with some Block.
-	drills := upgrade_drills_block(&g.colony) + relic_block(&g.colony)
-	for p, i in g.battle.party {
-		p.block += blocks[i] + drills
-	}
-	g.battle.capture_bonus = upgrade_capture_bonus(&g.colony)
-	// Beacon: wilds attacking within its guard radius start Vulnerable.
-	if near_improvement(&g.colony, hex, BEACON_GUARD, .BEACON) {
-		vuln := BEACON_VULN + upgrade_beacon_vuln(&g.colony)
-		for e in g.battle.enemies {
-			e.vulnerable += vuln
+	// Everything below is the colony helping its own side: Watchtower guard
+	// Block, Drills, the Beacon's mark, the Kitchen's rations and the Scouts'
+	// capture edge. An **Arena** fight skips all of it — it is meant to be a
+	// fair fight where only monsters, decks, abilities and items decide it.
+	if !g.battle_arena {
+		// Watchtower guard bonus: applied after the opening draw/reset.
+		// Drills: the colony's defenders start every fight with some Block.
+		drills := upgrade_drills_block(&g.colony)
+		for p, i in g.battle.party {
+			p.block += blocks[i] + drills
 		}
-	}
-	// Kitchen: spend rations to give the defenders +Strength for this fight.
-	if ki := nearest_improvement_within(&g.colony, hex, KITCHEN_RADIUS, .KITCHEN); ki >= 0 {
-		if gi := nearest_food_store_with(&g.colony, g.colony.tiles[ki].hex, DELIVER_RADIUS, KITCHEN_FOOD_COST); gi >= 0 {
-			g.colony.tiles[gi].stored -= KITCHEN_FOOD_COST
-			str := KITCHEN_STRENGTH + upgrade_kitchen_strength(&g.colony)
-			for p in g.battle.party {
-				p.strength += str
+		g.battle.capture_bonus = upgrade_capture_bonus(&g.colony)
+		// Beacon: wilds attacking within its guard radius start Vulnerable.
+		if near_improvement(&g.colony, hex, BEACON_GUARD, .BEACON) {
+			vuln := BEACON_VULN + upgrade_beacon_vuln(&g.colony)
+			for e in g.battle.enemies {
+				e.vulnerable += vuln
+			}
+		}
+		// Kitchen: spend rations to give the defenders +Strength for this fight.
+		if ki := nearest_improvement_within(&g.colony, hex, KITCHEN_RADIUS, .KITCHEN); ki >= 0 {
+			if gi := nearest_food_store_with(&g.colony, g.colony.tiles[ki].hex, DELIVER_RADIUS, KITCHEN_FOOD_COST); gi >= 0 {
+				g.colony.tiles[gi].stored -= KITCHEN_FOOD_COST
+				str := KITCHEN_STRENGTH + upgrade_kitchen_strength(&g.colony)
+				for p in g.battle.party {
+					p.strength += str
+				}
 			}
 		}
 	}
@@ -420,13 +462,22 @@ update_battle :: proc(g: ^Game, dt: f32) {
 	battle_update(&g.battle, dt)
 	battle_input(&g.battle)
 
+	if g.battle.show_effects {
+		g.battle.effects_scroll -= rl.GetMouseWheelMove() * 60
+		g.battle.effects_scroll = max(g.battle.effects_scroll, 0)
+		return
+	}
 	if g.battle.timer <= 0.4 {
 		return
 	}
-	cont := rl.IsMouseButtonPressed(.LEFT) ||
-		rl.IsKeyPressed(.SPACE) || rl.IsKeyPressed(.ENTER)
-	if !cont {
-		return
+	// An auto-fight has nobody at the keyboard, so it settles itself rather than
+	// waiting for a click that will never come.
+	if !g.battle.auto_play {
+		cont := rl.IsMouseButtonPressed(.LEFT) ||
+			rl.IsKeyPressed(.SPACE) || rl.IsKeyPressed(.ENTER)
+		if !cont {
+			return
+		}
 	}
 	#partial switch g.battle.phase {
 	case .WON:
@@ -438,6 +489,7 @@ update_battle :: proc(g: ^Game, dt: f32) {
 }
 
 finish_battle :: proc(g: ^Game) {
+	g.battle_arena = false
 	g.colony.capture_cards = g.battle.capture_cards
 	battle_free(&g.battle)
 	g.battle = Battle{}
@@ -472,15 +524,6 @@ grant_card_to_defender :: proc(g: ^Game, hex: Hex) -> int {
 		append(unknown, id)
 	}
 	for id in SPECIES[c.species].move_pool {
-		consider(&unknown, c, id)
-	}
-	for id in COMMON_MOVES {
-		consider(&unknown, c, id)
-	}
-	for id in STATUS_MOVES {
-		consider(&unknown, c, id)
-	}
-	for id in PREMIUM_MOVES {
 		consider(&unknown, c, id)
 	}
 	n := min(len(unknown), MAX_CHOICE_OPTIONS)
@@ -518,11 +561,14 @@ grant_card_to_defender :: proc(g: ^Game, hex: Hex) -> int {
 resolve_won :: proc(g: ^Game) {
 	audio_play(.VICTORY)
 	hex := g.battle_hex
+	// `finish_battle` clears this partway through, so remember it up front.
+	was_arena := g.battle_arena
 
 	// Tally results from the wilds on the tile before anything is removed.
 	res: Battle_Results
 	food_amt := 0
 	killed_levels := 0
+	boss_killed := false
 	for m in g.colony.roster {
 		if !m.wild || !hex_equal(m.pos, hex) {
 			continue
@@ -543,12 +589,16 @@ resolve_won :: proc(g: ^Game) {
 		if m.role == .ALPHA {
 			g.colony.alphas_slain += 1
 		}
+		if m.role == .BOSS {
+			g.colony.bosses_slain[m.creature.species] = true
+			boss_killed = true
+		}
 		loot := species_loot_gold(m.creature.species, lv) + rng_below(&g.colony.rng, lv + 1)
-		res.gold += int(f32(loot) * upgrade_bounty_mult(&g.colony) * relic_gold_mult(&g.colony))
+		res.gold += int(f32(loot) * upgrade_bounty_mult(&g.colony))
 		killed_levels += lv
 		food_amt += lv * 2 + upgrade_forage_food(&g.colony)
 	}
-	res.xp = int(f32(killed_levels * 10) * upgrade_xp_mult(&g.colony) * relic_xp_mult(&g.colony))
+	res.xp = int(f32(killed_levels * 10) * upgrade_xp_mult(&g.colony) * relic_xp_mult_at(&g.colony, hex))
 	res.gold = colony_deposit_gold(&g.colony, hex, res.gold)
 
 	// Captured enemies become yours.
@@ -589,13 +639,10 @@ resolve_won :: proc(g: ^Game) {
 		}
 	}
 
-	// Item drop: Boss Rooms always drop one, normal fights sometimes. Items go
-	// to the shared inventory, equipped from the deck viewer.
-	boss_room := false
-	if t := tile_at(&g.colony, hex); t != nil && t.terrain == .BOSS_ROOM {
-		boss_room = true
-	}
-	if boss_room || rng_f32(&g.colony.rng) < 0.22 {
+	// Item drop: a slain boss always drops one, normal fights sometimes. Arena
+	// floors deliberately do *not*: a tower climb would otherwise be an item
+	// faucet, and the trial floors are where the run hands out gear.
+	if boss_killed || rng_f32(&g.colony.rng) < 0.22 {
 		// Only fits while the bag has room; build a Vault to hold more.
 		if len(g.colony.items) < colony_item_cap(&g.colony) {
 			it := random_item(&g.colony.rng)
@@ -604,16 +651,22 @@ resolve_won :: proc(g: ^Game) {
 		}
 	}
 
-	// Arena & Boss fights are the real crystal source; Spoils adds to both.
+	// Arena and Boss rewards belong to the *fight*, not the tile: an ordinary
+	// wild that happens to be standing on an Arena or Boss Room pays nothing
+	// extra, or you could farm the tile's bounty off wandering mobs.
 	if t := tile_at(&g.colony, hex); t != nil {
-		bonus := upgrade_crystal_bonus(&g.colony) + relic_crystal_bonus(&g.colony)
-		#partial switch t.terrain {
-		case .ARENA:
-			g.colony.crystals += ARENA_CRYSTAL_REWARD + bonus
-			g.colony.crystals_earned += ARENA_CRYSTAL_REWARD + bonus
-			res.crystals = ARENA_CRYSTAL_REWARD + bonus
+		bonus := upgrade_crystal_bonus(&g.colony) + relic_crystal_bonus_at(&g.colony, hex)
+		if t.terrain == .ARENA && was_arena {
+			floor := max(g.colony.arena_floor, 1)
+			// The floor's purse is *banked*, not paid: the run pays out when you
+			// cash out, and a wipe loses it.
+			purse, gold := arena_clear_floor(&g.colony, hex, floor)
+			res.crystals = purse + bonus
+			g.colony.arena_run_crystals += bonus
+			res.gold += gold
+			colony_notify(&g.colony, "Arena floor %d cleared - %d crystals banked.", floor, purse)
 			audio_play(.CRYSTAL)
-		case .BOSS_ROOM:
+		} else if boss_killed {
 			g.colony.crystals += BOSS_CRYSTAL_REWARD + bonus
 			g.colony.crystals_earned += BOSS_CRYSTAL_REWARD + bonus
 			res.crystals = BOSS_CRYSTAL_REWARD + bonus
@@ -631,7 +684,17 @@ resolve_won :: proc(g: ^Game) {
 
 	g.results = res
 	g.results_open = true
-	g.mode = .MAP
+	// A run in progress has its own screen, so a won floor drops you back there
+	// rather than onto the map where the party could be rearranged.
+	if g.colony.arena_run {
+		g.mode = .ARENA
+		// A run is a long thing; bank it after every floor.
+		if g.autosave_on && save_supported() {
+			_ = save_game(g, AUTOSAVE_SLOT)
+		}
+	} else {
+		g.mode = .MAP
+	}
 }
 
 results_continue_rect :: proc() -> rl.Rectangle {
@@ -707,9 +770,18 @@ resolve_lost :: proc(g: ^Game) {
 		}
 		i += 1
 	}
-	// A lost Arena match resets: the team leaves so you can try again.
+	// A lost Arena match ends the run: the team leaves, the winnings are lost,
+	// and you start again from floor 1 (your best floor is kept as the record).
 	if t := tile_at(&g.colony, g.battle_hex); t != nil && t.terrain == .ARENA {
 		arena_reset(g)
+		if g.colony.arena_run && g.colony.arena_run_crystals > 0 {
+			colony_notify(&g.colony, "The run ends here - %d crystals lost.", g.colony.arena_run_crystals)
+		}
+		g.colony.arena_run = false
+		g.colony.arena_run_crystals = 0
+		g.colony.arena_floor = 1
+		clear(&g.colony.arena_boons)
+		clear(&g.colony.arena_items)
 	}
 	g.mode = .MAP
 	if player_monster_count(&g.colony) == 0 {
@@ -743,25 +815,29 @@ draw_battle_choice :: proc(g: ^Game) {
 	line := fmt.ctprintf("%d wild%s on this tile!", wilds, wilds == 1 ? "" : "s")
 	rl.DrawText(line, i32(p.x) + 24, i32(p.y) + 60, 20, rl.Color{230, 230, 240, 255})
 
-	rl.DrawText("Attackers:", i32(p.x) + 24, i32(p.y) + 96, 16, rl.Color{220, 150, 150, 255})
-	ax := i32(p.x) + 24
+	atk: [CHOICE_COLS * 2]cstring
+	na := 0
 	for &m in g.colony.roster {
-		if m.wild && hex_equal(m.pos, hex) {
-			label := fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
-			rl.DrawText(label, ax, i32(p.y) + 118, 15, rl.Color{235, 180, 180, 255})
-			ax += rl.MeasureText("XXXXXXXXXXXXXXXXXX", 15) + 8
+		if !m.wild || !hex_equal(m.pos, hex) || na >= len(atk) {
+			continue
 		}
+		atk[na] = fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
+		na += 1
 	}
+	rl.DrawText("Attackers:", i32(p.x) + 24, i32(p.y) + 88, 16, rl.Color{220, 150, 150, 255})
+	draw_choice_names(i32(p.x) + 24, i32(p.y) + 110, atk[:], na, rl.Color{235, 180, 180, 255})
 
-	rl.DrawText("Defenders:", i32(p.x) + 24, i32(p.y) + 142, 16, rl.Color{170, 190, 170, 255})
-	dx := i32(p.x) + 24
+	def: [CHOICE_COLS * 2]cstring
+	nd := 0
 	for &m in g.colony.roster {
-		if !m.wild && hex_equal(m.pos, hex) {
-			label := fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
-			rl.DrawText(label, dx, i32(p.y) + 164, 15, rl.Color{200, 220, 200, 255})
-			dx += rl.MeasureText("XXXXXXXXXXXXXXXXXX", 15) + 8
+		if m.wild || !hex_equal(m.pos, hex) || nd >= len(def) {
+			continue
 		}
+		def[nd] = fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
+		nd += 1
 	}
+	rl.DrawText("Defenders:", i32(p.x) + 24, i32(p.y) + 164, 16, rl.Color{170, 190, 170, 255})
+	draw_choice_names(i32(p.x) + 24, i32(p.y) + 186, def[:], nd, rl.Color{200, 220, 200, 255})
 	_ = sh
 
 	mp := mouse_pos()
