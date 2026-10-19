@@ -325,9 +325,11 @@ arena_species_for :: proc(floor: int, rng: ^Rng, avoid: []Species_Id = nil) -> S
 
 // Give an Arena monster one of its species' sets: the ability it fights with,
 // the item it holds, and the deck that set is built around.
-// How many challengers a floor fields.
+// How many challengers a floor fields. A full team, every floor: the tower is
+// meant to be an even fight against a rival colony, not a warm-up.
 arena_team_size_for :: proc(floor: int) -> int {
-	return min(ARENA_TEAM_BASE + floor / ARENA_TEAM_PER_FLOOR, ARENA_TEAM_SIZE)
+	_ = floor
+	return ARENA_TEAM_SIZE
 }
 
 // XP a single kill pays, per level of the victim — the same rate the colony's

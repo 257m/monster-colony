@@ -3,6 +3,7 @@ package main
 import rl "vendor:raylib"
 import "core:fmt"
 import "core:math"
+import "core:strings"
 
 // ============================================================================
 // SYMMETRIC CREATURE BATTLE
@@ -2340,10 +2341,13 @@ ENEMY_ROW_TOP :: f32(72)
 ENEMY_ROW_BOT :: f32(78)
 ENEMY_ROW_PAD :: f32(34)
 
-// The full-width band the enemy row lives in.
+// The band the enemy row lives in. It stops short of the left edge to leave the
+// battle log its own column, the way it always had.
+ENEMY_ROW_LEFT :: f32(296)
+
 enemy_row_band :: proc() -> (left, right: f32) {
 	sw := f32(screen_w())
-	return ENEMY_ROW_PAD, sw - ENEMY_ROW_PAD
+	return ENEMY_ROW_LEFT, sw - ENEMY_ROW_PAD
 }
 
 // How many enemy cards fit in the row.
@@ -2625,7 +2629,8 @@ draw_enemies :: proc(b: ^Battle) {
 		}
 		e := b.enemies[i]
 		ex := enemy_slot_x(slot, spread)
-		radius := f32(32)
+		// A smaller avatar leaves the ability line its own row above it.
+		radius := f32(26)
 		ox, oy := creature_offset(e)
 		draw_creature_avatar(rl.Vector2{ex + ox, ey + oy}, radius, e, e.hp <= 0)
 
@@ -2659,7 +2664,7 @@ draw_enemies :: proc(b: ^Battle) {
 		if e.ability != .NONE {
 			ab := ability_name(e.ability)
 			aw := rl.MeasureText(ab, 11)
-			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 41, 11, rl.Color{200, 180, 240, 255})
+			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 42, 11, rl.Color{200, 180, 240, 255})
 		}
 
 		hp_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 38, cw - 8, 14}
@@ -3134,9 +3139,66 @@ draw_pile_list :: proc(cards: []Move_Id, x, y, w: f32) {
 	}
 }
 
+// The log's own column, beside the enemy row.
+BATTLE_LOG_X  :: i32(16)
+BATTLE_LOG_Y  :: i32(202)
+BATTLE_LOG_W  :: i32(262)
+BATTLE_LOG_LH :: i32(19)
+BATTLE_LOG_LINES :: 8
+
+// Word-wrap `text` into `out` at the given size and width, returning the count.
+log_wrap :: proc(text: string, size, max_w: i32, out: []cstring) -> int {
+	n := 0
+	rest := text
+	for len(rest) > 0 && n < len(out) {
+		if rl.MeasureText(fmt.ctprintf("%s", rest), size) <= max_w {
+			out[n] = fmt.ctprintf("%s", rest)
+			n += 1
+			break
+		}
+		// The furthest space that still fits.
+		cut := -1
+		for i in 1..<len(rest) {
+			if rest[i] != ' ' {
+				continue
+			}
+			if rl.MeasureText(fmt.ctprintf("%s", rest[:i]), size) <= max_w {
+				cut = i
+			} else {
+				break
+			}
+		}
+		if cut <= 0 {
+			cut = len(rest)
+		}
+		out[n] = fmt.ctprintf("%s", rest[:cut])
+		n += 1
+		rest = strings.trim_left_space(rest[cut:])
+	}
+	return n
+}
+
+// The most recent messages, wrapped into the column, newest last. Older lines
+// fall off the top once the column is full.
 draw_battle_log :: proc(b: ^Battle) {
-	for msg, i in b.log {
-		rl.DrawText(fmt.ctprintf("%s", msg), 16, 196 + i32(i) * 21, 15, COL_MUTED)
+	lines: [BATTLE_LOG_LINES]cstring
+	n := 0
+	for msg in b.log {
+		part: [3]cstring
+		m := log_wrap(msg, 13, BATTLE_LOG_W, part[:])
+		for i in 0..<m {
+			if n >= BATTLE_LOG_LINES {
+				for k in 1..<BATTLE_LOG_LINES {
+					lines[k-1] = lines[k]
+				}
+				n -= 1
+			}
+			lines[n] = part[i]
+			n += 1
+		}
+	}
+	for i in 0..<n {
+		rl.DrawText(lines[i], BATTLE_LOG_X, BATTLE_LOG_Y + i32(i)*BATTLE_LOG_LH, 13, COL_MUTED)
 	}
 }
 

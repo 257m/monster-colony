@@ -282,17 +282,32 @@ start_next_attack :: proc(g: ^Game) {
 choice_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	return rl.Rectangle{sw / 2 - 250, sh / 2 - 160, 500, 320}
+	return rl.Rectangle{sw / 2 - 310, sh / 2 - 190, 620, 380}
+}
+
+// The name lists are laid out in a grid, so a full party of six can never run
+// off the side of the panel.
+CHOICE_COLS :: 3
+CHOICE_COL_W :: 190
+CHOICE_ROW_H :: 22
+
+// Draw up to CHOICE_COLS x 2 names starting at (x, y).
+draw_choice_names :: proc(x, y: i32, names: []cstring, n: int, col: rl.Color) {
+	for i in 0..<n {
+		c := i % CHOICE_COLS
+		r := i / CHOICE_COLS
+		rl.DrawText(names[i], x + i32(c*CHOICE_COL_W), y + i32(r*CHOICE_ROW_H), 15, col)
+	}
 }
 
 choice_auto_rect :: proc() -> rl.Rectangle {
 	p := choice_panel_rect()
-	return rl.Rectangle{p.x + 30, p.y + 190, 200, 58}
+	return rl.Rectangle{p.x + 30, p.y + 248, 260, 58}
 }
 
 choice_manual_rect :: proc() -> rl.Rectangle {
 	p := choice_panel_rect()
-	return rl.Rectangle{p.x + p.width - 230, p.y + 190, 200, 58}
+	return rl.Rectangle{p.x + p.width - 290, p.y + 248, 260, 58}
 }
 
 update_battle_choice :: proc(g: ^Game) {
@@ -659,7 +674,17 @@ resolve_won :: proc(g: ^Game) {
 
 	g.results = res
 	g.results_open = true
-	g.mode = .MAP
+	// A run in progress has its own screen, so a won floor drops you back there
+	// rather than onto the map where the party could be rearranged.
+	if g.colony.arena_run {
+		g.mode = .ARENA
+		// A run is a long thing; bank it after every floor.
+		if g.autosave_on && save_supported() {
+			_ = save_game(g, AUTOSAVE_SLOT)
+		}
+	} else {
+		g.mode = .MAP
+	}
 }
 
 results_continue_rect :: proc() -> rl.Rectangle {
@@ -779,25 +804,29 @@ draw_battle_choice :: proc(g: ^Game) {
 	line := fmt.ctprintf("%d wild%s on this tile!", wilds, wilds == 1 ? "" : "s")
 	rl.DrawText(line, i32(p.x) + 24, i32(p.y) + 60, 20, rl.Color{230, 230, 240, 255})
 
-	rl.DrawText("Attackers:", i32(p.x) + 24, i32(p.y) + 96, 16, rl.Color{220, 150, 150, 255})
-	ax := i32(p.x) + 24
+	atk: [CHOICE_COLS * 2]cstring
+	na := 0
 	for &m in g.colony.roster {
-		if m.wild && hex_equal(m.pos, hex) {
-			label := fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
-			rl.DrawText(label, ax, i32(p.y) + 118, 15, rl.Color{235, 180, 180, 255})
-			ax += rl.MeasureText("XXXXXXXXXXXXXXXXXX", 15) + 8
+		if !m.wild || !hex_equal(m.pos, hex) || na >= len(atk) {
+			continue
 		}
+		atk[na] = fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
+		na += 1
 	}
+	rl.DrawText("Attackers:", i32(p.x) + 24, i32(p.y) + 88, 16, rl.Color{220, 150, 150, 255})
+	draw_choice_names(i32(p.x) + 24, i32(p.y) + 110, atk[:], na, rl.Color{235, 180, 180, 255})
 
-	rl.DrawText("Defenders:", i32(p.x) + 24, i32(p.y) + 142, 16, rl.Color{170, 190, 170, 255})
-	dx := i32(p.x) + 24
+	def: [CHOICE_COLS * 2]cstring
+	nd := 0
 	for &m in g.colony.roster {
-		if !m.wild && hex_equal(m.pos, hex) {
-			label := fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
-			rl.DrawText(label, dx, i32(p.y) + 164, 15, rl.Color{200, 220, 200, 255})
-			dx += rl.MeasureText("XXXXXXXXXXXXXXXXXX", 15) + 8
+		if m.wild || !hex_equal(m.pos, hex) || nd >= len(def) {
+			continue
 		}
+		def[nd] = fmt.ctprintf("%s Lvl %d", m.creature.name, m.creature.level)
+		nd += 1
 	}
+	rl.DrawText("Defenders:", i32(p.x) + 24, i32(p.y) + 164, 16, rl.Color{170, 190, 170, 255})
+	draw_choice_names(i32(p.x) + 24, i32(p.y) + 186, def[:], nd, rl.Color{200, 220, 200, 255})
 	_ = sh
 
 	mp := mouse_pos()

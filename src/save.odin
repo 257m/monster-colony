@@ -525,7 +525,8 @@ load_game :: proc(g: ^Game, slot: int) -> bool {
 		return false
 	}
 	g.has_colony = true
-	g.mode = .MAP
+	// A run in progress resumes on the Arena screen, where it left off.
+	g.mode = g.colony.arena_run ? .ARENA : .MAP
 	g.has_battle = false
 	g.battle_choice_open = false
 	g.attack_select_open = false

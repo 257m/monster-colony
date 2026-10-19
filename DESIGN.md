@@ -1244,3 +1244,26 @@ it stored, is lost).
   you cash out or wipe. The panel lists them (`Run boons:  Mana Shard x2, ...`),
   the offer is replaced by a rest once you're full, and they survive a mid-run
   save. `SAVE_VERSION` is **15**.
+- Phase 69 ✅ **the party is always six, and the screens say so**: every floor
+  fields a full team of `ARENA_TEAM_SIZE` (the ramp from two challengers up is
+  gone — the tower is meant to be an even fight against a rival colony, not a
+  warm-up), and the AMBUSH/ATTACK panel lays its attacker and defender names out
+  in a **grid** (three columns, two rows) so a full party can never run off the
+  side. Its panel grew to hold them. The enemy card's avatar shrank to a radius
+  of 26, which gives the ability line its own row above it instead of touching
+  the art, and the **battle log** moved back into a column of its own at the
+  left (the enemy row now starts at `ENEMY_ROW_LEFT`, still seven cards wide, so
+  six are always visible). Log messages **word-wrap** into that column rather
+  than being clipped, and the oldest lines fall off the top when it fills.
+
+- Phase 70 ✅ **the Arena is its own screen** (`Game_Mode.ARENA`): a run is no
+  longer a modal over the colony map. Entering the tower puts you on a dedicated
+  screen — floor and record on the left, **your party** on the right (level, HP,
+  energy, ability, item), and Enter / Cash out / Save / Abandon across the
+  bottom. A won floor returns you **here**, not to the map, so the party you
+  brought is the party you climb with: the colony is out of reach until the run
+  is settled, and Esc only backs out when there is nothing at stake. The run is
+  **autosaved after every floor** (and there is a Save button), so a long climb
+  can be put down and picked up — a loaded save with a run in progress resumes
+  on this screen. A wipe, a cash-out or an abandon all end the run and hand you
+  back the colony.

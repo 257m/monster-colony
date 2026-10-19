@@ -98,8 +98,6 @@ ARENA_CRYSTAL_REWARD   :: 12
 // floor 1 every time. Each cleared floor banks its purse; the run ends when you
 // cash out (keeping the winnings) or when your party wipes (losing them).
 ARENA_BASE_LEVEL      :: 4   // challengers never drop below this
-ARENA_TEAM_BASE       :: 2   // challengers on floor 1
-ARENA_TEAM_PER_FLOOR  :: 8   // +1 challenger per this many floors (up to ARENA_TEAM_SIZE)
 ARENA_PURSE_PER_FLOOR :: 2   // crystals a floor banks per floor number
 ARENA_GOLD_PER_FLOOR  :: 25  // gold a cleared floor pays, on top of kill loot
 ARENA_HEAL_PCT        :: f32(0.25) // (unused: heals are full; kept for tuning)

@@ -5,7 +5,7 @@ import "core:time"
 import "core:math"
 import "core:fmt"
 
-Game_Mode :: enum { TITLE, STARTER, MAP, BATTLE, GAME_OVER }
+Game_Mode :: enum { TITLE, STARTER, MAP, ARENA, BATTLE, GAME_OVER }
 
 Battle_Results :: struct {
 	gold:    int,
@@ -43,7 +43,6 @@ Game :: struct {
 	has_build:  bool,
 	build_preview: Improvement, // hovered build option (for radius preview)
 	trade_open: bool,
-	arena_open: bool,
 	arena_event_open: bool,
 
 	// monster encyclopedia
@@ -509,6 +508,8 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_starter(g)
 	case .MAP:
 		update_colony(g, dt)
+	case .ARENA:
+		update_arena(g)
 	case .BATTLE:
 		update_battle(g, dt)
 	case .GAME_OVER:
@@ -564,8 +565,7 @@ update_colony :: proc(g: ^Game, dt: f32) {
 	if rl.IsKeyPressed(.B) {
 		g.build_mode = !g.build_mode
 		g.trade_open = false
-		g.arena_open = false
-	g.arena_event_open = false
+		g.arena_event_open = false
 		g.has_build = false
 		g.build_preview = .NONE
 		g.build_scroll = 0
@@ -608,16 +608,13 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		update_arena_event(g)
 		return
 	}
-	if g.arena_open {
-		update_arena(g)
-		return
-	}
 	if rl.IsKeyPressed(.T) && selected_on_trading_post(g) {
 		g.trade_open = true
 		return
 	}
 	if rl.IsKeyPressed(.T) && selected_on_arena(g) {
-		g.arena_open = true
+		// A run has its own screen: the colony is out of reach while it is on.
+		g.mode = .ARENA
 		return
 	}
 
@@ -902,7 +899,6 @@ update_trade :: proc(g: ^Game) {
 		}
 	}
 	g.trade_open = false
-	g.arena_open = false
 }
 
 do_end_turn :: proc(g: ^Game) {
@@ -998,18 +994,17 @@ game_draw :: proc(g: ^Game) {
 		if g.trade_open {
 			draw_trade_panel(g)
 		}
-		if g.arena_open {
-			draw_arena(g)
-		}
-		if g.arena_event_open {
-			draw_arena_event(g)
-		}
+	case .ARENA:
+		draw_arena(g)
 	case .BATTLE:
 		draw_battle(&g.battle)
 	case .GAME_OVER:
 		draw_colony_game_over(g.colony.turn)
 	}
 
+	if g.arena_event_open {
+		draw_arena_event(g)
+	}
 	if g.attack_select_open {
 		draw_attack_select(g)
 	}
