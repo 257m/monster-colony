@@ -69,6 +69,8 @@ Game :: struct {
 	// item bag viewer
 	show_bag:  bool,
 	bag_index: int,
+	bag_mon:   int, // the monster selected in the inventory
+	bag_mon_scroll: f32,
 	bag_first: int,
 
 	// crystal progression panel
@@ -433,9 +435,7 @@ game_update :: proc(g: ^Game, dt: f32) {
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.G) {
-		g.show_bag = true
-		g.bag_index = 0
-		g.bag_first = 0
+		open_inventory(g)
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.U) {
@@ -448,9 +448,7 @@ game_update :: proc(g: ^Game, dt: f32) {
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.J) {
 		// Relics live in the inventory now, alongside items.
-		g.show_bag = true
-		g.bag_index = 0
-		g.bag_first = 0
+		open_inventory(g)
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.Z) {

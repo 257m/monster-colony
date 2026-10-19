@@ -634,9 +634,10 @@ resolve_won :: proc(g: ^Game) {
 		}
 	}
 
-	// Item drop: an Arena win or a slain boss always drops one, normal fights
-	// sometimes. Items go to the shared inventory, equipped from the deck viewer.
-	if boss_killed || was_arena || rng_f32(&g.colony.rng) < 0.22 {
+	// Item drop: a slain boss always drops one, normal fights sometimes. Arena
+	// floors deliberately do *not*: a tower climb would otherwise be an item
+	// faucet, and the trial floors are where the run hands out gear.
+	if boss_killed || rng_f32(&g.colony.rng) < 0.22 {
 		// Only fits while the bag has room; build a Vault to hold more.
 		if len(g.colony.items) < colony_item_cap(&g.colony) {
 			it := random_item(&g.colony.rng)

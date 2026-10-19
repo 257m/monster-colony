@@ -1529,32 +1529,16 @@ draw_item_effects :: proc(it: Item, x, y: i32, size: i32) -> i32 {
 	return yy
 }
 
-// Move a bagged item onto the currently selected monster (the old item returns
-// to the bag). Returns true on success.
-equip_bag_item :: proc(g: ^Game, bag_index: int) -> bool {
-	s := g.selected
-	if s < 0 || s >= len(g.colony.roster) || g.colony.roster[s].wild {
-		return false
-	}
-	if bag_index < 0 || bag_index >= len(g.colony.items) {
-		return false
-	}
-	item := g.colony.items[bag_index]
-	ordered_remove(&g.colony.items, bag_index)
-	old := g.colony.roster[s].creature.item
-	creature_equip_item(&g.colony.roster[s].creature, item)
-	if old != .NONE {
-		append(&g.colony.items, old)
-	}
-	return true
-}
-
 // ----------------------------------------------------------------------------
 // Inventory (items + relics)
 //
-// One grid for everything you own: held items and boss relics. Items equip to a
-// monster; relics slot into a Relic Tower. Selecting a slot shows the full
-// breakdown on the right, with the action button underneath.
+// Two columns: your monsters on the left, your bag on the right. Pick a monster,
+// then pick an item, and it is worn — a swap sends whatever it was wearing back
+// to the bag. Relics slot into a Relic Tower instead. The selected slot's full
+// breakdown shows underneath.
+//
+// The whole thing works mid-run too: the Arena screen opens it directly, so a
+// party can be re-geared between floors.
 // ----------------------------------------------------------------------------
 
 INV_COLS :: 7
@@ -1564,9 +1548,63 @@ INV_GAP  :: f32(10)
 inv_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	w := f32(1000)
-	h := f32(580)
+	w := f32(1020)
+	h := f32(700)
 	return rl.Rectangle{sw / 2 - w / 2, sh / 2 - h / 2, w, h}
+}
+
+// --- the monster column ---
+INV_MON_W       :: f32(340)
+INV_MON_ROW     :: f32(44)
+INV_MON_VISIBLE :: 10
+
+inv_mon_x :: proc() -> f32 {
+	return inv_panel_rect().x + 24
+}
+
+inv_mon_rect :: proc(i: int, scroll: f32 = 0) -> rl.Rectangle {
+	p := inv_panel_rect()
+	return rl.Rectangle{inv_mon_x(), p.y + 122 + f32(i)*INV_MON_ROW - scroll, INV_MON_W, INV_MON_ROW - 4}
+}
+
+inv_mon_count :: proc(c: ^Colony) -> int {
+	n := 0
+	for m in c.roster {
+		if !m.wild {
+			n += 1
+		}
+	}
+	return n
+}
+
+// The roster index of the Nth monster in the list (-1 if there is none).
+inv_mon_roster :: proc(c: ^Colony, i: int) -> int {
+	n := 0
+	for m, j in c.roster {
+		if m.wild {
+			continue
+		}
+		if n == i {
+			return j
+		}
+		n += 1
+	}
+	return -1
+}
+
+inv_mon_max_scroll :: proc(c: ^Colony) -> f32 {
+	n := max(inv_mon_count(c) - INV_MON_VISIBLE, 0)
+	return f32(n) * INV_MON_ROW
+}
+
+// --- the bag column ---
+inv_bag_x :: proc() -> f32 {
+	return inv_panel_rect().x + 384
+}
+
+inv_bag_w :: proc() -> f32 {
+	p := inv_panel_rect()
+	return p.x + p.width - 24 - inv_bag_x()
 }
 
 inv_slot_rect :: proc(i: int) -> rl.Rectangle {
@@ -1574,27 +1612,26 @@ inv_slot_rect :: proc(i: int) -> rl.Rectangle {
 	col := i % INV_COLS
 	row := i / INV_COLS
 	return rl.Rectangle{
-		p.x + 24 + f32(col) * (INV_SLOT + INV_GAP),
-		p.y + 104 + f32(row) * (INV_SLOT + INV_GAP),
+		inv_bag_x() + f32(col) * (INV_SLOT + INV_GAP),
+		p.y + 122 + f32(row) * (INV_SLOT + INV_GAP),
 		INV_SLOT,
 		INV_SLOT,
 	}
 }
 
+inv_detail_rect :: proc() -> rl.Rectangle {
+	p := inv_panel_rect()
+	return rl.Rectangle{inv_bag_x(), p.y + 466, inv_bag_w(), 140}
+}
+
 inv_action_rect :: proc() -> rl.Rectangle {
 	p := inv_panel_rect()
-	return rl.Rectangle{p.x + p.width - 336, p.y + p.height - 74, 312, 50}
+	return rl.Rectangle{inv_bag_x(), p.y + p.height - 84, inv_bag_w(), 30}
 }
 
 inv_unequip_rect :: proc() -> rl.Rectangle {
 	p := inv_panel_rect()
-	return rl.Rectangle{p.x + p.width - 336, p.y + p.height - 134, 312, 50}
-}
-
-// Relics: pull one copy back out of the nearest tower holding it.
-inv_take_rect :: proc() -> rl.Rectangle {
-	p := inv_panel_rect()
-	return rl.Rectangle{p.x + p.width - 336, p.y + p.height - 134, 312, 50}
+	return rl.Rectangle{inv_bag_x(), p.y + p.height - 46, inv_bag_w(), 30}
 }
 
 // A slot in the grid is either an item or a relic.
@@ -1622,7 +1659,290 @@ inv_entry_at :: proc(c: ^Colony, i: int) -> (Inv_Entry, bool) {
 	return {}, false
 }
 
-// A compact procedural icon per item, so the grid reads at a glance.
+// Open the inventory, pointing at whichever monster is selected on the map.
+open_inventory :: proc(g: ^Game) {
+	g.show_bag = true
+	g.bag_index = 0
+	g.bag_first = 0
+	g.bag_mon_scroll = 0
+	g.bag_mon = 0
+	for m, j in g.colony.roster {
+		if m.wild {
+			continue
+		}
+		if j == g.selected {
+			g.bag_mon = inv_mon_list_pos(&g.colony, j)
+			break
+		}
+	}
+}
+
+// Where roster index `j` sits in the list.
+inv_mon_list_pos :: proc(c: ^Colony, j: int) -> int {
+	n := 0
+	for m, k in c.roster {
+		if m.wild {
+			continue
+		}
+		if k == j {
+			return n
+		}
+		n += 1
+	}
+	return 0
+}
+
+// Equip the bag item at `bag_index` onto the Nth monster in the list.
+equip_bag_item_to :: proc(g: ^Game, bag_index, list_pos: int) -> bool {
+	s := inv_mon_roster(&g.colony, list_pos)
+	if s < 0 {
+		return false
+	}
+	if bag_index < 0 || bag_index >= len(g.colony.items) {
+		return false
+	}
+	item := g.colony.items[bag_index]
+	ordered_remove(&g.colony.items, bag_index)
+	old := g.colony.roster[s].creature.item
+	creature_equip_item(&g.colony.roster[s].creature, item)
+	if old != .NONE {
+		append(&g.colony.items, old)
+	}
+	return true
+}
+
+// Take whatever the Nth monster is wearing back into the bag.
+unequip_monster :: proc(g: ^Game, list_pos: int) -> bool {
+	s := inv_mon_roster(&g.colony, list_pos)
+	if s < 0 || g.colony.roster[s].creature.item == .NONE {
+		return false
+	}
+	append(&g.colony.items, g.colony.roster[s].creature.item)
+	creature_equip_item(&g.colony.roster[s].creature, .NONE)
+	return true
+}
+
+// The name of the monster the inventory is pointed at, for button labels.
+inv_target_name :: proc(g: ^Game) -> cstring {
+	s := inv_mon_roster(&g.colony, g.bag_mon)
+	if s < 0 {
+		return cstring("nobody")
+	}
+	return fmt.ctprintf("%s", g.colony.roster[s].creature.name)
+}
+
+update_inventory :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.G) || rl.IsKeyPressed(.J) {
+		g.show_bag = false
+		return
+	}
+	c := &g.colony
+	nmon := inv_mon_count(c)
+	g.bag_mon = clamp(g.bag_mon, 0, max(nmon - 1, 0))
+	g.bag_mon_scroll -= rl.GetMouseWheelMove() * 60
+	g.bag_mon_scroll = clamp(g.bag_mon_scroll, 0, inv_mon_max_scroll(c))
+	n := inv_count(c)
+	g.bag_index = clamp(g.bag_index, 0, max(n - 1, 0))
+	if !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := mouse_pos()
+
+	// Pick a monster.
+	for i in 0..<min(nmon, INV_MON_VISIBLE) {
+		if rl.CheckCollisionPointRec(mp, inv_mon_rect(i, g.bag_mon_scroll)) {
+			g.bag_mon = i
+			return
+		}
+	}
+
+	// Pick a bag slot.
+	for i in 0..<n {
+		if i >= INV_COLS * 4 {
+			break
+		}
+		if rl.CheckCollisionPointRec(mp, inv_slot_rect(i)) {
+			g.bag_index = i
+			return
+		}
+	}
+
+	entry, ok := inv_entry_at(c, g.bag_index)
+	if !ok {
+		return
+	}
+	// The action button: wear the selected item, or arm relic placement.
+	if rl.CheckCollisionPointRec(mp, inv_action_rect()) {
+		if entry.is_relic {
+			g.relic_place = entry.relic
+			g.relic_place_active = true
+			g.show_bag = false
+			set_status(g, "Click a Relic Tower to slot it. Esc cancels.")
+		} else if equip_bag_item_to(g, g.bag_index, g.bag_mon) {
+			set_status(g, fmt.ctprintf("Equipped to %s.", inv_target_name(g)))
+			g.bag_index = clamp(g.bag_index, 0, max(inv_count(c) - 1, 0))
+		} else {
+			set_status(g, "No monster to equip.")
+		}
+		return
+	}
+	// The second button: pull the relic out of a tower, or strip the monster.
+	if entry.is_relic {
+		if rl.CheckCollisionPointRec(mp, inv_unequip_rect()) {
+			if !remove_relic_nearest(c, c.start_hex, entry.relic) {
+				set_status(g, "No tower holds that relic.")
+			}
+			return
+		}
+	} else if rl.CheckCollisionPointRec(mp, inv_unequip_rect()) {
+		if unequip_monster(g, g.bag_mon) {
+			set_status(g, fmt.ctprintf("%s is no longer wearing anything.", inv_target_name(g)))
+		} else {
+			set_status(g, "That monster has nothing equipped.")
+		}
+		return
+	}
+}
+
+draw_inventory :: proc(g: ^Game) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 246})
+
+	p := inv_panel_rect()
+	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
+	rl.DrawText("INVENTORY", i32(p.x) + 24, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
+	rl.DrawText("Click a monster, then an item, then Equip.",
+		i32(p.x) + 24, i32(p.y) + 56, 15, rl.Color{170, 180, 200, 255})
+
+	mp := mouse_pos()
+
+	// ---- left: your monsters ----
+	rl.DrawText("YOUR MONSTERS", i32(inv_mon_x()), i32(p.y) + 96, 15, rl.Color{150, 160, 180, 255})
+	nmon := inv_mon_count(&g.colony)
+	lo := int(g.bag_mon_scroll / INV_MON_ROW)
+	for k in 0..<INV_MON_VISIBLE {
+		i := lo + k
+		if i >= nmon {
+			break
+		}
+		s := inv_mon_roster(&g.colony, i)
+		if s < 0 {
+			continue
+		}
+		cr := &g.colony.roster[s].creature
+		rec := inv_mon_rect(k, g.bag_mon_scroll - f32(lo)*INV_MON_ROW)
+		sel := i == g.bag_mon
+		hover := rl.CheckCollisionPointRec(mp, rec)
+		bg := rl.Color{26, 28, 38, 240}
+		if sel {
+			bg = rl.Color{34, 48, 40, 240}
+		} else if hover {
+			bg = rl.Color{32, 34, 46, 240}
+		}
+		rl.DrawRectangleRounded(rec, 0.14, 6, bg)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.14, 6, sel ? 2 : 1, sel ? rl.Color{150, 230, 180, 255} : rl.Color{54, 58, 74, 255})
+		rl.DrawText(fit_textf(15, i32(INV_MON_W) - 150, "%s   Lvl %d", cr.name, cr.level),
+			i32(rec.x) + 10, i32(rec.y) + 11, 15, rl.Color{225, 228, 240, 255})
+		worn := cr.item == .NONE ? cstring("-") : item_name(cr.item)
+		ww := rl.MeasureText(worn, 13)
+		rl.DrawText(worn, i32(rec.x + rec.width) - ww - 10, i32(rec.y) + 13, 13,
+			cr.item == .NONE ? rl.Color{120, 120, 140, 255} : item_color(cr.item))
+	}
+	if nmon == 0 {
+		rl.DrawText("No monsters yet.", i32(inv_mon_x()), i32(p.y) + 130, 15, rl.Color{150, 150, 170, 255})
+	} else if inv_mon_max_scroll(&g.colony) > 0 {
+		hint := fmt.ctprintf("%d of %d   (wheel to scroll)", lo + 1, nmon)
+		rl.DrawText(hint, i32(inv_mon_x()), i32(p.y + p.height) - 40, 13, rl.Color{140, 140, 160, 255})
+	}
+
+	// ---- right: the bag ----
+	n := inv_count(&g.colony)
+	rl.DrawText(fmt.ctprintf("BAG   (%d items, %d relics)", len(g.colony.items), len(g.colony.relic_bag)),
+		i32(inv_bag_x()), i32(p.y) + 96, 15, rl.Color{150, 160, 180, 255})
+	for i in 0..<n {
+		if i >= INV_COLS * 4 {
+			break
+		}
+		entry, _ := inv_entry_at(&g.colony, i)
+		rec := inv_slot_rect(i)
+		sel := i == g.bag_index
+		hover := rl.CheckCollisionPointRec(mp, rec)
+		col := entry.is_relic ? rl.Color{235, 195, 110, 255} : item_color(entry.item)
+		bg := rl.Color{26, 28, 38, 255}
+		if sel {
+			bg = rl.Color{38, 46, 42, 255}
+		} else if hover {
+			bg = rl.Color{32, 34, 46, 255}
+		}
+		rl.DrawRectangleRounded(rec, 0.18, 6, bg)
+		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 6, sel ? 3 : 2, sel ? rl.Color{150, 230, 180, 255} : col)
+		cx := rec.x + rec.width / 2
+		cy := rec.y + rec.height / 2 - 4
+		if entry.is_relic {
+			draw_relic_icon(entry.relic, cx, cy, 1.0)
+		} else {
+			draw_item_icon(entry.item, cx, cy, 1.0)
+		}
+		name := entry.is_relic ? relic_name(entry.relic) : item_name(entry.item)
+		nw := rl.MeasureText(name, 11)
+		rl.DrawText(name, i32(cx) - nw / 2, i32(rec.y + rec.height) - 16, 11, rl.Color{205, 210, 225, 255})
+	}
+
+	// ---- the selected slot's breakdown ----
+	entry, ok := inv_entry_at(&g.colony, g.bag_index)
+	if !ok {
+		rl.DrawText("The bag is empty. Items drop from battles and trial floors; relics from bosses.",
+			i32(inv_bag_x()), i32(p.y) + 480, 15, rl.Color{150, 150, 170, 255})
+		rl.DrawText("G / Esc to close", i32(inv_bag_x()), i32(p.y + p.height) - 30, 15, rl.Color{150, 150, 170, 255})
+		return
+	}
+	col := entry.is_relic ? rl.Color{235, 195, 110, 255} : item_color(entry.item)
+	dr := inv_detail_rect()
+	rl.DrawRectangleRounded(dr, 0.03, 8, rl.Color{22, 24, 32, 255})
+	rl.DrawRectangleRoundedLinesEx(dr, 0.03, 8, 2, rl.Color{54, 58, 74, 255})
+	if entry.is_relic {
+		draw_relic_icon(entry.relic, dr.x + 34, dr.y + 50, 1.1)
+	} else {
+		draw_item_icon(entry.item, dr.x + 34, dr.y + 50, 1.1)
+	}
+	name := entry.is_relic ? relic_name(entry.relic) : item_name(entry.item)
+	kind := entry.is_relic ? cstring("Relic  -  slot into a Relic Tower") : cstring("Held item  -  one per monster")
+	rl.DrawText(name, i32(dr.x) + 70, i32(dr.y) + 10, 20, rl.Color{235, 235, 245, 255})
+	rl.DrawText(kind, i32(dr.x) + 70, i32(dr.y) + 34, 14, col)
+	if entry.is_relic {
+		draw_text_wrapped(relic_desc(entry.relic), i32(dr.x) + 70, i32(dr.y) + 56, 15, i32(dr.width) - 90,
+			rl.Color{200, 205, 220, 255})
+		placed := relics_placed(&g.colony)
+		rl.DrawText(fmt.ctprintf("In the bag: %d    slotted in towers: %d    (copies stack)",
+			relics_unplaced(&g.colony, entry.relic), placed[entry.relic]),
+			i32(dr.x) + 70, i32(dr.y) + 112, 14, rl.Color{180, 185, 205, 255})
+	} else {
+		draw_item_effects(entry.item, i32(dr.x) + 70, i32(dr.y) + 56, 15)
+	}
+
+	// ---- actions ----
+	s := inv_mon_roster(&g.colony, g.bag_mon)
+	worn: cstring = "nothing"
+	if s >= 0 && g.colony.roster[s].creature.item != .NONE {
+		worn = item_name(g.colony.roster[s].creature.item)
+	}
+	if entry.is_relic {
+		draw_button(inv_action_rect(), "Place in a Relic Tower", true, BUTTON_PANEL, 16)
+		if rl.CheckCollisionPointRec(mp, inv_action_rect()) {
+			tooltip_set("Close the inventory and click a Relic Tower to slot this relic into it.")
+		}
+		draw_button(inv_unequip_rect(), "Take back (nearest tower)", relics_placed(&g.colony)[entry.relic] > 0, BUTTON_PANEL, 16)
+	} else {
+		draw_button(inv_action_rect(), fmt.ctprintf("Equip to %s", inv_target_name(g)), s >= 0, BUTTON_PANEL, 16)
+		draw_button(inv_unequip_rect(), fmt.ctprintf("Unequip %s  (wearing: %s)", inv_target_name(g), worn),
+			s >= 0 && g.colony.roster[s].creature.item != .NONE, BUTTON_PANEL, 16)
+	}
+	rl.DrawText("G / Esc to close", i32(p.x) + 24, i32(p.y + p.height) - 30, 15, rl.Color{150, 150, 170, 255})
+}
+
+// A little procedural icon per item and per relic, so the grid reads at a
+// glance without any art assets.
 draw_item_icon :: proc(it: Item, cx, cy, s: f32) {
 	col := item_color(it)
 	dark := rl.Color{col[0] / 3, col[1] / 3, col[2] / 3, 255}
@@ -1715,184 +2035,6 @@ draw_relic_icon :: proc(r: Relic, cx, cy, s: f32) {
 	rl.DrawTriangleLines(rl.Vector2{cx, cy - 13 * s}, rl.Vector2{cx - 11 * s, cy + 3 * s}, rl.Vector2{cx + 11 * s, cy + 3 * s}, rl.Color{255, 235, 170, 255})
 	rl.DrawCircleV(rl.Vector2{cx, cy}, 3 * s, rl.Color{255, 245, 200, 255})
 	_ = r
-}
-
-update_inventory :: proc(g: ^Game) {
-	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.G) || rl.IsKeyPressed(.J) {
-		g.show_bag = false
-		return
-	}
-	n := inv_count(&g.colony)
-	g.bag_index = clamp(g.bag_index, 0, max(n - 1, 0))
-	if !rl.IsMouseButtonPressed(.LEFT) {
-		return
-	}
-	mp := mouse_pos()
-	// Click a slot to select it.
-	for i in 0..<n {
-		if i >= INV_COLS * 4 {
-			break
-		}
-		if rl.CheckCollisionPointRec(mp, inv_slot_rect(i)) {
-			g.bag_index = i
-			return
-		}
-	}
-	entry, ok := inv_entry_at(&g.colony, g.bag_index)
-	if !ok {
-		return
-	}
-	// Items equip; relics arm tower placement.
-	if rl.CheckCollisionPointRec(mp, inv_action_rect()) {
-		if entry.is_relic {
-			g.relic_place = entry.relic
-			g.relic_place_active = true
-			g.show_bag = false
-			set_status(g, "Click a Relic Tower to slot it. Esc cancels.")
-		} else if equip_bag_item(g, g.bag_index) {
-			set_status(g, "Item equipped.")
-			g.bag_index = clamp(g.bag_index, 0, max(inv_count(&g.colony) - 1, 0))
-		} else {
-			set_status(g, "Select one of your monsters on the map first.")
-		}
-		return
-	}
-	// Relics: take one back out of a tower. Items: unequip the selected monster.
-	if entry.is_relic && rl.CheckCollisionPointRec(mp, inv_take_rect()) {
-		if remove_relic_nearest(&g.colony, g.colony.start_hex, entry.relic) {
-			return
-		}
-		set_status(g, "No tower holds that relic.")
-		return
-	}
-	if !entry.is_relic && rl.CheckCollisionPointRec(mp, inv_unequip_rect()) {
-		s := g.selected
-		if s >= 0 && s < len(g.colony.roster) && !g.colony.roster[s].wild {
-			m := &g.colony.roster[s]
-			if m.creature.item != .NONE {
-				append(&g.colony.items, m.creature.item)
-				creature_equip_item(&m.creature, .NONE)
-				set_status(g, "Item unequipped.")
-			}
-		}
-		return
-	}
-}
-
-draw_inventory :: proc(g: ^Game) {
-	sw := f32(screen_w())
-	sh := f32(screen_h())
-	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{8, 10, 16, 246})
-
-	p := inv_panel_rect()
-	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
-	n := inv_count(&g.colony)
-	cap := colony_item_cap(&g.colony) + len(g.colony.relic_bag)
-	rl.DrawText("INVENTORY", i32(p.x) + 24, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
-	rl.DrawText(fmt.ctprintf("%d items   %d relics   -   click a slot, then use the button on the right",
-		len(g.colony.items), len(g.colony.relic_bag)),
-		i32(p.x) + 24, i32(p.y) + 54, 15, rl.Color{170, 180, 200, 255})
-
-	// Left: the grid.
-	mp := mouse_pos()
-	for i in 0..<n {
-		if i >= INV_COLS * 4 {
-			break
-		}
-		entry, _ := inv_entry_at(&g.colony, i)
-		rec := inv_slot_rect(i)
-		sel := i == g.bag_index
-		hover := rl.CheckCollisionPointRec(mp, rec)
-		col := entry.is_relic ? rl.Color{235, 195, 110, 255} : item_color(entry.item)
-		bg := rl.Color{26, 28, 38, 255}
-		if sel {
-			bg = rl.Color{38, 46, 42, 255}
-		} else if hover {
-			bg = rl.Color{32, 34, 46, 255}
-		}
-		rl.DrawRectangleRounded(rec, 0.18, 6, bg)
-		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 6, sel ? 3 : 2, sel ? rl.Color{150, 230, 180, 255} : col)
-		cx := rec.x + rec.width / 2
-		cy := rec.y + rec.height / 2 - 4
-		if entry.is_relic {
-			draw_relic_icon(entry.relic, cx, cy, 1.0)
-		} else {
-			draw_item_icon(entry.item, cx, cy, 1.0)
-		}
-		name := entry.is_relic ? relic_name(entry.relic) : item_name(entry.item)
-		nw := rl.MeasureText(name, 11)
-		rl.DrawText(name, i32(cx) - nw / 2, i32(rec.y + rec.height) - 16, 11, rl.Color{205, 210, 225, 255})
-	}
-
-	// Right: the detail pane.
-	dx := p.x + 24 + f32(INV_COLS) * (INV_SLOT + INV_GAP) + 12
-	dw := p.x + p.width - 24 - dx
-	entry, ok := inv_entry_at(&g.colony, g.bag_index)
-	if !ok {
-		rl.DrawText("Nothing here yet.", i32(dx), i32(p.y) + 116, 20, rl.Color{170, 170, 190, 255})
-		rl.DrawText("Items drop from battles. Relics drop from bosses.", i32(dx), i32(p.y) + 150, 15, rl.Color{140, 140, 160, 255})
-		rl.DrawText(fmt.ctprintf("G / Esc to close"), i32(dx), i32(p.y + p.height) - 40, 15, rl.Color{150, 150, 170, 255})
-		return
-	}
-
-	col := entry.is_relic ? rl.Color{235, 195, 110, 255} : item_color(entry.item)
-	rl.DrawRectangleRounded(rl.Rectangle{dx, p.y + 100, dw, p.height - 190}, 0.03, 8, rl.Color{22, 24, 32, 255})
-	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{dx, p.y + 100, dw, p.height - 190}, 0.03, 8, 2, rl.Color{54, 58, 74, 255})
-
-	// Icon + name + kind.
-	icx := dx + 52
-	icy := p.y + 152
-	if entry.is_relic {
-		draw_relic_icon(entry.relic, icx, icy, 1.6)
-	} else {
-		draw_item_icon(entry.item, icx, icy, 1.6)
-	}
-	name := entry.is_relic ? relic_name(entry.relic) : item_name(entry.item)
-	kind := entry.is_relic ? cstring("Relic  -  slot into a Relic Tower") : cstring("Held item  -  one per monster")
-	rl.DrawText(name, i32(dx) + 106, i32(p.y) + 120, 26, rl.Color{235, 235, 245, 255})
-	rl.DrawText(kind, i32(dx) + 106, i32(p.y) + 152, 15, col)
-	desc := entry.is_relic ? relic_desc(entry.relic) : item_desc(entry.item)
-	draw_text_wrapped(desc, i32(dx) + 106, i32(p.y) + 176, 16, i32(dw) - 130, rl.Color{200, 205, 220, 255})
-
-	// Breakdown.
-	ey := p.y + 240
-	rl.DrawText("EFFECTS", i32(dx) + 24, i32(ey), 15, rl.Color{150, 150, 170, 255})
-	if entry.is_relic {
-		placed := relics_placed(&g.colony)
-		rl.DrawText(fmt.ctprintf("Projects %d tiles from the tower it is slotted into.", RELIC_RADIUS), i32(dx) + 24, i32(ey) + 24, 16, rl.Color{210, 210, 225, 255})
-		rl.DrawText(fmt.ctprintf("In the bag: %d   slotted in towers: %d", relics_unplaced(&g.colony, entry.relic), placed[entry.relic]), i32(dx) + 24, i32(ey) + 46, 16, rl.Color{180, 185, 205, 255})
-		rl.DrawText("Copies stack when several are in range.", i32(dx) + 24, i32(ey) + 68, 16, rl.Color{180, 185, 205, 255})
-	} else {
-		draw_item_effects(entry.item, i32(dx) + 24, i32(ey) + 24, 16)
-	}
-
-	// The selected monster (for equipping).
-	s := g.selected
-	worn: cstring = "nothing"
-	target: cstring = "select a monster on the map"
-	can_equip := false
-	if s >= 0 && s < len(g.colony.roster) && !g.colony.roster[s].wild {
-		m := &g.colony.roster[s]
-		can_equip = m.creature.hp > 0
-		if m.creature.item != .NONE {
-			worn = item_name(m.creature.item)
-		}
-		target = fmt.ctprintf("%s  (wearing: %s)", m.creature.name, worn)
-	}
-	rl.DrawText(fmt.ctprintf("Selected monster: %s", target), i32(dx) + 24, i32(p.y + p.height) - 156, 15, rl.Color{180, 180, 200, 255})
-
-	// Actions.
-	if entry.is_relic {
-		draw_button(inv_action_rect(), "Place in a Relic Tower", true, BUTTON_PANEL, 17)
-		if rl.CheckCollisionPointRec(mp, inv_action_rect()) {
-			tooltip_set("Close the inventory and click a Relic Tower to slot this relic into it.")
-		}
-		draw_button(inv_take_rect(), "Take back (nearest tower)", relics_placed(&g.colony)[entry.relic] > 0, BUTTON_PANEL, 16)
-	} else {
-		draw_button(inv_action_rect(), "Equip to selected monster", can_equip, BUTTON_PANEL, 17)
-		draw_button(inv_unequip_rect(), fmt.ctprintf("Unequip (%s)", worn), s >= 0 && s < len(g.colony.roster) && g.colony.roster[s].creature.item != .NONE, BUTTON_PANEL, 16)
-	}
-	rl.DrawText("G / Esc to close", i32(dx) + 24, i32(p.y + p.height) - 40, 15, rl.Color{150, 150, 170, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -2084,7 +2226,7 @@ arena_fight_rect :: proc() -> rl.Rectangle {
 
 arena_cashout_rect :: proc() -> rl.Rectangle {
 	p := arena_panel_rect()
-	w := (p.width - 56 - 24) / 3
+	w := (p.width - 56 - 36) / 4
 	return rl.Rectangle{p.x + 28, p.y + 434, w, 34}
 }
 
@@ -2093,8 +2235,13 @@ arena_save_rect :: proc() -> rl.Rectangle {
 	return rl.Rectangle{r.x + r.width + 12, r.y, r.width, r.height}
 }
 
-arena_leave_rect :: proc() -> rl.Rectangle {
+arena_items_rect :: proc() -> rl.Rectangle {
 	r := arena_save_rect()
+	return rl.Rectangle{r.x + r.width + 12, r.y, r.width, r.height}
+}
+
+arena_leave_rect :: proc() -> rl.Rectangle {
+	r := arena_items_rect()
 	return rl.Rectangle{r.x + r.width + 12, r.y, r.width, r.height}
 }
 
@@ -2131,6 +2278,11 @@ update_arena :: proc(g: ^Game) {
 	}
 	if c.arena_run && rl.CheckCollisionPointRec(mp, arena_save_rect()) {
 		set_status(g, save_game(g, AUTOSAVE_SLOT) ? "Run saved." : "Could not save.")
+		return
+	}
+	// Re-gear between floors: the inventory opens right over the tower screen.
+	if rl.CheckCollisionPointRec(mp, arena_items_rect()) {
+		open_inventory(g)
 		return
 	}
 	// Abandon: the same as a wipe, but on your own terms.
@@ -2320,14 +2472,22 @@ draw_arena :: proc(g: ^Game) {
 		sw2 := rl.MeasureText(sl, 16)
 		rl.DrawText(sl, i32(sr.x + sr.width / 2) - sw2 / 2, i32(sr.y + sr.height / 2) - 8, 16, rl.Color{200, 215, 240, 255})
 	}
+	ir := arena_items_rect()
+	ihover := rl.CheckCollisionPointRec(mp, ir)
+	rl.DrawRectangleRounded(ir, 0.28, 8, ihover ? rl.Color{52, 48, 66, 255} : rl.Color{38, 36, 48, 255})
+	rl.DrawRectangleRoundedLinesEx(ir, 0.28, 8, 2, rl.Color{190, 175, 235, 255})
+	il := cstring("Items")
+	iw := rl.MeasureText(il, 16)
+	rl.DrawText(il, i32(ir.x + ir.width / 2) - iw / 2, i32(ir.y + ir.height / 2) - 8, 16, rl.Color{215, 205, 245, 255})
+
 	lr := arena_leave_rect()
 	lhover := rl.CheckCollisionPointRec(mp, lr)
 	rl.DrawRectangleRounded(lr, 0.28, 8, lhover ? rl.Color{46, 44, 52, 255} : rl.Color{34, 32, 38, 255})
-	ll := running ? cstring("Abandon the run") : cstring("Walk away")
+	ll := running ? cstring("Abandon") : cstring("Walk away")
 	lw := rl.MeasureText(ll, 16)
 	rl.DrawText(ll, i32(lr.x + lr.width / 2) - lw / 2, i32(lr.y + lr.height / 2) - 8, 16, rl.Color{190, 185, 200, 255})
 
-	hint := running ? cstring("The colony is out of reach until this run is settled.") : cstring("Esc or Walk away returns to the colony.")
+	hint := running ? cstring("The colony is out of reach until this run is settled - but Items re-gears the party.") : cstring("Esc or Walk away returns to the colony.")
 	hw := rl.MeasureText(hint, 14)
 	rl.DrawText(hint, i32(p.x + p.width / 2) - hw / 2, i32(p.y + p.height) - 32, 14, rl.Color{140, 140, 160, 255})
 }

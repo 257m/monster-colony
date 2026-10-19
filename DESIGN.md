@@ -1305,3 +1305,15 @@ it stored, is lost).
   rows fit above the buttons, every left-column line is clipped to
   `ARENA_COL_W` (430) with `fit_text`, and the two lines that were too long were
   shortened. Longest line now measures 396px against 430.
+- Phase 75 ✅ **items: earned at trial floors, chosen by hand, swappable
+  mid-run**. Arena floors no longer drop items — a tower climb would otherwise
+  be an item faucet, and the trial floors are where a run hands out gear. And
+  the inventory is rebuilt around the thing it was actually missing: a way to
+  *choose*. It is now two columns — **your monsters** on the left (name, level
+  and what each is wearing, scrollable) and **your bag** on the right. Click a
+  monster, click an item, click Equip; a swap sends whatever it was wearing back
+  to the bag, and Unequip strips it. The selected slot's effects list (items) or
+  description and counts (relics) sit underneath. The old flow made you pick the
+  monster by selecting it out on the map first, which is why it read as "there
+  is just an Equip button". The Arena screen has an **Items** button, so a party
+  can be re-geared between floors without leaving the tower.
