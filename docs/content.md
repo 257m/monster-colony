@@ -57,7 +57,7 @@ shows; keep it accurate.
 ```
 name, elements: []Element      // 1 or 2 types, primary first
 base_hp: int
-base_energy, base_energy_max: int
+base_energy: f32, base_energy_max: int   // regen per turn / bank cap (raw)
 base_power, base_defense, base_speed: f32   // power is a MULTIPLIER (~1.0)
 base_satiety, base_upkeep: int              // food capacity / per-turn cost
 color, role: Species_Role
@@ -169,17 +169,20 @@ Stat scaling:
 level_scale(level)              = 1 + 0.15*(level-1)
 energy_scale(level)             = 1 + 0.12*ln(level)     // logarithmic!
 creature_stats_for_level(...)   = base * level_scale, with
-    energy_regen = base_energy * energy_scale * ENERGY_REGEN_FACTOR (0.5)
+    energy_regen = base_energy * energy_scale
     energy_max   = base_energy_max * energy_scale
 ```
 
 So `power`, `defense`, `speed` and HP grow ~15% per level, but **energy grows on
 a logarithmic curve** (no hard cap) — otherwise a high-level monster would
-out-regenerate its 5-card hand and energy would stop mattering. Species
-`base_energy_max` is **8** (10 for elites/bosses) versus `base_energy` 3–4, so
-the bank stays well above the regen and saving for a premium card is worth it.
-Regen is additionally **halved** (`ENERGY_REGEN_FACTOR`), so a monster regens
-~1.5–2.3/turn — the shared movement/battle pool is a tight resource.
+out-regenerate its 5-card hand and energy would stop mattering.
+
+`base_energy` (regen per turn) and `base_energy_max` (the bank) are **raw
+species values**, with no multiplier on top: regen is **1.5** (2.0 for the one
+species that should be quicker) and the bank is **4–6**, elites and bosses at the
+top of that. Both are deliberately small — the bank is what decides how hard a
+fight opens, because energy carries over and creatures enter a battle holding a
+full one. See [colony.md](colony.md#5-movement--energy).
 
 - `creature_make(species, level, name)` builds a fresh creature + starter deck.
 - `creature_level_up` recomputes stats and learns any `learnset` moves whose

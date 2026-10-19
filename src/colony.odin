@@ -59,7 +59,6 @@ SCARECROW_PANIC_CHANCE :: f32(0.5)
 CRYSTAL_REFINERY_COST  :: 20   // gold spent per crystal refined
 CRYSTAL_REFINERY_PERIOD :: 6   // turns a Refinery takes to make one crystal (slow!)
 ROAD_MOVE_FACTOR       :: f32(0.5)
-MOVE_STEP_FACTOR       :: f32(0.8) // global multiplier on every step's cost
 // Phase B — energy network + builders
 FOUNTAIN_RANGE         :: 4    // a Fountain supplies the closest recipient in range
 FOUNTAIN_OUTPUT        :: 3    // energy handed out per turn
@@ -1109,19 +1108,22 @@ enqueue_choice :: proc(c: ^Colony, monster_id: int, opts: [MAX_CHOICE_OPTIONS]Mo
 
 // How much a step into each terrain costs, before the mover's Speed and the
 // global step factor. Rough ground is pricier, so routes and Roads matter.
+// Energy per step, by the tile being entered. These are the real costs — there
+// is no global multiplier on top of them — so tuning the map's pace means
+// editing this table.
 terrain_move_cost :: proc(t: Terrain) -> f32 {
 	switch t {
-	case .GROVE, .MUSHROOM:            return 0.9  // soft, easy going
-	case .CAVE, .TRADING_POST, .ARENA: return 1.0
-	case .CRYSTAL_COVE, .RUINS:        return 1.15
-	case .DESERT:                      return 1.25
-	case .TUNDRA, .JUNGLE:             return 1.35
-	case .DUNGEON:                     return 1.4
-	case .BOSS_ROOM, .WATER:           return 1.5
-	case .LAVA:                        return 1.6
-	case .QUICKSAND:                   return 1.8  // the worst footing
+	case .GROVE, .MUSHROOM:            return 0.7  // soft, easy going
+	case .CAVE, .TRADING_POST, .ARENA: return 0.8
+	case .CRYSTAL_COVE, .RUINS:        return 0.9
+	case .DESERT:                      return 1.0
+	case .TUNDRA, .JUNGLE:             return 1.1
+	case .DUNGEON:                     return 1.15
+	case .BOSS_ROOM, .WATER:           return 1.2
+	case .LAVA:                        return 1.3
+	case .QUICKSAND:                   return 1.45 // the worst footing
 	}
-	return 1.0
+	return 0.8
 }
 
 monster_move_cost :: proc(m: ^Monster, t: Terrain) -> f32 {
@@ -1129,7 +1131,7 @@ monster_move_cost :: proc(m: ^Monster, t: Terrain) -> f32 {
 	factor := clamp(10.0 / speed, 0.7, 1.6)
 	// Movement and card-play share one energy pool. A step is deliberately not
 	// free: long treks cost real energy, so you can't cross the map in a turn.
-	return terrain_move_cost(t) * factor * MOVE_STEP_FACTOR
+	return terrain_move_cost(t) * factor
 }
 
 // Step cost to a specific tile, including a Road's discount.

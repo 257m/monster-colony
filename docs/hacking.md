@@ -125,13 +125,20 @@ hover preview). Keep both in sync or the preview lies.
 - Energy is **one pool** on `Creature.energy` (there is no `Monster.energy`).
   Both `colony_move` and card play read/write it. Battles must **not** zero it
   (`creature_reset_battle_state` intentionally doesn't).
-- `energy_regen` (per turn) is the income; `energy_max` is the **bank**, and the
-  bank is what decides how hard a fight opens. Species banks are deliberately
-  small (4–6, from `base_energy_max`) because a large bank lets turn one dump a
-  whole hand — that is why fights used to end in three rounds. Halving the banks
-  (Phase 88) took the average auto-fight from 2.7 to 4.1 rounds. X-cost cards
-  (`All_In`, `Bulwark`, `Overcharge`) spend the *whole* bank, so they scale with
-  it: if you retune the banks, retune those too.
+- `base_energy` (regen per turn) and `base_energy_max` (the bank) are **raw
+  species values**. The bank is what decides how hard a fight opens: a large one
+  lets turn one dump a whole hand, which is why fights used to end in three
+  rounds. The banks are 4–6 now (Phase 88), which took the average auto-fight
+  from 2.7 to 4.1 rounds. X-cost cards (`All_In`, `Bulwark`, `Overcharge`) spend
+  the *whole* bank, so they scale with it: if you retune the banks, retune those
+  too.
+- **No fudge factors on raw stats.** `energy_regen` and `terrain_move_cost` used
+  to carry global multipliers (`ENERGY_REGEN_FACTOR`, `MOVE_STEP_FACTOR`) on top
+  of the species/terrain data; both are folded into the data now. If you want the
+  game slower or tighter, edit `base_energy`, `base_energy_max` or the
+  `terrain_move_cost` table — not a constant. The surviving `*_MULT` constants
+  (`VULN_MULT`, `ABILITY_PREDATOR_MULT`, `ROAD_MOVE_FACTOR`, `ARENA_GYM_LEVEL_MULT`)
+  are *rules* for a mechanic, not flat adjustments to base stats.
 - XP is on `Creature.xp` (moved off `Monster`) so the battle UI can read it.
 
 ### Allocations

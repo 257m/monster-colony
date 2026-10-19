@@ -273,9 +273,11 @@ Caps are recomputed by `colony_recompute_caps`: `gold_cap = BASE_GOLD_CAP +
 - `colony_move(c, index, target)` returns `0 ok, 1 not adjacent, 2 blocked,
   3 tile full, 4 not enough energy, 5 already acted`, and spends
   `monster_move_cost`.
-- `monster_move_cost(m, terrain) = terrain_move_cost · clamp(10/speed, 0.7, 1.6) · MOVE_STEP_FACTOR`
-  (`MOVE_STEP_FACTOR` = **0.8**). `terrain_move_cost` varies by the tile you're
-  **entering** (0.9 Grove/Mushroom … 1.8 Quicksand), so routes and Roads matter.
+- `monster_move_cost(m, terrain) = terrain_move_cost · clamp(10/speed, 0.7, 1.6)`.
+  `terrain_move_cost` is the **real** cost per tile you're **entering** — 0.7
+  Grove/Mushroom up to 1.45 Quicksand, with no global multiplier on top — so
+  tuning the map's pace means editing that one table. Routes and Roads matter
+  (a Road halves the step).
 - **Attacking ends the turn** (`Monster.acted`, set in `begin_battle`, cleared in
   `colony_end_turn`): a monster that fought can't move again until next turn, so
   you can't chain fights to keep moving on battle-refilled energy. Acted monsters
@@ -284,9 +286,10 @@ Caps are recomputed by `colony_recompute_caps`: `gold_cap = BASE_GOLD_CAP +
   `attack_move_attackers` (called on commit in `update_attack_select`) steps the
   chosen attackers onto the tile, so cancelling costs nothing.
 - `creature.energy_max` / `energy_regen` grow **logarithmically** with level
-  (`creature_stats_for_level` → `energy_scale`, no hard cap); `energy_regen` is
-  then **halved** (`ENERGY_REGEN_FACTOR` 0.5), so higher-level monsters get a
-  little more but energy stays a real constraint.
+  (`creature_stats_for_level` → `energy_scale`, no hard cap), so higher-level
+  monsters get a little more but energy stays a real constraint. Both are **raw
+  species values** — `base_energy` (regen, 1.5) and `base_energy_max` (bank,
+  4–6) — with no multiplier applied on top.
 - **The bank (`base_energy_max`) is deliberately small** — 4–6, against a regen
   of ~1.5–2 per turn. It is the bank that decides how hard a fight opens, because
   energy carries over and creatures enter a battle holding a full one. With the

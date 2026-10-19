@@ -1434,3 +1434,16 @@ it stored, is lost).
   (`ctprintf` vs `aprintf`), the 1280×720 design space, and "use the shared
   widgets" — because that is where the recent UI bugs came from. 1,446 -> 1,725
   lines.
+- Phase 90 ✅ **no fudge factors on raw stats**: two global multipliers were
+  quietly adjusting data instead of the data saying what it meant.
+  `ENERGY_REGEN_FACTOR` (0.5) halved every species' regen on top of
+  `base_energy`; the field is a **`f32`** now and each species carries its real
+  number (1.5, or 2.0 for the one that should be quicker) — identical behaviour,
+  no constant. `MOVE_STEP_FACTOR` (0.8) did the same to every step's cost;
+  `terrain_move_cost` now holds the real per-tile costs (0.7 Grove … 1.45
+  Quicksand), within ±3% of the old effective values and with the same ordering.
+  Tuning the map's pace or the energy economy now means editing the species and
+  terrain tables, not a multiplier. The surviving `*_MULT` constants
+  (`VULN_MULT`, `ABILITY_PREDATOR_MULT`, `ROAD_MOVE_FACTOR`,
+  `ARENA_GYM_LEVEL_MULT`) are rules for a mechanic rather than flat adjustments
+  to base stats, and stay.
