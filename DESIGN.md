@@ -1366,8 +1366,8 @@ it stored, is lost).
   it — with the hover tooltip and the dex's EFFECTS list carrying the full text
   (both were already accurate).
 - Phase 82 ✅ **active effects get a real panel**: the chip rows are deliberately
-  tiny, and a buffed monster overflows them fast (the panel row fits about four
-  and then collapses into a `+N`). **`S` in battle** now opens a scrollable
+  tiny, and a buffed monster overflows them fast (the panel row fits about
+  four, then collapses into a `+N`). **`S` in battle** now opens a scrollable
   **ACTIVE EFFECTS** panel — every living creature on both sides, every effect it
   is carrying, each with the same explanation its chip's tooltip gives, laid out
   in two columns and clipped to the panel with a self-correcting scroll. It is
