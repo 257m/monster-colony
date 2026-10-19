@@ -2102,9 +2102,9 @@ update_arena :: proc(g: ^Game) {
 			g.colony.arena_run = true
 			g.colony.arena_floor = 1
 			g.colony.arena_run_crystals = 0
-			// The whole run is scaled off the party you walked in with, so the
-			// tower doesn't drift up under you as you level mid-run.
-			g.colony.arena_base_level = arena_party_level(&g.colony, hex)
+			// The tower banks the XP your party walked in with and levels on the
+			// same curve from there, so it grows exactly as you do.
+			g.colony.arena_run_xp = xp_total_for_level(arena_party_level(&g.colony, hex))
 		}
 		colony_spawn_arena_team(&g.colony, hex)
 		g.arena_open = false

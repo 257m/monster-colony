@@ -86,6 +86,7 @@ SPAWN_WATER := [?]Spawn_Entry {
 SPAWN_DUNGEON := [?]Spawn_Entry {
 	{0.40, .Gloomling},
 	{0.75, .Crypt_Rat},
+	{0.96, .Gravemaw},
 	{1.0, .Wispling},
 }
 SPAWN_MUSHROOM := [?]Spawn_Entry {
@@ -100,20 +101,24 @@ SPAWN_RUINS := [?]Spawn_Entry {
 SPAWN_TUNDRA := [?]Spawn_Entry {
 	{0.35, .Snowpup},
 	{0.70, .Glacierling},
+	{0.95, .Rimewarden},
 	{1.0, .Frostmaw},
 }
 SPAWN_JUNGLE := [?]Spawn_Entry {
 	{0.35, .Vinecat},
 	{0.70, .Pouncer},
+	{0.94, .Bogmaw},
 	{1.0, .Venomtail},
 }
 SPAWN_LAVA := [?]Spawn_Entry {
 	{0.40, .Magmite},
 	{0.75, .Cinderwing},
+	{0.97, .Ashfang},
 	{1.0, .Slagbeast},
 }
 SPAWN_DESERT := [?]Spawn_Entry {
 	{0.45, .Sandfang},
+	{0.92, .Dreadhorn},
 	{1.0, .Sparkit},
 }
 SPAWN_QUICKSAND := [?]Spawn_Entry {
@@ -123,6 +128,7 @@ SPAWN_QUICKSAND := [?]Spawn_Entry {
 }
 SPAWN_CRYSTAL_COVE := [?]Spawn_Entry {
 	{0.50, .Hexling},
+	{0.92, .Stormwing},
 	{1.0, .Crystalfin},
 }
 
@@ -319,22 +325,20 @@ arena_species_for :: proc(floor: int, rng: ^Rng, avoid: []Species_Id = nil) -> S
 
 // Give an Arena monster one of its species' sets: the ability it fights with,
 // the item it holds, and the deck that set is built around.
-// The challengers' level: the party's average level *when the run started*,
-// scaled by a logarithmic curve — the same slow shape the game's other long
-// curves use (see `energy_scale`). A flat "+1 per floor" would put floor 1000
-// thousands of levels away and make the tower's top unreachable.
-arena_level_scale :: proc(floor: int) -> f32 {
-	return 1.0 + ARENA_LEVEL_LOG * math.ln(f32(max(floor, 1)))
-}
-
+// The challengers level on **exactly the curve your monsters do**, fed by the
+// same XP the fights hand out: the run banks its own XP total and reads a level
+// off it with `level_for_xp`. So as your team grows from a floor, so does the
+// tower — without the tower ever peeking at your monsters' levels. (A flat
+// "+1 per floor" would put floor 1000 thousands of levels away and make the
+// tower's top unreachable.)
 arena_challenger_level :: proc(c: ^Colony, hex: Hex) -> int {
-	base := c.arena_base_level
-	if base <= 0 {
-		// Older saves (and a run started before this existed) fall back to the
-		// party as it stands.
-		base = arena_party_level(c, hex)
+	xp := c.arena_run_xp
+	if xp <= 0 {
+		// Older saves, and a run started before the tower banked any XP: fall
+		// back to the party as it stands.
+		return max(arena_party_level(c, hex), ARENA_BASE_LEVEL)
 	}
-	return max(int(f32(base) * arena_level_scale(max(c.arena_floor, 1))), ARENA_BASE_LEVEL)
+	return max(level_for_xp(xp), ARENA_BASE_LEVEL)
 }
 
 // Bosses carry unique, powerful abilities (and several times the base stats), so

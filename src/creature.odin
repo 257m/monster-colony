@@ -86,6 +86,14 @@ Species_Id :: enum {
 	Boss_Infernal,
 	Boss_Titan,
 	Boss_Sovereign,
+	// Strong wilds (Phase 61): the elite tier between the evolved lines and the
+	// bosses, so the deep Arena floors have more than five faces to field.
+	Ashfang,
+	Stormwing,
+	Bogmaw,
+	Dreadhorn,
+	Rimewarden,
+	Gravemaw,
 }
 
 Species :: struct {
@@ -729,6 +737,84 @@ SPECIES := [Species_Id]Species{
 			{.All_In, 6}, {.Dragon_Dance, 6}, {.Decree, 6},
 		},
 		move_pool = []Move_Id{.Decree, .Zap, .Gust, .Thunderbolt, .Cyclone, .Concuss, .Agility, .Dragon_Dance, .Overwhelm, .Depower, .Haze, .Guard, .Rally, .Jolt, .Static_Shock, .Short_Circuit, .Capacitor, .Updraft, .Supercell, .Gale_Force},
+	},
+
+	// ------------------------------------------------------------------------
+	// Strong wilds. These are the elite tier: regular monsters, not bosses, but
+	// built to hold their own against one — which is what keeps the deep Arena
+	// floors varied instead of a parade of the same five bosses.
+	// ------------------------------------------------------------------------
+	.Ashfang = {
+		name = "Ashfang", desc = "A cinder-furred hunter that rides its own updraft. Nothing outruns it twice.", elements = []Element{.EMBER, .AIR}, base_hp = 132, base_energy = 3, base_energy_max = 9, base_power = 1.5, base_defense = 0.9, base_speed = 9.5, base_satiety = 200, base_upkeep = 6,
+		color = rl.Color{240, 130, 70, 255}, role = .ELITE, rarity = .RARE,
+		starter = []Move_Id{.Ember_Strike, .Ember_Strike, .Gust, .Gust, .Guard, .Agility, .Flame_Burst, .Cleave, .Followup, .Dragon_Dance},
+		learnset = []Learn_Entry{
+			{.Flame_Burst, 2}, {.Agility, 2}, {.Followup, 2},
+			{.Cleave, 6}, {.Cyclone, 6}, {.Dragon_Dance, 6},
+			{.Firestorm, 10}, {.Gale_Force, 10}, {.Overwhelm, 10},
+			{.Hellfire, 16}, {.Combustion, 16}, {.Amplify, 16},
+		},
+		move_pool = []Move_Id{.Ember_Strike, .Gust, .Flame_Burst, .Agility, .Followup, .Cleave, .Cyclone, .Dragon_Dance, .Firestorm, .Gale_Force, .Overwhelm, .Hellfire, .Combustion, .Amplify, .Hone, .Fuse, .Updraft, .Mark, .Expose, .Slash},
+	},
+	.Stormwing = {
+		name = "Stormwing", desc = "It flies in the eye of its own squall. Every feather carries a charge.", elements = []Element{.ELECTRIC, .AIR}, base_hp = 146, base_energy = 4, base_energy_max = 10, base_power = 1.4, base_defense = 1.0, base_speed = 9.0, base_satiety = 210, base_upkeep = 6,
+		color = rl.Color{250, 225, 110, 255}, role = .ELITE, rarity = .RARE,
+		starter = []Move_Id{.Zap, .Zap, .Gust, .Gust, .Guard, .Jolt, .Chain_Lightning, .Capacitor, .Tailwind, .Adrenaline},
+		learnset = []Learn_Entry{
+			{.Jolt, 2}, {.Tailwind, 2}, {.Capacitor, 2},
+			{.Chain_Lightning, 6}, {.Cyclone, 6}, {.Static_Shock, 6},
+			{.Supercell, 10}, {.Thunderbolt, 10}, {.Gale_Force, 10},
+			{.Concuss, 16}, {.Overcharge, 16}, {.Short_Circuit, 16},
+		},
+		move_pool = []Move_Id{.Zap, .Gust, .Jolt, .Tailwind, .Capacitor, .Chain_Lightning, .Cyclone, .Static_Shock, .Supercell, .Thunderbolt, .Gale_Force, .Concuss, .Overcharge, .Short_Circuit, .Agility, .Adrenaline, .Followup, .Updraft, .Dazzle, .Study},
+	},
+	.Bogmaw = {
+		name = "Bogmaw", desc = "A bloated swamp lurker. It digests for years and never stops being hungry.", elements = []Element{.POISON, .AQUA}, base_hp = 158, base_energy = 3, base_energy_max = 10, base_power = 1.3, base_defense = 1.6, base_speed = 6.0, base_satiety = 230, base_upkeep = 7,
+		color = rl.Color{110, 150, 80, 255}, role = .ELITE, rarity = .EPIC,
+		starter = []Move_Id{.Sting, .Sting, .Aqua_Jet, .Aqua_Jet, .Guard, .Envenom, .Venom, .Leech, .Barrier, .Purify},
+		learnset = []Learn_Entry{
+			{.Envenom, 2}, {.Venom, 2}, {.Leech, 2},
+			{.Riptide, 6}, {.Slime_Spit, 6}, {.Barrier, 6},
+			{.Catalyst, 10}, {.Venom_Fang, 10}, {.Maelstrom, 10},
+			{.Toxic, 16}, {.Devour, 16}, {.Photosynthesis, 16},
+		},
+		move_pool = []Move_Id{.Sting, .Aqua_Jet, .Envenom, .Venom, .Leech, .Riptide, .Slime_Spit, .Barrier, .Catalyst, .Venom_Fang, .Maelstrom, .Toxic, .Devour, .Photosynthesis, .Purify, .Sabotage, .Aqua_Cutter, .Tidal_Crash, .Fortify, .Antidote},
+	},
+	.Dreadhorn = {
+		name = "Dreadhorn", desc = "A horned brute that charges through stone and keeps going.", elements = []Element{.GROUND, .EMBER}, base_hp = 176, base_energy = 3, base_energy_max = 10, base_power = 1.5, base_defense = 1.7, base_speed = 7.5, base_satiety = 250, base_upkeep = 8,
+		color = rl.Color{190, 120, 90, 255}, role = .ELITE, rarity = .EPIC,
+		starter = []Move_Id{.Sand_Attack, .Sand_Attack, .Ember_Strike, .Ember_Strike, .Guard, .Mark, .Bash, .Rock_Throw, .Hone, .Body_Press},
+		learnset = []Learn_Entry{
+			{.Mark, 2}, {.Bash, 2}, {.Hone, 2},
+			{.Rock_Throw, 6}, {.Expose, 6}, {.Overwhelm, 6},
+			{.Fault_Line, 10}, {.Rally, 10}, {.Warcry, 10},
+			{.Meteor, 16}, {.Earthquake, 16}, {.Rage, 16},
+		},
+		move_pool = []Move_Id{.Sand_Attack, .Ember_Strike, .Mark, .Bash, .Rock_Throw, .Hone, .Expose, .Overwhelm, .Fault_Line, .Rally, .Warcry, .Meteor, .Earthquake, .Rage, .Blood_Pact, .Cleave, .Sunder, .Body_Press, .Cataclysm, .Flame_Burst},
+	},
+	.Rimewarden = {
+		name = "Rimewarden", desc = "A walking glacier with a grudge. Its shell has never been cracked.", elements = []Element{.ICE, .GROUND}, base_hp = 200, base_energy = 3, base_energy_max = 11, base_power = 1.2, base_defense = 2.2, base_speed = 5.5, base_satiety = 270, base_upkeep = 9,
+		color = rl.Color{150, 200, 225, 255}, role = .ELITE, rarity = .EPIC,
+		starter = []Move_Id{.Snowball, .Snowball, .Guard, .Guard, .Sand_Attack, .Barrier, .Fortify, .Ice_Wall, .Body_Press, .Footwork},
+		learnset = []Learn_Entry{
+			{.Barrier, 2}, {.Fortify, 2}, {.Ice_Wall, 2},
+			{.Body_Press, 6}, {.Shield_Bash, 6}, {.Footwork, 6},
+			{.Avalanche, 10}, {.Rampart, 10}, {.Spike_Shell, 10},
+			{.Bastion, 16}, {.Cataclysm, 16}, {.Entrench, 16},
+		},
+		move_pool = []Move_Id{.Snowball, .Guard, .Sand_Attack, .Barrier, .Fortify, .Ice_Wall, .Body_Press, .Shield_Bash, .Footwork, .Avalanche, .Rampart, .Spike_Shell, .Bastion, .Cataclysm, .Entrench, .Bramble_Armor, .Earthquake, .Fault_Line, .Hold_the_Line, .Frost_Nova},
+	},
+	.Gravemaw = {
+		name = "Gravemaw", desc = "It eats what the dungeon buries. The rest of the pack follows it.", elements = []Element{.NEUTRAL, .GROUND}, base_hp = 232, base_energy = 3, base_energy_max = 12, base_power = 1.6, base_defense = 2.4, base_speed = 6.5, base_satiety = 300, base_upkeep = 10,
+		color = rl.Color{140, 130, 150, 255}, role = .ELITE, rarity = .LEGENDARY,
+		starter = []Move_Id{.Tackle, .Tackle, .Sand_Attack, .Sand_Attack, .Guard, .Barrier, .Bash, .Rock_Throw, .Body_Press, .Reckoning},
+		learnset = []Learn_Entry{
+			{.Bash, 2}, {.Barrier, 2}, {.Rock_Throw, 2},
+			{.Earthquake, 6}, {.Body_Press, 6}, {.Reckoning, 6},
+			{.Fault_Line, 10}, {.Rampart, 10}, {.Overwhelm, 10},
+			{.Cataclysm, 16}, {.Decree, 16}, {.Bastion, 16},
+		},
+		move_pool = []Move_Id{.Tackle, .Sand_Attack, .Guard, .Barrier, .Bash, .Rock_Throw, .Body_Press, .Reckoning, .Earthquake, .Fault_Line, .Rampart, .Overwhelm, .Cataclysm, .Decree, .Bastion, .Entrench, .Shield_Bash, .Sunder, .Cleave, .Cull},
 	},
 }
 

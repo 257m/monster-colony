@@ -2334,7 +2334,7 @@ PANEL_W      :: f32(340)
 PANEL_H      :: f32(180)
 PANEL_MARGIN :: f32(16)
 ENEMY_CARD_W :: f32(132)
-ENEMY_EY     :: f32(272)
+ENEMY_EY     :: f32(282)
 // How far the card reaches above / below its centre line.
 ENEMY_ROW_TOP :: f32(72)
 ENEMY_ROW_BOT :: f32(78)
@@ -2841,11 +2841,12 @@ party_field_rect :: proc(i, n: int) -> rl.Rectangle {
 	sw := f32(screen_w())
 	gap := f32(10)
 	cw := min(f32(178), (sw - 60 - gap * f32(n - 1)) / f32(n))
-	ch := f32(100)
+	ch := f32(90)
 	total := f32(n) * cw + gap * f32(n - 1)
 	start := sw / 2 - total / 2
-	// Sit above the hand *and* above the hovered card's damage tooltip.
-	top := hand_card_rect(0, 1).y - CARD_HOVER_LIFT - 60 - ch
+	// Sit above the hand *and* above the hovered card's damage tooltip, low
+	// enough that the enemy row above has clear air.
+	top := hand_card_rect(0, 1).y - CARD_HOVER_LIFT - 54 - ch
 	return rl.Rectangle{start + f32(i) * (cw + gap), top, cw, ch}
 }
 
@@ -2974,7 +2975,7 @@ draw_card_estimate :: proc(attacker, target: ^Creature, id: Move_Id, rec: rl.Rec
 	bx := rec.x + rec.width / 2 - box_w / 2
 	sw := f32(screen_w())
 	bx = clamp(bx, 6, sw - box_w - 6)
-	by := rec.y - box_h - 8
+	by := rec.y - box_h - 4
 	box := rl.Rectangle{bx, by, box_w, box_h}
 	rl.DrawRectangleRounded(box, 0.28, 6, rl.Color{16, 16, 24, 242})
 	rl.DrawRectangleRoundedLinesEx(box, 0.28, 6, 2, rl.Color{130, 130, 150, 255})

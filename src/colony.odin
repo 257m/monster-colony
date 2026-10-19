@@ -98,7 +98,6 @@ ARENA_CRYSTAL_REWARD   :: 12
 // floor 1 every time. Each cleared floor banks its purse; the run ends when you
 // cash out (keeping the winnings) or when your party wipes (losing them).
 ARENA_BASE_LEVEL      :: 4   // challengers never drop below this
-ARENA_LEVEL_LOG       :: 0.3 // how steeply the challengers' level climbs
 ARENA_TEAM_BASE       :: 2   // challengers on floor 1
 ARENA_TEAM_PER_FLOOR  :: 8   // +1 challenger per this many floors (up to ARENA_TEAM_SIZE)
 ARENA_PURSE_PER_FLOOR :: 2   // crystals a floor banks per floor number
@@ -565,7 +564,7 @@ Colony :: struct {
 	arena_floor:        int,
 	arena_best_floor:   int,
 	arena_run_crystals: int,
-	arena_base_level:   int, // the party's average level when the run started
+	arena_run_xp:       int, // XP the tower has banked this run (it levels on your curve)
 
 	// Boss relics you own but haven't slotted into a tower yet (Phase 25/44).
 	// Placed relics live on the tower tile itself; see `src/relics.odin`.
@@ -1070,6 +1069,28 @@ monster_satiety_max :: proc(m: ^Monster) -> f32 {
 
 xp_to_next :: proc(level: int) -> int {
 	return 40 + level * 30
+}
+
+// The cumulative XP needed to reach a level — the exact inverse of
+// `xp_to_next`. The Arena uses this to level its challengers on the very same
+// curve your monsters level on (see `arena_challenger_level`).
+xp_total_for_level :: proc(level: int) -> int {
+	total := 0
+	for i in 1..<max(level, 1) {
+		total += xp_to_next(i)
+	}
+	return total
+}
+
+// The level a given amount of XP buys, on the same curve as `xp_to_next`.
+level_for_xp :: proc(xp: int) -> int {
+	level := 1
+	remaining := xp
+	for level < 9999 && remaining >= xp_to_next(level) {
+		remaining -= xp_to_next(level)
+		level += 1
+	}
+	return level
 }
 
 // Grants XP and levels the monster up as thresholds are crossed.

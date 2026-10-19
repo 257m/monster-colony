@@ -163,6 +163,13 @@ ABILITY_POOLS := [Species_Id][3]Ability{
 	.Boss_Infernal  = {.Inferno, .Berserk, .Vampiric},
 	.Boss_Titan     = {.Colossus, .Guardian, .Thick_Hide},
 	.Boss_Sovereign = {.Dominion, .Swift, .Berserk},
+	// Strong wilds: no signature, but all three are good.
+	.Ashfang    = {.Swift, .Aftershock, .Momentum},
+	.Stormwing  = {.Swift, .Lucky, .Aftershock},
+	.Bogmaw     = {.Envenom, .Regenerator, .Vampiric},
+	.Dreadhorn  = {.Berserk, .Momentum, .Predator},
+	.Rimewarden = {.Thick_Hide, .Guardian, .Ironclad},
+	.Gravemaw   = {.Vengeance, .Resilient, .Thick_Hide},
 }
 
 DEFAULT_ABILITY_POOL := [3]Ability{.Berserk, .Guardian, .Thick_Hide}

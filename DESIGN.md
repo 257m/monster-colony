@@ -1164,3 +1164,30 @@ it stored, is lost).
   tighter text) to fit, a pack smaller than the row is **centred** rather than
   bunched left, and the scroll arrows either side are now **clickable**
   (alongside the wheel and `[` / `]`).
+- Phase 61 ✅ **the tower levels on *your* curve**: the challengers no longer use
+  a bespoke log scale. A run **banks its own XP total** (`arena_run_xp`), seeded
+  with `xp_total_for_level(party average)` when you enter and topped up by the
+  **same XP the fight hands your team** on every cleared floor, and the level is
+  read off it with `level_for_xp` — the exact inverse of `xp_to_next`. So the
+  tower grows precisely as your monsters do, without ever reading their levels.
+  The old log curve happened to match this closely enough to keep, but the real
+  curve is better: it stays honest even when a floor's XP take is unusual.
+
+- Phase 62 ✅ **the party field sits lower**: the enemy row's bars and boost dots
+  were crowding the ring around the acting monster. The field is 10px shorter
+  and 16px lower, the hovered-card tooltip tucks in closer to the hand, and the
+  enemy row drops with it — 8px of clear air between the row and the ring now,
+  and nothing overlaps the tooltip.
+
+- Phase 63 ✅ **six strong wilds** (the elite tier, `Species_Role.ELITE` — the
+  role that had never been used). `Ashfang` (Ember/Air, fast striker),
+  `Stormwing` (Electric/Air, storm flier), `Bogmaw` (Poison/Aqua, poison
+  engine), `Dreadhorn` (Ground/Ember, charger), `Rimewarden` (Ice/Ground,
+  glacier tank) and `Gravemaw` (Neutral/Ground, the heaviest). They are regular
+  monsters, not bosses, but built to stand beside one — their power scores
+  (4.99, 5.32, 5.61, 6.09, 6.65, 7.50) fill the stretch between the evolved
+  lines (4.28) and the bosses (6.2–10.2) that was previously empty, which is
+  what makes the deep floors varied instead of a parade of five bosses. Each
+  spawns rarely in one fitting terrain (lava, crystal cove, jungle, desert,
+  tundra, dungeon) and each gets three synergy sets of its own. `SAVE_VERSION`
+  is **12**.
