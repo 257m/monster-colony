@@ -8,12 +8,59 @@ package main
 // tougher monsters ramp in as you climb) and then rolls one of its sets, so the
 // same species turns up as a different opponent each time.
 //
-// Each set is built around a **synergy** from that species' own move pool — a
-// poison engine that ends in Catalyst, a block wall that swings with Body Press,
-// a thorn shell, a strength ramp, a multi-hit swarm, a vulnerable ambush, a
-// tempo loop, an exhaust payoff, a stun lock, a sustain grind, a reckless
-// low-HP gamble. The held item and the ability are chosen to reinforce the plan,
-// so a challenger is never just a wild with a bigger number.
+// Each set is built around a **synergy** taken from that species' own move pool,
+// and the held item and ability are chosen to reinforce it. What each set name
+// means:
+//
+//   Blight       POISON ENGINE. Envenom / Venom / Slime Spit stack Poison, then
+//                Catalyst doubles whatever is already there. Venom Sac (+1
+//                stack per application). Slow, but Poison phases through Block.
+//   Pyre         BURN ENGINE. Flame Burst / Ember Coil / Firestorm stack Burn;
+//                Hellfire doubles it and Blackout burns the foe's energy too.
+//                Burn is soaked by Block but weakens the burned creature.
+//   Bulwark      BLOCK WALL. Guard / Fortify / Rampart / Barrier build Block,
+//                then Body Press, Shield Bash and Cataclysm spend it as damage.
+//                Barricade keeps Block between turns, Entrench doubles it.
+//   Bramble      THORNS SHELL. Bramble Armor / Spike Shell / Ice Wall / Thorn
+//                Volley / Bramble Crush. Wins by being hit: Thorns reflect a
+//                slice of the attacker's max HP, one stack per hit.
+//   Fury         STRENGTH RAMP. Hone / Dragon Dance / Warcry / Rally / Blood
+//                Pact stack Strength (each point is +10% damage on *everything*)
+//                and Amplify doubles the pile. Bloodstone adds 30% more.
+//   Swarm        MULTI-HIT + LEECH. Fang Flurry / Cyclone / Chain Lightning /
+//                Riptide / Maelstrom / Gale Force. Every hit rolls lifesteal and
+//                on-hit powers separately; Ricochet Charm adds a hit.
+//   Ambush       VULNERABLE PAYOFF. Mark / Expose / Frost Bite / Bash apply
+//                Vulnerable, then Overwhelm, Avalanche and Frost Nova cash it in
+//                (+50% damage taken while it lasts). Weakpoint Lens helps.
+//   Tempo        ENERGY AND DRAW. Channel / Capacitor / Adrenaline / Insight /
+//                Study / Meditate / Aqua Cutter. Plays many cheap cards a turn,
+//                which is also what Metronome and combo bonuses want.
+//   Void         EXHAUST PAYOFF. Purge / Gambit / All-In / Overcharge / Study
+//                burn through the deck, and Finale deals +4 damage per card
+//                exhausted this battle. Scavenger draws on every exhaust.
+//   Daze         STUN LOCK. Concuss / Static Shock / Supercell / Dazzle / Slime
+//                Spit / Sabotage. Stun fumbles cards out of the foe's hand at
+//                the start of its turn; Wounds and Dazed clog it further.
+//   Bloom        SUSTAIN GRIND. Photosynthesis / Purify / Antidote / Leech /
+//                Devour / Maelstrom / Riptide. Regen each round plus lifesteal,
+//                so it outlasts rather than out-damages. Amber Fruit helps.
+//   Ruin         LOW-HP GAMBLE. Reckoning scales with the HP you have *lost*,
+//                Blood Pact and Overclock pay HP for damage, Cull finishes
+//                anything under 40%, All-In spends the whole bank. Grudge Idol.
+//   Rubble       DEFENCE SHRED. Sunder / Rock Throw / Fault Line / Expose /
+//                Disarm / Depower strip the target's stats and defence, with
+//                Earthquake hitting everything at once. Weakpoint Lens helps.
+//   Zephyr       SPEED PACKAGE. Agility / Dragon Dance / Updraft / Tailwind /
+//                Footwork / Gust. Wins the initiative order and cycles cards
+//                fast rather than hitting hard.
+//
+// Three more are fallbacks, with no synergy core of their own, for a move pool
+// too thin to support three real plans. Their names describe the deck:
+//
+//   Bruiser      the hardest-hitting cards in the pool, Bloodstone on top.
+//   Warden       the best Block and defence cards, Grit Charm to survive.
+//   Skirmisher   draw, energy and combo cards, Ration Pouch to keep going.
 //
 // Generated from the move pools as a starting point — edit freely.
 // ============================================================================

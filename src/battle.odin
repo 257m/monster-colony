@@ -2685,21 +2685,28 @@ effect_chip_color :: proc(e: Effect) -> rl.Color {
 	return COL_TEXT
 }
 
-effect_tooltip :: proc(e: Effect) -> string {
+// The explanation for one active effect, built on the frame's temp allocator.
+// This is the single source of the text; the owned version below just copies it.
+effect_tooltip_text :: proc(e: Effect) -> cstring {
 	switch e.kind {
-	case .STR:    return fmt.aprintf("Strength: +10%% damage per point (now %+d).", e.value)
-	case .DEF:    return fmt.aprintf("Defence: scales incoming damage down (net %+d).", e.value)
-	case .BLOCK:  return fmt.aprintf("Block: soaks the next %d damage this round.", e.value)
-	case .DEX:    return fmt.aprintf("Dexterity: every Block gain is %+d.", e.value)
-	case .VULN:   return fmt.aprintf("Vulnerable: takes +50%% damage for %d more turn(s).", e.value)
-	case .PSN:    return fmt.aprintf("Poison: %d stack(s) — loses HP each round, phasing through Block, then decays.", e.value)
-	case .BRN:    return fmt.aprintf("Burn: %d stack(s) — loses HP each round (Block soaks it) and deals %d%% less damage, then decays.", e.value, int(min(f32(e.value)*BURN_WEAKEN_PER_STACK, BURN_WEAKEN_CAP)*100))
-	case .STUN:   return fmt.aprintf("Stunned: skips its next %d action(s).", e.value)
-	case .REGEN:  return fmt.aprintf("Regen: heals %d HP at the start of each round, then decays.", e.value)
-	case .THORNS: return fmt.aprintf("Thorns: %d stack(s) — reflects a slice of the attacker's max HP on each hit, and a stack is spent.", e.value)
-	case .PWR:    return fmt.aprintf("%s", power_desc(Power(e.value)))
+	case .STR:    return fmt.ctprintf("Strength: +10%% damage per point (now %+d).", e.value)
+	case .DEF:    return fmt.ctprintf("Defence: scales incoming damage down (net %+d).", e.value)
+	case .BLOCK:  return fmt.ctprintf("Block: soaks the next %d damage this round.", e.value)
+	case .DEX:    return fmt.ctprintf("Dexterity: every Block gain is %+d.", e.value)
+	case .VULN:   return fmt.ctprintf("Vulnerable: takes +50%% damage for %d more turn(s).", e.value)
+	case .PSN:    return fmt.ctprintf("Poison: %d stack(s) — loses HP each round, phasing through Block, then decays.", e.value)
+	case .BRN:    return fmt.ctprintf("Burn: %d stack(s) — loses HP each round (Block soaks it) and deals %d%% less damage, then decays.", e.value, int(min(f32(e.value)*BURN_WEAKEN_PER_STACK, BURN_WEAKEN_CAP)*100))
+	case .STUN:   return fmt.ctprintf("Stunned: skips its next %d action(s).", e.value)
+	case .REGEN:  return fmt.ctprintf("Regen: heals %d HP at the start of each round, then decays.", e.value)
+	case .THORNS: return fmt.ctprintf("Thorns: %d stack(s) — reflects a slice of the attacker's max HP on each hit, and a stack is spent.", e.value)
+	case .PWR:    return fmt.ctprintf("%s", power_desc(Power(e.value)))
 	}
 	return ""
+}
+
+// The same text as an owned string, for `tooltip_set_owned` (which frees it).
+effect_tooltip :: proc(e: Effect) -> string {
+	return fmt.aprintf("%s", effect_tooltip_text(e))
 }
 
 draw_effect_chip :: proc(x, y: f32, text: cstring, col: rl.Color) -> f32 {
@@ -3344,7 +3351,7 @@ draw_one_effects :: proc(c: ^Creature, x, y_in, w: f32, col: rl.Color) -> f32 {
 	for e in effs[:ne] {
 		txt := effect_chip_text(e)
 		cw := draw_effect_chip(x + 12, y, txt, effect_chip_color(e))
-		y = f32(draw_text_wrapped(fmt.ctprintf("%s", effect_tooltip(e)), i32(x) + i32(cw) + 20, i32(y) + 1, 14,
+		y = f32(draw_text_wrapped(effect_tooltip_text(e), i32(x) + i32(cw) + 20, i32(y) + 1, 14,
 			i32(w) - i32(cw) - 24, rl.Color{205, 208, 225, 255}))
 		y += 5
 	}

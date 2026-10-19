@@ -1403,3 +1403,14 @@ it stored, is lost).
   nothing like MONSTERS (60) — `draw_scrollbar` now always draws the track, with
   a full-height thumb when everything fits, so every list that can scroll looks
   the same whether it needs to or not.
+- Phase 87 ✅ **documented sets, and two leaks closed**: `src/sets.odin`'s header
+  now spells out what every set name means (Blight, Pyre, Bulwark, Bramble,
+  Fury, Swarm, Ambush, Tempo, Void, Daze, Bloom, Ruin, Rubble, Zephyr, plus the
+  Bruiser / Warden / Skirmisher fallbacks) — and the generator that produces the
+  file carries the same header, so regenerating it no longer wipes the doc. Two
+  allocation faults went with it: the ACTIVE EFFECTS panel called
+  `effect_tooltip` (a heap `aprintf`) for every effect of every creature **every
+  frame** without freeing any of them — the text now has one definition,
+  `effect_tooltip_text`, on the temp allocator, with the owned version as a thin
+  wrapper; and the build-mode radius preview allocated a `[dynamic]Hex` per
+  frame, now on the temp allocator. Verified: 501 panel draws leak 0 blocks.

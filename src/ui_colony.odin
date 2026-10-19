@@ -256,7 +256,8 @@ draw_build_selection :: proc(g: ^Game) {
 	// Preview the hovered improvement's effect radius on the map.
 	if g.build_preview != .NONE {
 		if r := improvement_effect_radius(g, g.build_preview); r > 0 {
-			disk := make([dynamic]Hex, 0); defer delete(disk)
+			// Per-frame, so the frame's temp allocator owns it.
+			disk := make([dynamic]Hex, 0, 64, context.temp_allocator)
 			hex_range(g.build_hex, r, &disk)
 			for h in disk {
 				if t := tile_at(&g.colony, h); t != nil {
