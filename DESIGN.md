@@ -1365,3 +1365,17 @@ it stored, is lost).
   descriptions are **clipped** to the card face — 7 of the 116 were running off
   it — with the hover tooltip and the dex's EFFECTS list carrying the full text
   (both were already accurate).
+- Phase 82 ✅ **active effects get a real panel**: the chip rows are deliberately
+  tiny, and a buffed monster overflows them fast (the panel row fits about four
+  and then collapses into a `+N`). **`S` in battle** now opens a scrollable
+  **ACTIVE EFFECTS** panel — every living creature on both sides, every effect it
+  is carrying, each with the same explanation its chip's tooltip gives, laid out
+  in two columns and clipped to the panel with a self-correcting scroll. It is
+  modal, so nothing else takes input while it is up.
+
+- Phase 83 ✅ **the XP readout stopped colliding with the piles counter**: both
+  lived in the same corner of the player panel at a fixed offset. The XP bar is
+  shorter and the readout is laid out to the *left* of the piles text, clipped
+  to the room between them — verified against every combination of XP and deck
+  size, including six-figure totals (0 collisions). **Followup**'s description
+  went back to "5 dmg, +5 combo".

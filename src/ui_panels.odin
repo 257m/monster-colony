@@ -3286,12 +3286,15 @@ HELP_LEFT := [?]Help_Line{
 	{"B", "build mode (click a tile, then pick)"},
 	{"T", "Trading Post / Arena on the tile"},
 	{"F", "quick-save to slot 1"},
+	{"S (in battle)", "active effects, in full (Esc closes)"},
+	{"D (in battle)", "draw / discard piles"},
+	{"C (in battle)", "throw a capture card"},
 }
 
 HELP_RIGHT := [?]Help_Line{
 	{"V", "deck viewer (right-click a card to forget it)"},
 	{"M", "monster encyclopedia"},
-	{"L", "move dex (every card, and who learns it)"},
+	{"L", "dex: cards, abilities, items"},
 	{"I", "improvements reference"},
 	{"G", "inventory (held items and boss relics)"},
 	{"U", "crystal progression tree"},

@@ -118,6 +118,8 @@ Battle :: struct {
 	stall:         int,                // consecutive rounds with no HP lost
 	stall_hp:      int,                // total HP across both sides last round
 	show_piles:    bool,               // the draw/discard pile viewer is open
+	show_effects:  bool,               // the active-effects panel is open
+	effects_scroll: f32,
 	phase:         Battle_Phase,
 	round:         int,
 	order:         [dynamic]Actor, // initiative queue: every living monster
@@ -1996,6 +1998,16 @@ capture_rect :: proc() -> rl.Rectangle {
 
 battle_input :: proc(b: ^Battle) {
 	// Pile viewer toggle works even in auto-fights, and while open it's modal.
+	// Active effects, in full: the chips are tiny and stack fast.
+	if rl.IsKeyPressed(.S) {
+		b.show_effects = !b.show_effects
+	}
+	if b.show_effects && rl.IsKeyPressed(.ESCAPE) {
+		b.show_effects = false
+	}
+	if b.show_effects {
+		return // modal
+	}
 	if rl.IsKeyPressed(.D) {
 		b.show_piles = !b.show_piles
 		return
@@ -2401,6 +2413,9 @@ draw_battle :: proc(b: ^Battle) {
 
 	draw_buttons(b)
 	draw_battle_log(b)
+	if b.show_effects {
+		draw_battle_effects(b)
+	}
 	draw_pile_readout(b)
 
 	if b.phase == .WON {
@@ -2898,17 +2913,27 @@ draw_player_panel :: proc(b: ^Battle) {
 	hp_txt := fmt.ctprintf("%d / %d", c.hp, c.max_hp)
 	rl.DrawText(hp_txt, i32(hp_rec.x) + 8, i32(hp_rec.y) + 2, 15, COL_TEXT)
 
-	// XP toward the next level.
+	// XP toward the next level. The bar is short so its readout clears the
+	// piles counter on the right, which used to sit right on top of it.
 	need := xp_to_next(c.level)
-	xp_rec := rl.Rectangle{tx, panel.y + 100, 190, 6}
+	xp_rec := rl.Rectangle{tx, panel.y + 100, 76, 6}
 	rl.DrawRectangleRounded(xp_rec, 0.5, 4, rl.Color{32, 36, 50, 255})
 	xf := clamp(f32(c.xp) / f32(max(need, 1)), 0, 1)
 	if xf > 0 {
 		rl.DrawRectangleRounded(rl.Rectangle{xp_rec.x, xp_rec.y, xp_rec.width * xf, xp_rec.height}, 0.5, 4, rl.Color{150, 210, 255, 255})
 	}
-	rl.DrawText(fmt.ctprintf("XP %d/%d", c.xp, need), i32(tx) + 196, i32(panel.y) + 96, 11, rl.Color{150, 210, 255, 255})
+	// The piles counter sits in the same corner, so lay the XP readout out to
+	// its left rather than at a fixed offset that collided with it.
 	piles := vfmt(b, "deck %d", len(c.deck))
-	rl.DrawText(piles, i32(panel.x + panel.width) - rl.MeasureText(piles, 11) - 12, i32(panel.y) + 96, 11, COL_MUTED)
+	piles_w := rl.MeasureText(piles, 11)
+	piles_x := i32(panel.x + panel.width) - piles_w - 12
+	rl.DrawText(piles, piles_x, i32(panel.y) + 96, 11, COL_MUTED)
+	// Everything between the bar and the piles counter is the XP readout's, and
+	// it is clipped to that so a six-figure XP total can't collide with either.
+	xp_left := i32(tx) + 84
+	xp_room := max(piles_x - xp_left - 14, 40)
+	xp_txt := fit_textf(11, xp_room, "XP %d/%d", c.xp, need)
+	rl.DrawText(xp_txt, piles_x - rl.MeasureText(xp_txt, 11) - 14, i32(panel.y) + 96, 11, rl.Color{150, 210, 255, 255})
 
 	draw_energy(tx, panel.y + 124, panel.width - 88 - 12, c.energy, c.energy_max, c.energy_regen)
 
@@ -3289,6 +3314,90 @@ battle_log_hidden :: proc(b: ^Battle) -> int {
 
 battle_log_scroll :: proc(b: ^Battle, step: int) {
 	b.log_scroll = clamp(b.log_scroll + step, 0, max(len(b.log) - BATTLE_LOG_LINES, 0))
+}
+
+// ----------------------------------------------------------------------------
+// Active effects, in full
+//
+// The chip rows are deliberately tiny and a buffed monster overflows them fast,
+// so this is where the whole list lives: every creature on the field, every
+// effect it is carrying, each with the same explanation its chip's tooltip
+// gives. Scrollable, because six creatures' worth is a lot of text.
+// ----------------------------------------------------------------------------
+
+battle_effects_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	return rl.Rectangle{sw / 2 - 410, sh / 2 - 280, 820, 560}
+}
+
+// One creature's block. Returns the y it finished at.
+draw_one_effects :: proc(c: ^Creature, x, y_in, w: f32, col: rl.Color) -> f32 {
+	y := y_in
+	rl.DrawText(fmt.ctprintf("%s   %d/%d hp", c.name, max(c.hp, 0), c.max_hp), i32(x), i32(y), 16, col)
+	y += 22
+	effs, ne := build_effects(c)
+	if ne == 0 {
+		rl.DrawText("nothing active", i32(x) + 12, i32(y), 14, rl.Color{120, 120, 140, 255})
+		return y + 20
+	}
+	for e in effs[:ne] {
+		txt := effect_chip_text(e)
+		cw := draw_effect_chip(x + 12, y, txt, effect_chip_color(e))
+		y = f32(draw_text_wrapped(fmt.ctprintf("%s", effect_tooltip(e)), i32(x) + i32(cw) + 20, i32(y) + 1, 14,
+			i32(w) - i32(cw) - 24, rl.Color{205, 208, 225, 255}))
+		y += 5
+	}
+	return y + 8
+}
+
+draw_battle_effects :: proc(b: ^Battle) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 190})
+
+	p := battle_effects_rect()
+	rl.DrawRectangleRounded(p, 0.04, 8, rl.Color{20, 22, 30, 250})
+	rl.DrawRectangleRoundedLinesEx(p, 0.04, 8, 3, rl.Color{150, 180, 230, 255})
+	rl.DrawText("ACTIVE EFFECTS", i32(p.x) + 24, i32(p.y) + 16, 26, rl.Color{220, 228, 245, 255})
+	rl.DrawText("S or Esc to close   -   wheel to scroll", i32(p.x) + 24, i32(p.y) + 50, 14, rl.Color{160, 170, 195, 255})
+
+	col_w := (p.width - 56) / 2
+	lx := p.x + 24
+	rx := p.x + 32 + col_w
+	top := p.y + 84
+	inner := rl.Rectangle{p.x + 16, top, p.width - 32, p.height - 116}
+	scissor_begin(inner)
+
+	ly := top - b.effects_scroll
+	rl.DrawText("YOUR PARTY", i32(lx), i32(ly), 15, rl.Color{150, 200, 160, 255})
+	ly += 24
+	for c in b.party {
+		if c.hp <= 0 {
+			continue
+		}
+		ly = draw_one_effects(c, lx, ly, col_w, rl.Color{210, 235, 215, 255})
+	}
+	ry := top - b.effects_scroll
+	rl.DrawText("THE WILD", i32(rx), i32(ry), 15, rl.Color{220, 160, 150, 255})
+	ry += 24
+	for c in b.enemies {
+		if c.hp <= 0 {
+			continue
+		}
+		ry = draw_one_effects(c, rx, ry, col_w, rl.Color{240, 210, 205, 255})
+	}
+	scissor_end()
+
+	// Clamp the scroll to what was actually drawn (self-correcting, so the
+	// height never has to be predicted).
+	content := max(ly, ry) - top
+	max_scroll := max(content - inner.height, 0)
+	b.effects_scroll = clamp(b.effects_scroll, 0, max_scroll)
+	if max_scroll > 0 {
+		rl.DrawText(fmt.ctprintf("scrolled %.0f / %.0f", b.effects_scroll, max_scroll),
+			i32(p.x + p.width) - 190, i32(p.y + p.height) - 26, 13, rl.Color{130, 140, 165, 255})
+	}
 }
 
 draw_battle_log :: proc(b: ^Battle) {

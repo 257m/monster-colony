@@ -500,7 +500,7 @@ MOVE_DATA := [Move_Id]Move{
 	// Bread and butter.
 	.Bash         = {name = "Bash",         desc = "10 dmg, 2 vuln",            cost = 2.0, element = .NEUTRAL,  rarity = .UNCOMMON, damage = 10, hits = 1, vulnerable = 2},
 	.Rampart      = {name = "Rampart",      desc = "10 block",                  cost = 1.0, element = .NEUTRAL,  rarity = .COMMON,   kind = .SKILL, targets = {.SELF}, block = 10},
-	.Followup     = {name = "Followup",     desc = "5 dmg, +5 if 2nd",          cost = 1.0, element = .NEUTRAL,  rarity = .COMMON,   damage = 5, hits = 1, combo_bonus = 5},
+	.Followup     = {name = "Followup",     desc = "5 dmg, +5 combo",           cost = 1.0, element = .NEUTRAL,  rarity = .COMMON,   damage = 5, hits = 1, combo_bonus = 5},
 	.Warcry       = {name = "Warcry",       desc = "+2 str, draw 1",            cost = 0.5, element = .NEUTRAL,  rarity = .COMMON,   kind = .SKILL, targets = {.SELF}, strength = 2, draw = 1},
 	.Cleave       = {name = "Cleave",       desc = "9 dmg",                     cost = 1.5, element = .NEUTRAL,  rarity = .COMMON,   damage = 9, hits = 1},
 	.Sunder       = {name = "Sunder",       desc = "4 dmg, -3 def",             cost = 1.0, element = .GROUND,   rarity = .UNCOMMON, damage = 4, hits = 1, defense_down = 3},

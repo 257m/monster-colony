@@ -462,6 +462,11 @@ update_battle :: proc(g: ^Game, dt: f32) {
 	battle_update(&g.battle, dt)
 	battle_input(&g.battle)
 
+	if g.battle.show_effects {
+		g.battle.effects_scroll -= rl.GetMouseWheelMove() * 60
+		g.battle.effects_scroll = max(g.battle.effects_scroll, 0)
+		return
+	}
 	if g.battle.timer <= 0.4 {
 		return
 	}
