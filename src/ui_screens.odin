@@ -155,7 +155,7 @@ draw_starter :: proc() {
 		l2w := rl.MeasureText(line2, 15)
 		rl.DrawText(line2, i32(rec.x + rec.width / 2) - l2w / 2, i32(rec.y) + 204, 15, rl.Color{192, 192, 212, 255})
 
-		line3 := fmt.ctprintf("Energy %d regen / %d max", sp.base_energy, sp.base_energy_max)
+		line3 := fmt.ctprintf("Energy %s regen / %d max", fmt_num(sp.base_energy), sp.base_energy_max)
 		l3w := rl.MeasureText(line3, 15)
 		rl.DrawText(line3, i32(rec.x + rec.width / 2) - l3w / 2, i32(rec.y) + 224, 15, rl.Color{192, 192, 212, 255})
 

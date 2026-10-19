@@ -1447,3 +1447,9 @@ it stored, is lost).
   (`VULN_MULT`, `ABILITY_PREDATOR_MULT`, `ROAD_MOVE_FACTOR`,
   `ARENA_GYM_LEVEL_MULT`) are rules for a mechanic rather than flat adjustments
   to base stats, and stay.
+- Phase 91 ✅ **fixing what the type change broke**: `base_energy` becoming an
+  `f32` (Phase 90) left two places formatting it with `%d` — the starter picker's
+  stat line and the dex's monster tab (which inherited it from the old
+  encyclopedia panel). Both print `fmt_num(sp.base_energy)` now, so they read
+  "Energy 1.5 regen / 4 max". Swept the rest: every other energy readout in the
+  game (`draw_energy`, the enemy row, the party field) already used `fmt_num`.
