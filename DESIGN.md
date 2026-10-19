@@ -1236,8 +1236,8 @@ it stored, is lost).
   their element chips. Long names no longer overrun the panel.
 
 - Phase 68 ✅ **relics gained in a run are temporary**: an event's relic offer no
-  longer puts a permanent relic in the bag (which could be farmed — enter, take a
-  relic on floor 30, cash out, repeat). It grants a **run boon**
+  longer puts a permanent relic in the bag (which could be farmed — enter, take
+  a relic on floor 30, cash out, repeat). It grants a **run boon**
   (`Colony.arena_boons`, capped at `ARENA_BOON_CAP` 6): it works for the rest of
   the run — the Arena strips colony relics, so a boon is the one relic effect
   that *does* apply there — and it is dropped the moment the run ends, whether
