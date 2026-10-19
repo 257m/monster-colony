@@ -465,10 +465,14 @@ update_battle :: proc(g: ^Game, dt: f32) {
 	if g.battle.timer <= 0.4 {
 		return
 	}
-	cont := rl.IsMouseButtonPressed(.LEFT) ||
-		rl.IsKeyPressed(.SPACE) || rl.IsKeyPressed(.ENTER)
-	if !cont {
-		return
+	// An auto-fight has nobody at the keyboard, so it settles itself rather than
+	// waiting for a click that will never come.
+	if !g.battle.auto_play {
+		cont := rl.IsMouseButtonPressed(.LEFT) ||
+			rl.IsKeyPressed(.SPACE) || rl.IsKeyPressed(.ENTER)
+		if !cont {
+			return
+		}
 	}
 	#partial switch g.battle.phase {
 	case .WON:

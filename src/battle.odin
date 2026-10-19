@@ -18,7 +18,19 @@ PARTY_MAX    :: 6
 
 SHAKE_DUR         :: f32(0.22) // screen shake duration
 CREATURE_SHAKE_DUR :: f32(0.30) // per-creature hit wobble duration
-MAX_ROUNDS        :: 30        // stalemate cap
+// A true stalemate ends a fight: this many rounds with no HP lost on either
+// side. (A flat 30-round cap used to cut fights off while they were still going
+// somewhere, which is why long Arena fights were ending on a coin flip.)
+STALL_ROUNDS      :: 12
+// Last-ditch net, far beyond any real fight (a 400-fight sample topped out at
+// 12 rounds). It exists only so a bug can never freeze the game; it is not a
+// design cap the way the old 30-round limit was.
+SAFETY_ROUNDS     :: 200
+// A hard ceiling on cards played by one monster in one round. A normal turn is
+// two to six; this only ever catches a genuine loop, like a retained card that
+// pays for itself (Meditate costs 0.5 and hands back 1), which an AI will
+// otherwise play until the heat death of the universe.
+MAX_PLAYS_PER_ROUND :: 12
 
 // Percentage-based battle tuning (Phase 28). DoT/heal/reflect are fractions so
 // they scale with HP instead of going stale at high levels.
@@ -103,6 +115,8 @@ Battle :: struct {
 	capture_cards: int,                // capture cards available (spent on capture)
 	capture_bonus: f32,                // colony Scout upgrade, added to capture odds
 	auto_play:     bool,               // AI plays the player's side
+	stall:         int,                // consecutive rounds with no HP lost
+	stall_hp:      int,                // total HP across both sides last round
 	show_piles:    bool,               // the draw/discard pile viewer is open
 	phase:         Battle_Phase,
 	round:         int,
@@ -111,6 +125,7 @@ Battle :: struct {
 	timer:         f32,
 	rng:           Rng,
 	log:           [dynamic]string,
+	log_scroll:    int, // messages hidden above the log window
 	popups:        [dynamic]Popup,
 	hit_fx:        [dynamic]Hit_Fx, // queued per-hit feedback (see Hit_Fx)
 	hit_fx_wave:   int,
@@ -131,7 +146,9 @@ battle_silent: bool
 
 battle_log :: proc(b: ^Battle, format: string, args: ..any) {
 	append(&b.log, fmt.aprintf(format, ..args))
-	if len(b.log) > 7 {
+	// A new line brings you back to the present.
+	b.log_scroll = 0
+	if len(b.log) > 40 {
 		delete(b.log[0])
 		ordered_remove(&b.log, 0)
 	}
@@ -287,9 +304,25 @@ fix_target :: proc(b: ^Battle) {
 	enemy_scroll_to(b, b.target)
 }
 
+// Is this card actually worth playing right now? The turn gate and both AIs
+// must answer this the same way, or a monster can be handed a turn it can never
+// take and the fight spins forever.
+//
+// A card that only makes energy or draws is worth one play a round; past that
+// it is just spinning (and a retained one would never stop at all).
+card_worth_playing :: proc(c: ^Creature, m: Move) -> bool {
+	if !move_playable(c, m) {
+		return false
+	}
+	if c.played > 0 && m.damage == 0 && m.block == 0 && (m.energy_give > 0 || m.draw > 0) {
+		return false
+	}
+	return true
+}
+
 enemy_has_card :: proc(e: ^Creature) -> bool {
 	for m in e.hand {
-		if move_playable(e, move_data(m)) {
+		if card_worth_playing(e, move_data(m)) {
 			return true
 		}
 	}
@@ -541,11 +574,11 @@ actor_can_act :: proc(b: ^Battle, a: Actor) -> bool {
 			return false
 		}
 		c := b.party[a.index]
-		if b.party_done[a.index] || c.hp <= 0 {
+		if b.party_done[a.index] || c.hp <= 0 || c.played >= MAX_PLAYS_PER_ROUND {
 			return false
 		}
 		for m in c.hand {
-			if move_playable(c, move_data(m)) {
+			if card_worth_playing(c, move_data(m)) {
 				return true
 			}
 		}
@@ -555,7 +588,7 @@ actor_can_act :: proc(b: ^Battle, a: Actor) -> bool {
 		return false
 	}
 	e := b.enemies[a.index]
-	return e.hp > 0 && enemy_has_card(e)
+	return e.hp > 0 && e.played < MAX_PLAYS_PER_ROUND && enemy_has_card(e)
 }
 
 set_actor :: proc(b: ^Battle, a: Actor) {
@@ -617,6 +650,22 @@ advance :: proc(b: ^Battle) {
 	if b.phase == .WON || b.phase == .LOST || b.phase == .CAPTURED {
 		return
 	}
+	// A wiped side ends the fight here, whatever did the wiping. Checking only
+	// where damage lands misses the deaths that come from elsewhere — item
+	// recoil, a poison tick, reflected thorns — and a side that is already gone
+	// but not marked so leaves the other side taking turns at nobody forever.
+	if enemies_alive(b) == 0 {
+		b.phase = .WON
+		b.timer = 0
+		battle_log(b, "All wilds defeated!")
+		return
+	}
+	if !party_has_alive(b) {
+		b.phase = .LOST
+		b.timer = 0
+		battle_log(b, "Your party has fallen...")
+		return
+	}
 	n := len(b.order)
 	for _ in 0..<n {
 		if b.order_pos >= n {
@@ -633,14 +682,38 @@ advance :: proc(b: ^Battle) {
 }
 
 begin_round :: proc(b: ^Battle) {
-	// Safety valve: healing on both sides can stalemate. After MAX_ROUNDS the
-	// side with the greater remaining HP fraction wins.
-	if b.round >= MAX_ROUNDS {
+	// Safety valve: two sides that heal as fast as they hurt can go forever.
+	// Track whether anyone has actually lost HP; only a genuine standstill ends
+	// the fight, so a long grind is allowed to play out.
+	total_hp := 0
+	for p in b.party {
+		total_hp += max(p.hp, 0)
+	}
+	for e in b.enemies {
+		total_hp += max(e.hp, 0)
+	}
+	if b.round > 0 {
+		if total_hp >= b.stall_hp {
+			b.stall += 1
+		} else {
+			b.stall = 0
+		}
+	}
+	b.stall_hp = total_hp
+	if b.round >= SAFETY_ROUNDS {
 		pf := hp_fraction(b.party[:])
 		ef := hp_fraction(b.enemies[:])
 		b.phase = pf >= ef ? .WON : .LOST
 		b.timer = 0
-		battle_log(b, "The fight drags on - it ends in your %s.", pf >= ef ? "favour" : "disfavour")
+		battle_log(b, "The fight is called - it ends in your %s.", pf >= ef ? "favour" : "disfavour")
+		return
+	}
+	if b.stall >= STALL_ROUNDS {
+		pf := hp_fraction(b.party[:])
+		ef := hp_fraction(b.enemies[:])
+		b.phase = pf >= ef ? .WON : .LOST
+		b.timer = 0
+		battle_log(b, "Neither side can make progress - it ends in your %s.", pf >= ef ? "favour" : "disfavour")
 		return
 	}
 	if b.round > 0 {
@@ -1574,35 +1647,43 @@ play_creature_card :: proc(b: ^Battle, c: ^Creature, target: ^Creature, index: i
 	return true
 }
 
-player_play :: proc(b: ^Battle, index: int) {
+// Returns whether the card actually resolved. The auto-fight relies on this: a
+// card that can't find a legal target must not be re-picked forever.
+player_play :: proc(b: ^Battle, index: int) -> bool {
 	if b.phase != .PLAYER_ACTION {
-		return
+		return false
 	}
 	c := b.party[b.active]
+	if c.played >= MAX_PLAYS_PER_ROUND {
+		battle_log(b, "%s has played its fill this round.", c.name)
+		return false
+	}
 	// The card's allowed targets (and the player's last pick) decide who it hits.
 	tgt: ^Creature
 	if index >= 0 && index < len(c.hand) {
 		tgt = pick_card_target(b, move_data(c.hand[index]))
 	}
-	if play_creature_card(b, c, tgt, index, &b.rng) {
-		if !battle_silent {
-			audio_play(.CLICK, 0.7)
-		}
-		fix_target(b)
-		if enemies_alive(b) == 0 {
-			b.phase = .WON
-			b.timer = 0
-			battle_log(b, "All wilds defeated!")
-			return
-		}
-		if !party_has_alive(b) {
-			b.phase = .LOST
-			b.timer = 0
-			battle_log(b, "Your party has fallen...")
-			return
-		}
-		advance(b)
+	if !play_creature_card(b, c, tgt, index, &b.rng) {
+		return false
 	}
+	if !battle_silent {
+		audio_play(.CLICK, 0.7)
+	}
+	fix_target(b)
+	if enemies_alive(b) == 0 {
+		b.phase = .WON
+		b.timer = 0
+		battle_log(b, "All wilds defeated!")
+		return true
+	}
+	if !party_has_alive(b) {
+		b.phase = .LOST
+		b.timer = 0
+		battle_log(b, "Your party has fallen...")
+		return true
+	}
+	advance(b)
+	return true
 }
 
 player_end_round :: proc(b: ^Battle) {
@@ -1622,10 +1703,12 @@ player_end_round :: proc(b: ^Battle) {
 
 choose_enemy_card :: proc(c: ^Creature) -> int {
 	best := -1
-	best_val := -1
+	// Must be below any real card's value: `move_value` is negative for cards
+	// that cost you something (a Dazed exhausts, so it scores -4), and a chooser
+	// that skips those would hand the turn gate a turn it can never take.
+	best_val := -9999
 	for card, i in c.hand {
-		md := move_data(card)
-		if !move_playable(c, md) {
+		if !card_worth_playing(c, move_data(card)) {
 			continue
 		}
 		v := move_value(card)
@@ -1654,6 +1737,11 @@ enemy_step :: proc(b: ^Battle) {
 
 	idx := choose_enemy_card(wild)
 	if idx < 0 {
+		// The turn gate said this monster had something to play, but the chooser
+		// found nothing it wanted. Retire it for the round so `advance` can't
+		// hand it the same turn again — that disagreement is what used to spin
+		// the fight forever.
+		wild.played = MAX_PLAYS_PER_ROUND
 		advance(b)
 		return
 	}
@@ -1665,7 +1753,15 @@ enemy_step :: proc(b: ^Battle) {
 	}
 
 	m := move_data(wild.hand[idx])
-	play_creature_card(b, wild, target, idx, &b.rng)
+	if !play_creature_card(b, wild, target, idx, &b.rng) {
+		// The card could not resolve — a target that died between choosing and
+		// playing, say. Retire this monster for the round instead of letting
+		// `advance` hand it the very same card again: `enemy_has_card` only
+		// checks energy, so that spin never ends.
+		wild.played = MAX_PLAYS_PER_ROUND
+		advance(b)
+		return
+	}
 	battle_log(b, "%s uses %s on %s.", wild.name, m.name, target.name)
 
 	if target.hp <= 0 {
@@ -1826,10 +1922,11 @@ battle_update :: proc(b: ^Battle, dt: f32) {
 player_ai_step :: proc(b: ^Battle) {
 	c := b.party[b.active]
 	best := -1
-	best_val := -1
+	// Same reasoning as `choose_enemy_card`: a negative-value card still has to
+	// be playable, or the AI would rather pass than clear a Dazed.
+	best_val := -9999
 	for card, i in c.hand {
-		md := move_data(card)
-		if !move_playable(c, md) {
+		if !card_worth_playing(c, move_data(card)) {
 			continue
 		}
 		v := move_value(card)
@@ -1837,6 +1934,10 @@ player_ai_step :: proc(b: ^Battle) {
 			best_val = v
 			best = i
 		}
+	}
+	if c.played >= MAX_PLAYS_PER_ROUND {
+		player_end_round(b)
+		return
 	}
 	if best >= 0 {
 		// Support-only cards need a teammate: aim at whoever has the least energy.
@@ -1858,8 +1959,20 @@ player_ai_step :: proc(b: ^Battle) {
 			b.sel_kind = .ALLY
 		} else {
 			b.sel_kind = .ENEMY
+			// Aim at a live enemy: a stale target makes the card unplayable, and
+			// the AI would otherwise pick it again and again forever.
+			if b.target < 0 || b.target >= len(b.enemies) || b.enemies[b.target].hp <= 0 {
+				for e, i in b.enemies {
+					if e.hp > 0 {
+						b.target = i
+						break
+					}
+				}
+			}
 		}
-		player_play(b, best)
+		if !player_play(b, best) {
+			player_end_round(b)
+		}
 	} else {
 		player_end_round(b)
 	}
@@ -1906,10 +2019,25 @@ battle_input :: proc(b: ^Battle) {
 		}
 	}
 
+	// The log scrolls under the wheel when the pointer is over it, and on
+	// PgUp/PgDn from anywhere.
+	if rl.IsKeyPressed(.PAGE_UP) {
+		battle_log_scroll(b, 1)
+	}
+	if rl.IsKeyPressed(.PAGE_DOWN) {
+		battle_log_scroll(b, -1)
+	}
+	over_log := rl.CheckCollisionPointRec(mp, battle_log_rect())
+	if over_log {
+		if w := rl.GetMouseWheelMove(); w != 0 {
+			battle_log_scroll(b, w > 0 ? 1 : -1)
+		}
+	}
+
 	// Scroll the enemy row (the wheel, or the [ and ] keys) whenever a pack is
 	// wider than the field. Works in any phase — it only moves the view.
 	if len(b.enemies) > enemy_visible_count() {
-		if w := rl.GetMouseWheelMove(); w != 0 {
+		if w := rl.GetMouseWheelMove(); w != 0 && !over_log {
 			enemy_scroll(b, w > 0 ? -1 : 1)
 		}
 		if rl.IsKeyPressed(.LEFT_BRACKET) {
@@ -2341,13 +2469,10 @@ ENEMY_ROW_TOP :: f32(72)
 ENEMY_ROW_BOT :: f32(78)
 ENEMY_ROW_PAD :: f32(34)
 
-// The band the enemy row lives in. It stops short of the left edge to leave the
-// battle log its own column, the way it always had.
-ENEMY_ROW_LEFT :: f32(296)
-
+// The full-width band the enemy row lives in.
 enemy_row_band :: proc() -> (left, right: f32) {
 	sw := f32(screen_w())
-	return ENEMY_ROW_LEFT, sw - ENEMY_ROW_PAD
+	return ENEMY_ROW_PAD, sw - ENEMY_ROW_PAD
 }
 
 // How many enemy cards fit in the row.
@@ -3139,66 +3264,51 @@ draw_pile_list :: proc(cards: []Move_Id, x, y, w: f32) {
 	}
 }
 
-// The log's own column, beside the enemy row.
-BATTLE_LOG_X  :: i32(16)
-BATTLE_LOG_Y  :: i32(202)
-BATTLE_LOG_W  :: i32(262)
+// The log lives in the gap between the two corner panels, above the enemy row —
+// clear of both the art and the avatars. It is wider than the old left-hand
+// column, so a message fits on one line, and it scrolls (wheel, or PgUp/PgDn)
+// so a long fight can be read back.
+BATTLE_LOG_X  :: i32(364)
+BATTLE_LOG_Y  :: i32(98)
 BATTLE_LOG_LH :: i32(19)
-BATTLE_LOG_LINES :: 8
+BATTLE_LOG_LINES :: 5
 
-// Word-wrap `text` into `out` at the given size and width, returning the count.
-log_wrap :: proc(text: string, size, max_w: i32, out: []cstring) -> int {
-	n := 0
-	rest := text
-	for len(rest) > 0 && n < len(out) {
-		if rl.MeasureText(fmt.ctprintf("%s", rest), size) <= max_w {
-			out[n] = fmt.ctprintf("%s", rest)
-			n += 1
-			break
-		}
-		// The furthest space that still fits.
-		cut := -1
-		for i in 1..<len(rest) {
-			if rest[i] != ' ' {
-				continue
-			}
-			if rl.MeasureText(fmt.ctprintf("%s", rest[:i]), size) <= max_w {
-				cut = i
-			} else {
-				break
-			}
-		}
-		if cut <= 0 {
-			cut = len(rest)
-		}
-		out[n] = fmt.ctprintf("%s", rest[:cut])
-		n += 1
-		rest = strings.trim_left_space(rest[cut:])
-	}
-	return n
+// The gap between the two corner panels, which is where the log lives.
+battle_log_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	l := PANEL_MARGIN + PANEL_W + 8
+	return rl.Rectangle{l, f32(BATTLE_LOG_Y) - 4, sw - 2*l, f32(BATTLE_LOG_LINES*BATTLE_LOG_LH) + 8}
 }
 
-// The most recent messages, wrapped into the column, newest last. Older lines
-// fall off the top once the column is full.
+// How many messages are hidden above the window.
+battle_log_hidden :: proc(b: ^Battle) -> int {
+	return clamp(b.log_scroll, 0, max(len(b.log) - BATTLE_LOG_LINES, 0))
+}
+
+battle_log_scroll :: proc(b: ^Battle, step: int) {
+	b.log_scroll = clamp(b.log_scroll + step, 0, max(len(b.log) - BATTLE_LOG_LINES, 0))
+}
+
 draw_battle_log :: proc(b: ^Battle) {
-	lines: [BATTLE_LOG_LINES]cstring
-	n := 0
-	for msg in b.log {
-		part: [3]cstring
-		m := log_wrap(msg, 13, BATTLE_LOG_W, part[:])
-		for i in 0..<m {
-			if n >= BATTLE_LOG_LINES {
-				for k in 1..<BATTLE_LOG_LINES {
-					lines[k-1] = lines[k]
-				}
-				n -= 1
-			}
-			lines[n] = part[i]
-			n += 1
-		}
+	n := len(b.log)
+	if n == 0 {
+		return
 	}
-	for i in 0..<n {
-		rl.DrawText(lines[i], BATTLE_LOG_X, BATTLE_LOG_Y + i32(i)*BATTLE_LOG_LH, 13, COL_MUTED)
+	hidden := battle_log_hidden(b)
+	last := n - hidden
+	first := max(last - BATTLE_LOG_LINES, 0)
+	w := battle_log_rect().width
+	for msg, i in b.log {
+		if i < first || i >= last {
+			continue
+		}
+		rl.DrawText(fit_text(msg, 14, i32(w)), BATTLE_LOG_X, BATTLE_LOG_Y + i32(i-first)*BATTLE_LOG_LH, 14, COL_MUTED)
+	}
+	if hidden > 0 {
+		hint := fmt.ctprintf("%d older  (wheel / PgUp)", hidden)
+		hw := rl.MeasureText(hint, 12)
+		rl.DrawText(hint, i32(BATTLE_LOG_X) + i32(w) - hw,
+			BATTLE_LOG_Y + i32(BATTLE_LOG_LINES*BATTLE_LOG_LH) + 1, 12, rl.Color{120, 120, 145, 255})
 	}
 }
 

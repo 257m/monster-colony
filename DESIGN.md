@@ -1267,3 +1267,32 @@ it stored, is lost).
   can be put down and picked up — a loaded save with a run in progress resumes
   on this screen. A wipe, a cash-out or an abandon all end the run and hand you
   back the colony.
+- Phase 71 ✅ **the battle can no longer spin or stall**: three bugs, all found
+  by running 400 auto-fights to completion.
+  (1) `choose_enemy_card` skipped any card whose `move_value` was negative — and
+  a **Dazed** scores -4 because it exhausts — while the turn gate counted it as
+  playable, so a monster holding one got handed a turn it could never take, and
+  the fight span forever. The gate and both AIs now share one predicate
+  (`card_worth_playing`), and a chooser that still finds nothing retires the
+  monster for the round rather than letting `advance` hand it the same turn
+  back.
+  (2) A side that was **already wiped** but not marked so (killed by item
+  recoil, a poison tick, reflected thorns — not by the damage code) left the
+  other side taking turns at nobody; `advance` now settles a wiped side itself.
+  (3) **Auto-fights settle themselves** instead of waiting for a click that
+  never comes. The flat **30-round cap is gone**: a fight only ends early on a
+  genuine standstill (`STALL_ROUNDS` 12 rounds with no HP lost on either side),
+  with `SAFETY_ROUNDS` (200) as a last-ditch net so a bug can never freeze the
+  game. A 480-fight sample averages 2.9 rounds and tops out at 12.
+
+- Phase 72 ✅ **the tower pays far less, and pays late**: `arena_floor_purse` is
+  back-loaded — **nothing at all** for the first twenty floors, then a trickle
+  (1 crystal at floor 50, 4 at 100, 12 at 250, 29 at 500, 73 at 1000). A run to
+  floor 100 now banks **124 crystals** where it used to bank about ten thousand.
+
+- Phase 73 ✅ **the battle log moved into the gap above the enemies**, between
+  the two corner panels — it was touching the player panel and, once the enemy
+  row went full width, covering the left-hand avatars. That gap is 552px wide,
+  so a message fits on one line, and the log now keeps the **last 40** messages
+  and **scrolls** (wheel over it, or PgUp/PgDn; a new line snaps back to the
+  present). The enemy row is full width again.

@@ -93,12 +93,11 @@ BEACON_VULN            :: 2    // Vulnerable applied to wilds attacking near a B
 ARENA_ENTRY_COST       :: 40
 ARENA_TEAM_SIZE        :: 6
 ARENA_LEVEL_BONUS      :: 2
-ARENA_CRYSTAL_REWARD   :: 12
+ARENA_PURSE_DELAY     :: 20  // floors the tower pays nothing at all for
 // The Arena is a *run*: one flat entry fee buys a chain of floors, starting at
 // floor 1 every time. Each cleared floor banks its purse; the run ends when you
 // cash out (keeping the winnings) or when your party wipes (losing them).
 ARENA_BASE_LEVEL      :: 4   // challengers never drop below this
-ARENA_PURSE_PER_FLOOR :: 2   // crystals a floor banks per floor number
 ARENA_GOLD_PER_FLOOR  :: 25  // gold a cleared floor pays, on top of kill loot
 ARENA_HEAL_PCT        :: f32(0.25) // (unused: heals are full; kept for tuning)
 BOSS_CRYSTAL_REWARD    :: 6
