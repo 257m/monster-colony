@@ -1467,3 +1467,11 @@ it stored, is lost).
   ability, avatar, HP, energy, boost dots) is now laid out with a positive
   gap, verified as a stack. And the level read **"Lv1"**, which at that size is
   indistinguishable from "Lvl"; it reads **"Lv 1"** now.
+- Phase 94 ✅ **Antidote actually reaches an ally**: it read "cleanse statuses" but
+  was `targets = {.SELF}` — played at a poisoned ally it cleansed the *caster*
+  and the ally kept its Poison, which looks exactly like the card doing nothing.
+  The mechanic was never broken (verified: `Purify` clears Poison/Burn/Stun off a
+  chosen ally and leaves the caster alone); the card's *text* just never said
+  "yourself". Antidote now takes `{.SELF, .ALLY}` and reads "cleanse self/ally",
+  so it does what the name suggests. `move_target_label` already had the "self or
+  ally" case, and the card face fits the new line (109px of 116).

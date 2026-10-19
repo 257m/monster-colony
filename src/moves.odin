@@ -525,7 +525,7 @@ MOVE_DATA := [Move_Id]Move{
 	// Deep One (no signature element): it simply eats you.
 	.Devour       = {name = "Devour",       desc = "12 dmg, devour",            cost = 3.0, element = .NEUTRAL,  rarity = .RARE, damage = 12, hits = 1, leech_pct = 0.6, heal_pct = 0.08},
 	// Status healing (distinct from Haze, which only touches stats).
-	.Antidote     = {name = "Antidote",     desc = "cleanse statuses",          cost = 0.5, element = .NEUTRAL,  rarity = .COMMON,   kind = .SKILL, targets = {.SELF}, cleanse_status = true},
+	.Antidote     = {name = "Antidote",     desc = "cleanse self/ally",         cost = 0.5, element = .NEUTRAL,  rarity = .COMMON,   kind = .SKILL, targets = {.SELF, .ALLY}, cleanse_status = true},
 	.Purify       = {name = "Purify",       desc = "cleanse an ally",           cost = 1.0, element = .NEUTRAL,  rarity = .UNCOMMON, kind = .SKILL, targets = {.ALLY}, cleanse_status = true, heal_pct = 0.08},
 	// Reward-only utility cards (no learnset grants them; they come from
 	// `move_pool` rewards).
