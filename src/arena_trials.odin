@@ -17,6 +17,9 @@ import "core:strings"
 ARENA_TRIAL_EVERY       :: 10 // a set-piece floor every this many floors
 ARENA_TRIAL_EVENT_EVERY :: 3  // every Nth trial is an event rather than a gym
 ARENA_GYM_LEVEL_MULT    :: 1.25
+// How many run boons a run can hold. A boon is a relic you picked up on the way
+// up: it works for the rest of the run and then it is gone.
+ARENA_BOON_CAP          :: 6
 
 // A cheap, stable hash of (run seed, n). A run's gym order and its event offers
 // are both derived from it, so they are fixed for the whole run — you can be
@@ -398,8 +401,13 @@ arena_make_event :: proc(c: ^Colony, hex: Hex, floor: int) {
 		}
 	case 1:
 		if ev.count < MAX_EVENT_OPTIONS {
-			ev.options[ev.count] = Event_Option{kind = .RELIC, relic = random_relic(&rng)}
-			ev.count += 1
+			if len(c.arena_boons) < ARENA_BOON_CAP {
+				ev.options[ev.count] = Event_Option{kind = .RELIC, relic = random_relic(&rng)}
+				ev.count += 1
+			} else {
+				ev.options[ev.count] = Event_Option{kind = .REST}
+				ev.count += 1
+			}
 		}
 	case 2:
 		if ev.count < MAX_EVENT_OPTIONS {
@@ -407,6 +415,40 @@ arena_make_event :: proc(c: ^Colony, hex: Hex, floor: int) {
 			ev.count += 1
 		}
 	}
+}
+
+// The run's boons, as the count-per-relic array the battle code wants.
+arena_boon_counts :: proc(c: ^Colony) -> [Relic]int {
+	out: [Relic]int
+	for b in c.arena_boons {
+		out[b] += 1
+	}
+	return out
+}
+
+// The run's boons, spelled out for the panel.
+arena_boons_label :: proc(c: ^Colony) -> cstring {
+	if len(c.arena_boons) == 0 {
+		return cstring("")
+	}
+	counts := arena_boon_counts(c)
+	sb := strings.builder_make(context.temp_allocator)
+	shown := 0
+	for r in Relic {
+		if counts[r] == 0 {
+			continue
+		}
+		if shown > 0 {
+			strings.write_string(&sb, ", ")
+		}
+		if counts[r] > 1 {
+			fmt.sbprintf(&sb, "%s x%d", relic_name(r), counts[r])
+		} else {
+			fmt.sbprintf(&sb, "%s", relic_name(r))
+		}
+		shown += 1
+	}
+	return fmt.ctprintf("Run boons:  %s", strings.to_string(sb))
 }
 
 // Apply a chosen offer.
@@ -431,7 +473,13 @@ arena_apply_event_option :: proc(c: ^Colony, hex: Hex, o: Event_Option) {
 		creature_equip_item(cr, o.item)
 		colony_notify(c, "%s takes the %s.", cr.name, ITEM_DATA[o.item].name)
 	case .RELIC:
-		grant_relic(c, o.relic)
+		// A boon, not a colony relic: it lasts the run and is dropped when the
+		// run ends, so an event floor can't be farmed for permanent relics.
+		if len(c.arena_boons) < ARENA_BOON_CAP {
+			append(&c.arena_boons, o.relic)
+			colony_notify(c, "The %s serves you for this run.", relic_name(o.relic))
+			return
+		}
 	case .REST:
 		party, n := arena_party_members(c, hex)
 		for i in 0..<n {
@@ -467,7 +515,7 @@ event_option_label :: proc(c: ^Colony, o: Event_Option) -> cstring {
 		}
 		return fmt.ctprintf("%s takes the %s", name, ITEM_DATA[o.item].name)
 	case .RELIC:
-		return fmt.ctprintf("Take the %s", relic_name(o.relic))
+		return fmt.ctprintf("Take the %s for this run", relic_name(o.relic))
 	case .REST:
 		return cstring("Mend the whole party")
 	}

@@ -1225,3 +1225,22 @@ it stored, is lost).
   refills the party's energy** (`arena_refill_party`), so the energy spent
   walking to the Arena tile does not come out of the first fight.
   `SAVE_VERSION` is **14**.
+- Phase 67 ✅ **six is the party, and the picker says so**: the Arena is a
+  formal challenge, so it is fought by the monsters **standing on the tile**
+  (`build_attack` radius 0) rather than everyone within a hex of it — and a tile
+  holds six (`MAX_MONSTERS_PER_TILE`), so the party can never exceed a battle's
+  `PARTY_MAX`. The attacker picker also **refuses a seventh tick** instead of
+  quietly dropping it. And its rows are now two-line — name on the first line
+  (clipped with `fit_text`, so a long name can never run into the HP and
+  distance), level/HP/distance on the second — with enemy names clipped before
+  their element chips. Long names no longer overrun the panel.
+
+- Phase 68 ✅ **relics gained in a run are temporary**: an event's relic offer no
+  longer puts a permanent relic in the bag (which could be farmed — enter, take a
+  relic on floor 30, cash out, repeat). It grants a **run boon**
+  (`Colony.arena_boons`, capped at `ARENA_BOON_CAP` 6): it works for the rest of
+  the run — the Arena strips colony relics, so a boon is the one relic effect
+  that *does* apply there — and it is dropped the moment the run ends, whether
+  you cash out or wipe. The panel lists them (`Run boons:  Mana Shard x2, ...`),
+  the offer is replaced by a rest once you're full, and they survive a mid-run
+  save. `SAVE_VERSION` is **15**.

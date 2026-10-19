@@ -1185,6 +1185,23 @@ cstring_bytes :: proc(cs: cstring) -> []u8 {
 	return p[:n]
 }
 
+// A string clipped to a pixel width, with an ellipsis, so a long name can never
+// run into the numbers drawn beside it.
+fit_text :: proc(text: string, size: i32, max_w: i32) -> cstring {
+	if rl.MeasureText(fmt.ctprintf("%s", text), size) <= max_w {
+		return fmt.ctprintf("%s", text)
+	}
+	n := len(text)
+	for n > 1 {
+		n -= 1
+		cand := fmt.ctprintf("%s...", text[:n])
+		if rl.MeasureText(cand, size) <= max_w {
+			return cand
+		}
+	}
+	return cstring("...")
+}
+
 draw_text_wrapped :: proc(cs: cstring, x, y: i32, size: i32, max_w: i32, col: rl.Color) -> i32 {
 	text := cstring_bytes(cs)
 	buf: [1024]u8
@@ -2087,6 +2104,7 @@ update_arena :: proc(g: ^Game) {
 		g.colony.arena_run = false
 		g.colony.arena_run_crystals = 0
 		g.colony.arena_floor = 1
+		clear(&g.colony.arena_boons)
 		g.arena_open = false
 		return
 	}
@@ -2110,6 +2128,7 @@ update_arena :: proc(g: ^Game) {
 			// derived from it, so they hold for the whole climb and differ next
 			// time out.
 			g.colony.arena_run_seed = rng_next_u64(&g.colony.rng)
+			clear(&g.colony.arena_boons)
 			// Walking here spent energy from the same pool the fights draw on.
 			// Starting the climb tops everyone back up, so travel costs nothing.
 			arena_refill_party(&g.colony, hex)
@@ -2126,7 +2145,10 @@ update_arena :: proc(g: ^Game) {
 		g.battle_hex = hex
 		g.battle_forced = true
 		g.battle_arena = true
-		build_attack(g, hex, 1)
+		// The Arena is a formal challenge: only the monsters standing on the tile
+		// come in, so the party is capped at six and nobody is dragged in from a
+		// neighbouring hex.
+		build_attack(g, hex, 0)
 		g.battle_choice_open = true
 		set_status(g, "The Arena answers your challenge!")
 	}
@@ -2176,6 +2198,9 @@ draw_arena :: proc(g: ^Game) {
 	rl.DrawText(fmt.ctprintf("A heal every %d floor%s.   Gold %d   Crystals %d",
 		heal_iv, heal_iv == 1 ? "" : "s", colony_total_gold(&g.colony), g.colony.crystals),
 		i32(p.x) + 28, i32(p.y) + 192, 16, rl.Color{210, 205, 175, 255})
+	if boons := arena_boons_label(&g.colony); len(boons) > 0 {
+		rl.DrawText(boons, i32(p.x) + 28, i32(p.y) + 214, 14, rl.Color{200, 185, 235, 255})
+	}
 
 	mp := mouse_pos()
 	// Fight / enter.

@@ -58,10 +58,13 @@ attack_panel_rect :: proc() -> rl.Rectangle {
 }
 
 ATTACK_MAX_ROWS :: 12
+// Your monsters get two-line rows (name, then its numbers) so a long name can
+// never run into the HP and distance beside it.
+ATTACK_ROW_H :: f32(40)
 
 attack_row_rect :: proc(i: int) -> rl.Rectangle {
 	p := attack_panel_rect()
-	return rl.Rectangle{p.x + 24, p.y + 100 + f32(i) * 30, 340, 26}
+	return rl.Rectangle{p.x + 24, p.y + 100 + f32(i) * ATTACK_ROW_H, 340, ATTACK_ROW_H - 6}
 }
 
 enemy_row_rect :: proc(i: int) -> rl.Rectangle {
@@ -94,6 +97,12 @@ update_attack_select :: proc(g: ^Game) {
 			break
 		}
 		if rl.CheckCollisionPointRec(mp, attack_row_rect(i)) {
+			// A fight is fought by at most PARTY_MAX monsters, so don't let a
+			// seventh be ticked and then silently dropped.
+			if !g.attack_chosen[i] && attack_chosen_count(g) >= PARTY_MAX {
+				set_status(g, "A party is six monsters. Untick one first.")
+				return
+			}
 			g.attack_chosen[i] = !g.attack_chosen[i]
 			return
 		}
@@ -171,13 +180,15 @@ draw_attack_select :: proc(g: ^Game) {
 			rl.DrawRectangleRec(rl.Rectangle{box.x + 4, box.y + 4, 8, 8}, rl.Color{130, 235, 170, 255})
 		}
 
-		line := fmt.ctprintf("%s  Lvl %d", m.creature.name, m.creature.level)
-		rl.DrawText(line, i32(rec.x) + 34, i32(rec.y) + 4, 16, rl.Color{225, 225, 240, 255})
-		hp := fmt.ctprintf("%d/%d hp", m.creature.hp, m.creature.max_hp)
-		rl.DrawText(hp, i32(rec.x + rec.width) - 150, i32(rec.y) + 5, 14, rl.Color{210, 140, 140, 255})
+		// Name on the first line, clipped so it can never overrun the row.
+		rl.DrawText(fit_text(m.creature.name, 16, i32(rec.width) - 46), i32(rec.x) + 34, i32(rec.y) + 2, 16, rl.Color{225, 225, 240, 255})
+		// Its numbers on the second.
 		dist := hex_distance(m.pos, g.battle_hex)
 		loc := dist == 0 ? cstring("on tile") : fmt.ctprintf("%d away", dist)
-		rl.DrawText(loc, i32(rec.x + rec.width) - 74, i32(rec.y) + 5, 14, rl.Color{150, 150, 170, 255})
+		rl.DrawText(fmt.ctprintf("Lvl %d    %d/%d hp", m.creature.level, m.creature.hp, m.creature.max_hp),
+			i32(rec.x) + 34, i32(rec.y) + 20, 14, rl.Color{200, 200, 220, 255})
+		lw := rl.MeasureText(loc, 14)
+		rl.DrawText(loc, i32(rec.x + rec.width) - lw - 10, i32(rec.y) + 20, 14, rl.Color{150, 150, 170, 255})
 	}
 
 	// The wilds you would actually be fighting.
@@ -197,9 +208,10 @@ draw_attack_select :: proc(g: ^Game) {
 		rl.DrawRectangleRoundedLinesEx(rec, 0.18, 5, 2, border)
 		name_col := m.role == .ALPHA ? rl.Color{255, 215, 95, 255} : rl.Color{240, 222, 212, 255}
 		suffix := wild_role_tag(m.role)
-		rl.DrawText(fmt.ctprintf("%s  Lvl %d%s", m.creature.name, m.creature.level, suffix), i32(rec.x) + 12, i32(rec.y) + 5, 16, name_col)
 		el := elements_label(creature_elements(&m.creature))
 		ew := rl.MeasureText(el, 14)
+		head := fmt.ctprintf("%s  Lvl %d%s", m.creature.name, m.creature.level, suffix)
+		rl.DrawText(fit_text(string(head), 16, i32(rec.width) - 24 - ew - 10), i32(rec.x) + 12, i32(rec.y) + 5, 16, name_col)
 		rl.DrawText(el, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 7, 14, element_color(creature_element(&m.creature)))
 		rl.DrawText(fmt.ctprintf("%d/%d hp", m.creature.hp, m.creature.max_hp), i32(rec.x) + 12, i32(rec.y) + 25, 13, rl.Color{215, 150, 150, 255})
 		if m.creature.ability != .NONE {
@@ -371,8 +383,11 @@ begin_battle :: proc(g: ^Game, auto: bool) {	hex := g.battle_hex
 	g.battle = battle_start(defs[:], enemies[:], ids[:], &g.seed_rng)
 	// Relic Towers in range of this fight project their battle relics onto the
 	// party (see `battle_apply_relics`) — but not in the Arena, which is meant to
-	// be a fair fight.
-	if !g.battle_arena {
+	// be a fair fight. The Arena projects only the boons you picked up on the way
+	// up, and those die with the run.
+	if g.battle_arena {
+		battle_apply_relics(&g.battle, arena_boon_counts(&g.colony))
+	} else {
 		battle_apply_relics(&g.battle, relics_in_range(&g.colony, g.battle_hex))
 	}
 	// Fighting ends the turn for the monsters that take part, so you can't
@@ -730,6 +745,7 @@ resolve_lost :: proc(g: ^Game) {
 		g.colony.arena_run = false
 		g.colony.arena_run_crystals = 0
 		g.colony.arena_floor = 1
+		clear(&g.colony.arena_boons)
 	}
 	g.mode = .MAP
 	if player_monster_count(&g.colony) == 0 {
