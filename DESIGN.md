@@ -1333,10 +1333,11 @@ it stored, is lost).
 - Phase 77 ✅ **look things up mid-run, and while choosing**: the tower screen has
   **Decks** (and the inventory, and `V` from anywhere), the read-only reference
   panels open in `.ARENA` too (`M` monster dex, `L` dex, `I` improvements, `K`
-  help, `P` settings, `G`/`J` the pack), and the **level-up / reward-card overlay
-  has a "View deck" button** — with `V` working there too — because deciding
-  which card to learn without seeing what the monster already runs is guesswork.
-  The deck viewer draws above the choice and takes input first.
+  help, `P` settings, `G`/`J` the pack), and the **level-up / reward-card
+  overlay has a "View deck" button** — with `V` working there too — because
+  deciding
+  which card to learn without seeing what the monster already runs is
+  guesswork. The deck viewer draws above the choice and takes input first.
 
 - Phase 78 ✅ **the dex grew tabs**: `L` is now **CARDS / ABILITIES / ITEMS**
   (Tab or Left/Right, or click a tab). Abilities get a description and the list
