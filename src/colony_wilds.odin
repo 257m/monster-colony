@@ -325,20 +325,38 @@ arena_species_for :: proc(floor: int, rng: ^Rng, avoid: []Species_Id = nil) -> S
 
 // Give an Arena monster one of its species' sets: the ability it fights with,
 // the item it holds, and the deck that set is built around.
-// The challengers level on **exactly the curve your monsters do**, fed by the
-// same XP the fights hand out: the run banks its own XP total and reads a level
-// off it with `level_for_xp`. So as your team grows from a floor, so does the
-// tower — without the tower ever peeking at your monsters' levels. (A flat
-// "+1 per floor" would put floor 1000 thousands of levels away and make the
-// tower's top unreachable.)
+// How many challengers a floor fields.
+arena_team_size_for :: proc(floor: int) -> int {
+	return min(ARENA_TEAM_BASE + floor / ARENA_TEAM_PER_FLOOR, ARENA_TEAM_SIZE)
+}
+
+// XP a single kill pays, per level of the victim — the same rate the colony's
+// own fights use (`killed_levels * 10` in `resolve_won`).
+ARENA_XP_PER_KILL :: 10
+
+// The level the tower fields on a floor. This is deliberately a **pure function
+// of the floor and the party average you walked in with**: nothing in it reads
+// your team as it stands, so there is nothing to be gained by holding monsters
+// back to keep the challengers weak.
+//
+// The shape is the shape of levelling itself. Walk the floors and let the tower
+// earn what a monster would earn from the same fights — one kill's XP per
+// challenger, at the level being fielded — and spend it on `xp_to_next`. That
+// settles at roughly one level per three challengers, which is exactly what your
+// own monsters get out of the same fight, so the tower climbs with you.
 arena_challenger_level :: proc(c: ^Colony, hex: Hex) -> int {
-	xp := c.arena_run_xp
-	if xp <= 0 {
-		// Older saves, and a run started before the tower banked any XP: fall
-		// back to the party as it stands.
-		return max(arena_party_level(c, hex), ARENA_BASE_LEVEL)
+	base := c.arena_base_level
+	if base <= 0 {
+		// Older saves, and a run started before the entry level was recorded.
+		base = arena_party_level(c, hex)
 	}
-	return max(level_for_xp(xp), ARENA_BASE_LEVEL)
+	level := f32(base)
+	for floor in 1..=max(c.arena_floor, 1) {
+		// This floor's fight, priced at the level the tower is fielding.
+		gain := f32(ARENA_XP_PER_KILL * arena_team_size_for(floor)) * level
+		level += gain / f32(40 + 30*int(level))
+	}
+	return max(int(level), ARENA_BASE_LEVEL)
 }
 
 // Bosses carry unique, powerful abilities (and several times the base stats), so
@@ -427,7 +445,7 @@ colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
 	floor := max(c.arena_floor, 1)
 	lvl := arena_challenger_level(c, hex)
 	mult := arena_regular_level_mult(floor)
-	n := min(ARENA_TEAM_BASE + floor / ARENA_TEAM_PER_FLOOR, ARENA_TEAM_SIZE)
+	n := arena_team_size_for(floor)
 	avoid := make([dynamic]Species_Id, 0, context.temp_allocator)
 	for _ in 0..<n {
 		sp := arena_species_for(floor, &c.rng, avoid[:])

@@ -1164,14 +1164,20 @@ it stored, is lost).
   tighter text) to fit, a pack smaller than the row is **centred** rather than
   bunched left, and the scroll arrows either side are now **clickable**
   (alongside the wheel and `[` / `]`).
-- Phase 61 ✅ **the tower levels on *your* curve**: the challengers no longer use
-  a bespoke log scale. A run **banks its own XP total** (`arena_run_xp`), seeded
-  with `xp_total_for_level(party average)` when you enter and topped up by the
-  **same XP the fight hands your team** on every cleared floor, and the level is
-  read off it with `level_for_xp` — the exact inverse of `xp_to_next`. So the
-  tower grows precisely as your monsters do, without ever reading their levels.
-  The old log curve happened to match this closely enough to keep, but the real
-  curve is better: it stays honest even when a floor's XP take is unusual.
+- Phase 61 ✅ **the tower levels on *your* curve, and never looks at your
+  team**: the challenger level is a **pure function of the current floor and the
+  party average you walked in with** (`arena_base_level`, recorded when the run
+  starts). Nothing in it reads your monsters as they stand, so there is nothing
+  to be gained by holding them back to keep the challengers weak.
+  The shape is the shape of levelling. Walk the floors letting the tower earn
+  what a monster earns from the same fights — one kill's XP per challenger
+  (`ARENA_XP_PER_KILL`, the same `killed_levels * 10` the colony uses) at the
+  level being fielded — and spend it on `xp_to_next`. A level-30 entry meets 37
+  on floor 10, 103 on floor 50 and 2001 on floor 1000; a monster that actually
+  fought every one of those floors lands at 37 / 102 / 1995. So the tower climbs
+  with you, at about one level per three challengers. (An earlier version banked
+  the XP your team earned, which quietly rewarded keeping monsters underlevelled
+  — hence the pure function.)
 
 - Phase 62 ✅ **the party field sits lower**: the enemy row's bars and boost dots
   were crowding the ring around the acting monster. The field is 10px shorter

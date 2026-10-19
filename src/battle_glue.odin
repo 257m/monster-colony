@@ -623,9 +623,6 @@ resolve_won :: proc(g: ^Game) {
 			purse := arena_floor_purse(floor) + bonus
 			g.colony.arena_run_crystals += purse
 			res.crystals = purse
-			// The tower banks the same XP the fight hands your team, so it keeps
-			// pace with you on the very same level curve.
-			g.colony.arena_run_xp += res.xp
 			// Arenas drop gold too, on top of the kill loot.
 			res.gold += colony_deposit_gold(&g.colony, hex, ARENA_GOLD_PER_FLOOR + floor * 2)
 			// Climb a floor, and remember the high-water mark.

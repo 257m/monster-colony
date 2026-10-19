@@ -2102,9 +2102,10 @@ update_arena :: proc(g: ^Game) {
 			g.colony.arena_run = true
 			g.colony.arena_floor = 1
 			g.colony.arena_run_crystals = 0
-			// The tower banks the XP your party walked in with and levels on the
-			// same curve from there, so it grows exactly as you do.
-			g.colony.arena_run_xp = xp_total_for_level(arena_party_level(&g.colony, hex))
+			// Everything the tower fields is scaled off the party you walked in
+			// with, so it neither drifts up under you nor responds to how you
+			// level while you're inside.
+			g.colony.arena_base_level = arena_party_level(&g.colony, hex)
 		}
 		colony_spawn_arena_team(&g.colony, hex)
 		g.arena_open = false
@@ -2132,7 +2133,7 @@ draw_arena :: proc(g: ^Game) {
 	rl.DrawText(fmt.ctprintf("FLOOR %d      best ever: %d", floor, g.colony.arena_best_floor),
 		i32(p.x) + 28, i32(p.y) + 60, 22, rl.Color{240, 215, 150, 255})
 
-	team := min(ARENA_TEAM_BASE + floor / ARENA_TEAM_PER_FLOOR, ARENA_TEAM_SIZE)
+	team := arena_team_size_for(floor)
 	heal_iv := arena_heal_interval(floor)
 	if running {
 		rl.DrawText(fmt.ctprintf("Winnings so far: %d crystals  -  cash out to keep them.", g.colony.arena_run_crystals),
