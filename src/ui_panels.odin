@@ -1012,63 +1012,136 @@ draw_save_panel :: proc(g: ^Game) {
 }
 
 // ----------------------------------------------------------------------------
-// Monster encyclopedia
+// The dex
+//
+// One reference for the whole game: monsters, cards, abilities and items. Opened
+// with L from the map, the tower or mid-battle (looking a species up while a
+// fight is on is exactly when you want it), and with M straight to the monster
+// tab. Tab or Left/Right switches, Up/Down or the wheel browses.
 // ----------------------------------------------------------------------------
 
-ENCY_ROWS :: 21
 // Width of one build-column slot in the encyclopedia learnset grid.
 LEARN_COL_W :: 128
 
-ENCYCLOPEDIA_LIST :: List_View{rows = ENCY_ROWS, row_h = 26, x = 40, y = 120, w = 300}
+DEX_MONSTERS  :: 0
+DEX_CARDS     :: 1
+DEX_ABILITIES :: 2
+DEX_ITEMS     :: 3
+DEX_TABS      :: 4
 
-update_encyclopedia :: proc(g: ^Game) {
-	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.M) {
-		g.show_encyclopedia = false
-		return
+// Every tab uses the same list chrome, so the scrollbar and pager are identical
+// everywhere they appear.
+DEX_ROWS :: 21
+DEX_LIST :: List_View{rows = DEX_ROWS, row_h = 26, x = 40, y = 120, w = 340}
+
+dex_ability_count :: proc() -> int {
+	n := 0
+	for a in Ability {
+		if a != .NONE {
+			n += 1
+		}
 	}
-	v := ENCYCLOPEDIA_LIST
-	v.index = g.encyclopedia_index
-	v.first = g.encyclopedia_first
-	list_navigate(&v, len(SPECIES))
-	g.encyclopedia_index = v.index
-	g.encyclopedia_first = v.first
+	return n
 }
 
-draw_encyclopedia :: proc(g: ^Game) {
-	sh := f32(screen_h())
-	draw_list_screen_header("MONSTER ENCYCLOPEDIA", "Up/Down, wheel or click to browse   |   M / Esc to close")
-
-	n := len(SPECIES)
-
-	// Left: the list.
-	v := ENCYCLOPEDIA_LIST
-	v.index = g.encyclopedia_index
-	v.first = g.encyclopedia_first
-	panel := rl.Rectangle{30, 108, 320, f32(ENCY_ROWS) * 26 + 12}
-	draw_list_chrome(v, n, panel)
-	mp := mouse_pos()
-	for row in 0..<v.rows {
-		i := v.first + row
-		if i >= n {
-			break
+dex_ability_at :: proc(k: int) -> Ability {
+	n := 0
+	for a in Ability {
+		if a == .NONE {
+			continue
 		}
-		rec := list_row_rect(v, row)
-		sel := i == v.index
-		draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
-		sp := SPECIES[Species_Id(i)]
-		rl.DrawCircleV(rl.Vector2{rec.x + 14, rec.y + 12}, 8, sp.color)
-		rl.DrawText(fmt.ctprintf("%s", sp.name), i32(rec.x) + 30, i32(rec.y) + 4, 16, sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 200, 215, 255})
-		label := elements_label(sp.elements)
-		ew := rl.MeasureText(label, 13)
-		rl.DrawText(label, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 6, 13, element_color(sp.elements[0]))
+		if n == k {
+			return a
+		}
+		n += 1
 	}
+	return .NONE
+}
 
-	if g.encyclopedia_index < 0 || g.encyclopedia_index >= n {
+dex_item_count :: proc() -> int {
+	n := 0
+	for it in Item {
+		if it != .NONE {
+			n += 1
+		}
+	}
+	return n
+}
+
+dex_item_at :: proc(k: int) -> Item {
+	n := 0
+	for it in Item {
+		if it == .NONE {
+			continue
+		}
+		if n == k {
+			return it
+		}
+		n += 1
+	}
+	return .NONE
+}
+
+// Entries in the tab on show.
+dex_count :: proc(g: ^Game) -> int {
+	switch g.dex_tab {
+	case DEX_MONSTERS:  return len(SPECIES)
+	case DEX_ABILITIES: return dex_ability_count()
+	case DEX_ITEMS:     return dex_item_count()
+	case:               return len(Move_Id)
+	}
+}
+
+dex_tab_rect :: proc(i: int) -> rl.Rectangle {
+	return rl.Rectangle{30 + f32(i) * 132, 62, 124, 34}
+}
+
+// Open the dex on a tab, keeping the cursor where it was for that tab.
+open_dex :: proc(g: ^Game, tab: int) {
+	g.show_dex = true
+	g.dex_tab = clamp(tab, 0, DEX_TABS - 1)
+	g.dex_first = 0
+}
+
+update_dex :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.L) || rl.IsKeyPressed(.M) {
+		g.show_dex = false
 		return
 	}
-	sp := SPECIES[Species_Id(g.encyclopedia_index)]
-	dx := f32(390)
-	dy := f32(120)
+	if rl.IsKeyPressed(.TAB) || rl.IsKeyPressed(.RIGHT) {
+		g.dex_tab = (g.dex_tab + 1) % DEX_TABS
+		g.dex_index = 0
+		g.dex_first = 0
+	}
+	if rl.IsKeyPressed(.LEFT) {
+		g.dex_tab = (g.dex_tab + DEX_TABS - 1) % DEX_TABS
+		g.dex_index = 0
+		g.dex_first = 0
+	}
+	if rl.IsMouseButtonPressed(.LEFT) {
+		mp := mouse_pos()
+		for i in 0..<DEX_TABS {
+			if rl.CheckCollisionPointRec(mp, dex_tab_rect(i)) {
+				g.dex_tab = i
+				g.dex_index = 0
+				g.dex_first = 0
+				return
+			}
+		}
+	}
+	v := DEX_LIST
+	v.index = g.dex_index
+	v.first = g.dex_first
+	list_navigate(&v, dex_count(g))
+	g.dex_index = v.index
+	g.dex_first = v.first
+}
+
+// One species, in full: portrait, typing, evolution line, stats, starter deck,
+// learnset and the ability pool it rolls from.
+draw_species_detail :: proc(index: int, dx, dy: f32) {
+	sh := f32(screen_h())
+	sp := SPECIES[Species_Id(index)]
 
 	rl.DrawCircleV(rl.Vector2{dx + 40, dy + 40}, 38, sp.color)
 	rl.DrawCircleLinesV(rl.Vector2{dx + 40, dy + 40}, 38, rl.Color{235, 235, 245, 255})
@@ -1084,13 +1157,13 @@ draw_encyclopedia :: proc(g: ^Game) {
 
 	// Evolution chain: the whole line at a glance, current stage highlighted.
 	{
-		chain, levels, count := evolution_line(Species_Id(g.encyclopedia_index))
+		chain, levels, count := evolution_line(Species_Id(index))
 		cx := i32(dx)
 		cy := i32(dy) + 92
 		if count > 1 {
 			for i in 0 ..< count {
 				stage := SPECIES[chain[i]]
-				cur := chain[i] == Species_Id(g.encyclopedia_index)
+				cur := chain[i] == Species_Id(index)
 				nm := fmt.ctprintf("%s", stage.name)
 				w := rl.MeasureText(nm, 15)
 				rl.DrawText(nm, cx, cy, 15, cur ? rl.Color{255, 255, 255, 255} : rl.Color{150, 220, 180, 255})
@@ -1161,15 +1234,219 @@ draw_encyclopedia :: proc(g: ^Game) {
 	ly += 12
 	rl.DrawText("ABILITIES  (one rolled at spawn)", lx, ly, 16, rl.Color{150, 150, 170, 255})
 	ly += 24
-	for a in species_abilities(Species_Id(g.encyclopedia_index)) {
+	for a in species_abilities(Species_Id(index)) {
 		rl.DrawText(fmt.ctprintf("%s - %s", ability_name(a), ability_desc(a)), lx, ly, 15, rl.Color{200, 180, 240, 255})
 		ly += 20
 	}
 
-	rl.DrawText(fmt.ctprintf("%d species in the underground", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
-
 	// Dex blurb, under the detail column so it can never collide with the list.
 	draw_text_wrapped(fmt.ctprintf("%s", sp.desc), i32(dx), i32(sh) - 96, 16, i32(f32(screen_w()) - dx - 40), rl.Color{190, 190, 212, 255})
+}
+
+draw_dex :: proc(g: ^Game) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	draw_list_screen_header("DEX", "Tab / Left-Right to switch   |   Up/Down or wheel to browse   |   L, M or Esc to close")
+
+	// Tabs.
+	mp := mouse_pos()
+	labels := [DEX_TABS]cstring{"MONSTERS", "CARDS", "ABILITIES", "ITEMS"}
+	for i in 0..<DEX_TABS {
+		r := dex_tab_rect(i)
+		on := i == g.dex_tab
+		hover := rl.CheckCollisionPointRec(mp, r)
+		bg := rl.Color{24, 26, 34, 240}
+		if on {
+			bg = rl.Color{40, 52, 46, 240}
+		} else if hover {
+			bg = rl.Color{32, 34, 46, 240}
+		}
+		rl.DrawRectangleRounded(r, 0.24, 6, bg)
+		rl.DrawRectangleRoundedLinesEx(r, 0.24, 6, on ? 3 : 2, on ? rl.Color{150, 230, 180, 255} : rl.Color{60, 64, 80, 255})
+		lw := rl.MeasureText(labels[i], 15)
+		rl.DrawText(labels[i], i32(r.x + r.width / 2) - lw / 2, i32(r.y + r.height / 2) - 8, 15,
+			on ? rl.Color{225, 245, 230, 255} : rl.Color{170, 175, 195, 255})
+	}
+
+	n := dex_count(g)
+	v := DEX_LIST
+	v.index = clamp(g.dex_index, 0, max(n - 1, 0))
+	v.first = g.dex_first
+	panel := rl.Rectangle{30, 108, 350, f32(DEX_ROWS) * v.row_h + 12}
+	draw_list_chrome(v, n, panel)
+	for row in 0..<v.rows {
+		i := v.first + row
+		if i >= n {
+			break
+		}
+		rec := list_row_rect(v, row)
+		sel := i == v.index
+		draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
+		switch g.dex_tab {
+		case DEX_MONSTERS:
+			sp := SPECIES[Species_Id(i)]
+			rl.DrawCircleV(rl.Vector2{rec.x + 14, rec.y + 13}, 8, sp.color)
+			rl.DrawText(fmt.ctprintf("%s", sp.name), i32(rec.x) + 30, i32(rec.y) + 5, 16,
+				sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 200, 215, 255})
+			label := elements_label(sp.elements)
+			ew := rl.MeasureText(label, 13)
+			rl.DrawText(label, i32(rec.x + rec.width) - 12 - ew, i32(rec.y) + 7, 13, element_color(sp.elements[0]))
+		case DEX_ABILITIES:
+			a := dex_ability_at(i)
+			rl.DrawText(fmt.ctprintf("%s", ability_name(a)), i32(rec.x) + 12, i32(rec.y) + 5, 16,
+				sel ? rl.Color{235, 245, 235, 255} : rl.Color{200, 180, 240, 255})
+		case DEX_ITEMS:
+			it := dex_item_at(i)
+			rl.DrawText(fmt.ctprintf("%s", item_name(it)), i32(rec.x) + 12, i32(rec.y) + 5, 16,
+				sel ? rl.Color{235, 245, 235, 255} : item_color(it))
+		case:
+			m := MOVE_DATA[Move_Id(i)]
+			rl.DrawText(fmt.ctprintf("%s", m.name), i32(rec.x) + 12, i32(rec.y) + 5, 16,
+				sel ? rl.Color{235, 245, 235, 255} : element_color(m.element))
+			cost := m.x_cost ? cstring("X") : fmt.ctprintf("%s", fmt_num(m.cost))
+			cw := rl.MeasureText(cost, 14)
+			rl.DrawText(cost, i32(rec.x + rec.width) - 14 - cw, i32(rec.y) + 7, 14, rl.Color{240, 210, 130, 255})
+		}
+	}
+	rl.DrawText(fmt.ctprintf("%d entries", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
+
+	if v.index < 0 || v.index >= n {
+		return
+	}
+
+	// ---- the detail ----
+	dx := f32(410)
+	dy := f32(120)
+	right := f32(sw) - 40
+
+	if g.dex_tab == DEX_MONSTERS {
+		draw_species_detail(v.index, 390, dy)
+		return
+	}
+
+	if g.dex_tab == DEX_ABILITIES {
+		a := dex_ability_at(v.index)
+		rl.DrawText(ability_name(a), i32(dx), i32(dy) + 2, 30, rl.Color{225, 210, 250, 255})
+		cy := dy + 48
+		cx := dx
+		cx += draw_effect_chip(cx, cy, cstring("PASSIVE"), rl.Color{200, 180, 240, 255}) + 8
+		cy += 34
+		cy = f32(draw_text_wrapped(ability_desc(a), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
+		cy += 20
+		rl.DrawText("SPECIES WITH IT", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
+		cy += 24
+		buf: [1024]u8
+		used, shown, total := 0, 0, 0
+		for sid in Species_Id {
+			has := false
+			for pool in species_abilities(sid) {
+				if pool == a {
+					has = true
+					break
+				}
+			}
+			if !has { continue }
+			total += 1
+			if shown >= 18 { continue }
+			name := SPECIES[sid].name
+			if used + len(name) + 3 >= len(buf) { break }
+			if shown > 0 {
+				buf[used] = ','; buf[used+1] = ' '
+				used += 2
+			}
+			for ch in name {
+				buf[used] = u8(ch)
+				used += 1
+			}
+			shown += 1
+		}
+		buf[used] = 0
+		text: cstring
+		if total == 0 {
+			text = "nothing - boss-only, or unused"
+		} else if total > shown {
+			text = fmt.ctprintf("%s and %d more", cstring(&buf[0]), total - shown)
+		} else {
+			text = cstring(&buf[0])
+		}
+		draw_text_wrapped(text, i32(dx), i32(cy), 15, i32(right - dx), rl.Color{170, 180, 200, 255})
+		return
+	}
+
+	if g.dex_tab == DEX_ITEMS {
+		it := dex_item_at(v.index)
+		col := item_color(it)
+		draw_item_icon(it, dx + 20, dy + 20, 1.4)
+		rl.DrawText(item_name(it), i32(dx) + 58, i32(dy) + 2, 30, rl.Color{235, 235, 245, 255})
+		cy := dy + 48
+		rl.DrawText("Held item  -  one per monster", i32(dx), i32(cy), 15, col)
+		cy += 32
+		cy = f32(draw_text_wrapped(item_desc(it), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
+		cy += 12
+		rl.DrawText("EFFECTS", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
+		cy += 24
+		draw_item_effects(it, i32(dx), i32(cy), 15)
+		return
+	}
+
+	// ---- cards ----
+	id := Move_Id(v.index)
+	m := MOVE_DATA[id]
+	rl.DrawText(fmt.ctprintf("%s", m.name), i32(dx), i32(dy) + 2, 30, rl.Color{235, 235, 245, 255})
+	cy := dy + 44
+	cx := dx
+	cx += draw_effect_chip(cx, cy, element_name(m.element), element_color(m.element)) + 8
+	cx += draw_effect_chip(cx, cy, card_rarity_name(m.rarity), card_rarity_color(m.rarity)) + 8
+	cx += draw_effect_chip(cx, cy, card_kind_name(m.kind), card_kind_color(m.kind)) + 8
+	cy += 34
+	cy = f32(draw_text_wrapped(fmt.ctprintf("%s", m.desc), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
+	cy += 12
+	rl.DrawText("EFFECTS", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
+	cy += 24
+	ml := move_lines(m)
+	for i in 0 ..< ml.n {
+		if cy > f32(sh) - 60 { break }
+		rl.DrawText(cstring(&ml.bufs[i][0]), i32(dx), i32(cy), 15, rl.Color{195, 200, 215, 255})
+		cy += 20
+	}
+	{
+		buf: [768]u8
+		used, shown, total := 0, 0, 0
+		for sid in Species_Id {
+			knows := false
+			for mid in SPECIES[sid].move_pool {
+				if mid == id {
+					knows = true
+					break
+				}
+			}
+			if !knows { continue }
+			total += 1
+			if shown >= 14 { continue }
+			name := SPECIES[sid].name
+			if used + len(name) + 3 >= len(buf) { break }
+			if shown > 0 {
+				buf[used] = ','; buf[used+1] = ' '
+				used += 2
+			}
+			for ch in name {
+				buf[used] = u8(ch)
+				used += 1
+			}
+			shown += 1
+		}
+		buf[used] = 0
+		text: cstring
+		if total == 0 {
+			text = "nobody - it only comes from junk cards"
+		} else if total > shown {
+			text = fmt.ctprintf("%s and %d more", cstring(&buf[0]), total - shown)
+		} else {
+			text = cstring(&buf[0])
+		}
+		rl.DrawText("LEARNED BY", i32(dx), i32(sh) - 84, 15, rl.Color{150, 150, 170, 255})
+		draw_text_wrapped(text, i32(dx), i32(sh) - 62, 15, i32(right - dx), rl.Color{170, 180, 200, 255})
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -1370,345 +1647,6 @@ draw_improvements :: proc(g: ^Game) {
 }
 
 // ----------------------------------------------------------------------------
-// Move dex
-//
-// Every card in the game, with a breakdown generated from its own data (see
-// `move_lines`), plus who can learn it.
-// ----------------------------------------------------------------------------
-
-MOVE_ROWS :: 22
-
-MOVE_LIST :: List_View{rows = MOVE_ROWS, row_h = 24, x = 40, y = 120, w = 340}
-
-// The dex: cards, abilities and items in one browsable reference. Opened with L
-// from the map *or* the tower, since looking things up between Arena floors is
-// half the point of it.
-DEX_TAB_MOVES     :: 0
-DEX_TAB_ABILITIES :: 1
-DEX_TAB_ITEMS     :: 2
-DEX_TABS          :: 3
-
-dex_ability_count :: proc() -> int {
-	n := 0
-	for a in Ability {
-		if a != .NONE {
-			n += 1
-		}
-	}
-	return n
-}
-
-dex_ability_at :: proc(k: int) -> Ability {
-	n := 0
-	for a in Ability {
-		if a == .NONE {
-			continue
-		}
-		if n == k {
-			return a
-		}
-		n += 1
-	}
-	return .NONE
-}
-
-dex_item_count :: proc() -> int {
-	n := 0
-	for it in Item {
-		if it != .NONE {
-			n += 1
-		}
-	}
-	return n
-}
-
-dex_item_at :: proc(k: int) -> Item {
-	n := 0
-	for it in Item {
-		if it == .NONE {
-			continue
-		}
-		if n == k {
-			return it
-		}
-		n += 1
-	}
-	return .NONE
-}
-
-// Entries in the tab on show.
-dex_count :: proc(g: ^Game) -> int {
-	switch g.dex_tab {
-	case DEX_TAB_ABILITIES: return dex_ability_count()
-	case DEX_TAB_ITEMS:     return dex_item_count()
-	case:                   return len(Move_Id)
-	}
-}
-
-dex_tab_rect :: proc(i: int) -> rl.Rectangle {
-	return rl.Rectangle{30 + f32(i) * 150, 62, 142, 34}
-}
-
-update_moves :: proc(g: ^Game) {
-	if rl.IsKeyPressed(.ESCAPE) || rl.IsKeyPressed(.L) {
-		g.show_moves = false
-		return
-	}
-	if rl.IsKeyPressed(.TAB) || rl.IsKeyPressed(.RIGHT) {
-		g.dex_tab = (g.dex_tab + 1) % DEX_TABS
-		g.dex_index = 0
-		g.move_first = 0
-	}
-	if rl.IsKeyPressed(.LEFT) {
-		g.dex_tab = (g.dex_tab + DEX_TABS - 1) % DEX_TABS
-		g.dex_index = 0
-		g.move_first = 0
-	}
-	if rl.IsMouseButtonPressed(.LEFT) {
-		mp := mouse_pos()
-		for i in 0..<DEX_TABS {
-			if rl.CheckCollisionPointRec(mp, dex_tab_rect(i)) {
-				g.dex_tab = i
-				g.dex_index = 0
-				g.move_first = 0
-				return
-			}
-		}
-	}
-	// Up/down (or the wheel) walks whichever list is on show.
-	if g.dex_tab == DEX_TAB_MOVES {
-		v := MOVE_LIST
-		v.index = g.move_index
-		v.first = g.move_first
-		list_navigate(&v, len(Move_Id))
-		g.move_index = v.index
-		g.move_first = v.first
-	} else {
-		n := dex_count(g)
-		step := 0
-		if rl.IsKeyPressed(.DOWN) { step = 1 }
-		if rl.IsKeyPressed(.UP) { step = -1 }
-		w := rl.GetMouseWheelMove()
-		if w != 0 { step = w > 0 ? -1 : 1 }
-		g.dex_index = clamp(g.dex_index + step, 0, max(n - 1, 0))
-	}
-}
-
-draw_moves :: proc(g: ^Game) {
-	sw := f32(screen_w())
-	sh := f32(screen_h())
-	draw_list_screen_header("DEX", "Tab / Left-Right to switch   |   Up/Down or wheel to browse   |   L / Esc to close")
-
-	// Tabs.
-	mp := mouse_pos()
-	labels := [DEX_TABS]cstring{"CARDS", "ABILITIES", "ITEMS"}
-	for i in 0..<DEX_TABS {
-		r := dex_tab_rect(i)
-		on := i == g.dex_tab
-		hover := rl.CheckCollisionPointRec(mp, r)
-		bg := rl.Color{24, 26, 34, 240}
-		if on {
-			bg = rl.Color{40, 52, 46, 240}
-		} else if hover {
-			bg = rl.Color{32, 34, 46, 240}
-		}
-		rl.DrawRectangleRounded(r, 0.24, 6, bg)
-		rl.DrawRectangleRoundedLinesEx(r, 0.24, 6, on ? 3 : 2, on ? rl.Color{150, 230, 180, 255} : rl.Color{60, 64, 80, 255})
-		lw := rl.MeasureText(labels[i], 15)
-		rl.DrawText(labels[i], i32(r.x + r.width / 2) - lw / 2, i32(r.y + r.height / 2) - 8, 15,
-			on ? rl.Color{225, 245, 230, 255} : rl.Color{170, 175, 195, 255})
-	}
-
-	n := dex_count(g)
-	panel := rl.Rectangle{30, 108, 350, f32(MOVE_ROWS) * 24 + 12}
-
-	// ---- the list ----
-	first := 0
-	index := 0
-	if g.dex_tab == DEX_TAB_MOVES {
-		v := MOVE_LIST
-		v.index = g.move_index
-		v.first = g.move_first
-		draw_list_chrome(v, n, panel)
-		first = v.first
-		index = v.index
-		for row in 0 ..< v.rows {
-			i := v.first + row
-			if i >= n { break }
-			m := MOVE_DATA[Move_Id(i)]
-			rec := list_row_rect(v, row)
-			sel := i == v.index
-			draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
-			rl.DrawText(fmt.ctprintf("%s", m.name), i32(rec.x) + 12, i32(rec.y) + 3, 16, sel ? rl.Color{235, 245, 235, 255} : element_color(m.element))
-			cost := m.x_cost ? cstring("X") : fmt.ctprintf("%s", fmt_num(m.cost))
-			cw := rl.MeasureText(cost, 14)
-			rl.DrawText(cost, i32(rec.x + rec.width) - 14 - cw, i32(rec.y) + 5, 14, rl.Color{240, 210, 130, 255})
-		}
-	} else {
-		// The ability and item lists are short enough to show whole.
-		index = clamp(g.dex_index, 0, max(n - 1, 0))
-		rl.DrawRectangleRounded(panel, 0.03, 8, rl.Color{20, 22, 30, 240})
-		rl.DrawRectangleRoundedLinesEx(panel, 0.03, 8, 2, rl.Color{50, 54, 68, 255})
-		for i in 0 ..< min(n, MOVE_ROWS) {
-			rec := rl.Rectangle{panel.x + 6, panel.y + 6 + f32(i) * 24, panel.width - 12, 22}
-			sel := i == index
-			draw_list_row_bg(rec, sel, rl.CheckCollisionPointRec(mp, rec))
-			col := rl.Color{235, 245, 235, 255}
-			name: cstring
-			if g.dex_tab == DEX_TAB_ABILITIES {
-				a := dex_ability_at(i)
-				name = ability_name(a)
-				col = rl.Color{200, 180, 240, 255}
-			} else {
-				it := dex_item_at(i)
-				name = item_name(it)
-				col = item_color(it)
-			}
-			rl.DrawText(fmt.ctprintf("%s", name), i32(rec.x) + 12, i32(rec.y) + 2, 16, sel ? rl.Color{235, 245, 235, 255} : col)
-		}
-		if n == 0 {
-			rl.DrawText("(nothing here)", i32(panel.x) + 12, i32(panel.y) + 10, 15, rl.Color{150, 150, 170, 255})
-		}
-	}
-
-	// ---- the detail ----
-	dx := f32(410)
-	dy := f32(120)
-	right := f32(sw) - 40
-	if index < 0 || index >= n {
-		rl.DrawText("Nothing selected.", i32(dx), i32(dy), 20, rl.Color{160, 160, 180, 255})
-		return
-	}
-
-	if g.dex_tab == DEX_TAB_ABILITIES {
-		a := dex_ability_at(index)
-		rl.DrawText(ability_name(a), i32(dx), i32(dy) + 2, 30, rl.Color{225, 210, 250, 255})
-		cy := dy + 48
-		cx := dx
-		cx += draw_effect_chip(cx, cy, cstring("PASSIVE"), rl.Color{200, 180, 240, 255}) + 8
-		cy += 34
-		cy = f32(draw_text_wrapped(ability_desc(a), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
-		cy += 20
-		rl.DrawText("SPECIES WITH IT", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
-		cy += 24
-		buf: [1024]u8
-		used, shown, total := 0, 0, 0
-		for sid in Species_Id {
-			has := false
-			for pool in species_abilities(sid) {
-				if pool == a {
-					has = true
-					break
-				}
-			}
-			if !has { continue }
-			total += 1
-			if shown >= 18 { continue }
-			name := SPECIES[sid].name
-			if used + len(name) + 3 >= len(buf) { break }
-			if shown > 0 {
-				buf[used] = ','; buf[used+1] = ' '
-				used += 2
-			}
-			for ch in name {
-				buf[used] = u8(ch)
-				used += 1
-			}
-			shown += 1
-		}
-		buf[used] = 0
-		text: cstring
-		if total == 0 {
-			text = "nothing - boss-only, or unused"
-		} else if total > shown {
-			text = fmt.ctprintf("%s and %d more", cstring(&buf[0]), total - shown)
-		} else {
-			text = cstring(&buf[0])
-		}
-		draw_text_wrapped(text, i32(dx), i32(cy), 15, i32(right - dx), rl.Color{170, 180, 200, 255})
-		rl.DrawText(fmt.ctprintf("%d abilities", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
-		return
-	}
-
-	if g.dex_tab == DEX_TAB_ITEMS {
-		it := dex_item_at(index)
-		col := item_color(it)
-		draw_item_icon(it, dx + 20, dy + 20, 1.4)
-		rl.DrawText(item_name(it), i32(dx) + 58, i32(dy) + 2, 30, rl.Color{235, 235, 245, 255})
-		cy := dy + 48
-		rl.DrawText("Held item  -  one per monster", i32(dx), i32(cy), 15, col)
-		cy += 32
-		cy = f32(draw_text_wrapped(item_desc(it), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
-		cy += 12
-		rl.DrawText("EFFECTS", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
-		cy += 24
-		draw_item_effects(it, i32(dx), i32(cy), 15)
-		rl.DrawText(fmt.ctprintf("%d items", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
-		return
-	}
-
-	// ---- cards ----
-	id := Move_Id(index)
-	m := MOVE_DATA[id]
-	rl.DrawText(fmt.ctprintf("%s", m.name), i32(dx), i32(dy) + 2, 30, rl.Color{235, 235, 245, 255})
-	cy := dy + 44
-	cx := dx
-	cx += draw_effect_chip(cx, cy, element_name(m.element), element_color(m.element)) + 8
-	cx += draw_effect_chip(cx, cy, card_rarity_name(m.rarity), card_rarity_color(m.rarity)) + 8
-	cx += draw_effect_chip(cx, cy, card_kind_name(m.kind), card_kind_color(m.kind)) + 8
-	cy += 34
-	cy = f32(draw_text_wrapped(fmt.ctprintf("%s", m.desc), i32(dx), i32(cy), 18, i32(right - dx), rl.Color{210, 210, 225, 255}))
-	cy += 12
-	rl.DrawText("EFFECTS", i32(dx), i32(cy), 15, rl.Color{150, 150, 170, 255})
-	cy += 24
-	ml := move_lines(m)
-	for i in 0 ..< ml.n {
-		if cy > f32(sh) - 60 { break }
-		rl.DrawText(cstring(&ml.bufs[i][0]), i32(dx), i32(cy), 15, rl.Color{195, 200, 215, 255})
-		cy += 20
-	}
-	{
-		buf: [768]u8
-		used, shown, total := 0, 0, 0
-		for sid in Species_Id {
-			knows := false
-			for mid in SPECIES[sid].move_pool {
-				if mid == id {
-					knows = true
-					break
-				}
-			}
-			if !knows { continue }
-			total += 1
-			if shown >= 14 { continue }
-			name := SPECIES[sid].name
-			if used + len(name) + 3 >= len(buf) { break }
-			if shown > 0 {
-				buf[used] = ','; buf[used+1] = ' '
-				used += 2
-			}
-			for ch in name {
-				buf[used] = u8(ch)
-				used += 1
-			}
-			shown += 1
-		}
-		buf[used] = 0
-		text: cstring
-		if total == 0 {
-			text = "nobody - it only comes from junk cards"
-		} else if total > shown {
-			text = fmt.ctprintf("%s and %d more", cstring(&buf[0]), total - shown)
-		} else {
-			text = cstring(&buf[0])
-		}
-		rl.DrawText("LEARNED BY", i32(dx), i32(sh) - 84, 15, rl.Color{150, 150, 170, 255})
-		draw_text_wrapped(text, i32(dx), i32(sh) - 62, 15, i32(right - dx), rl.Color{170, 180, 200, 255})
-	}
-	rl.DrawText(fmt.ctprintf("%d cards", n), 40, i32(sh) - 32, 16, rl.Color{130, 130, 150, 255})
-}
-
-// ----------------------------------------------------------------------------
 // Draw one line per active effect field. Returns the next y.
 draw_item_effects :: proc(it: Item, x, y: i32, size: i32) -> i32 {
 	info := ITEM_DATA[it]
@@ -1762,13 +1700,16 @@ INV_MON_W       :: f32(340)
 INV_MON_ROW     :: f32(44)
 INV_MON_VISIBLE :: 10
 
+// The monster column is a `List_View`, so its scrollbar and pager are the same
+// ones every other list screen uses. x/y are filled in from the panel.
+INV_MON_LIST :: List_View{rows = INV_MON_VISIBLE, row_h = INV_MON_ROW, w = INV_MON_W}
+
 inv_mon_x :: proc() -> f32 {
 	return inv_panel_rect().x + 24
 }
 
-inv_mon_rect :: proc(i: int, scroll: f32 = 0) -> rl.Rectangle {
-	p := inv_panel_rect()
-	return rl.Rectangle{inv_mon_x(), p.y + 122 + f32(i)*INV_MON_ROW - scroll, INV_MON_W, INV_MON_ROW - 4}
+inv_mon_rect :: proc(v: List_View, row: int) -> rl.Rectangle {
+	return list_row_rect(v, row)
 }
 
 // The tile the Arena party is standing on (the selected monster's).
@@ -1815,9 +1756,15 @@ inv_mon_roster :: proc(g: ^Game, i: int) -> int {
 	return -1
 }
 
-inv_mon_max_scroll :: proc(g: ^Game) -> f32 {
-	n := max(inv_mon_count(g) - INV_MON_VISIBLE, 0)
-	return f32(n) * INV_MON_ROW
+// The monster column's geometry for this frame.
+inv_mon_view :: proc(g: ^Game) -> List_View {
+	p := inv_panel_rect()
+	v := INV_MON_LIST
+	v.x = inv_mon_x()
+	v.y = p.y + 122
+	v.index = g.bag_mon
+	v.first = g.bag_mon_first
+	return v
 }
 
 // --- the bag column ---
@@ -1908,7 +1855,7 @@ open_inventory :: proc(g: ^Game, arena := false) {
 	g.bag_arena = arena
 	g.bag_index = 0
 	g.bag_first = 0
-	g.bag_mon_scroll = 0
+	g.bag_mon_first = 0
 	g.bag_mon = inv_focus_monster(g)
 }
 
@@ -1962,23 +1909,17 @@ update_inventory :: proc(g: ^Game) {
 		return
 	}
 	nmon := inv_mon_count(g)
-	g.bag_mon = clamp(g.bag_mon, 0, max(nmon - 1, 0))
-	g.bag_mon_scroll -= rl.GetMouseWheelMove() * 60
-	g.bag_mon_scroll = clamp(g.bag_mon_scroll, 0, inv_mon_max_scroll(g))
+	// Pick a monster through the shared list (Up/Down, wheel, or a click).
+	v := inv_mon_view(g)
+	list_navigate(&v, nmon)
+	g.bag_mon = clamp(v.index, 0, max(nmon - 1, 0))
+	g.bag_mon_first = v.first
 	n := inv_count(g)
 	g.bag_index = clamp(g.bag_index, 0, max(n - 1, 0))
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
 	}
 	mp := mouse_pos()
-
-	// Pick a monster.
-	for i in 0..<min(nmon, INV_MON_VISIBLE) {
-		if rl.CheckCollisionPointRec(mp, inv_mon_rect(i, g.bag_mon_scroll)) {
-			g.bag_mon = i
-			return
-		}
-	}
 
 	// Pick a bag slot.
 	for i in 0..<n {
@@ -2044,9 +1985,11 @@ draw_inventory :: proc(g: ^Game) {
 	mon_head := g.bag_arena ? cstring("AT THE TOWER") : cstring("YOUR MONSTERS")
 	rl.DrawText(mon_head, i32(inv_mon_x()), i32(p.y) + 96, 15, rl.Color{150, 160, 180, 255})
 	nmon := inv_mon_count(g)
-	lo := int(g.bag_mon_scroll / INV_MON_ROW)
-	for k in 0..<INV_MON_VISIBLE {
-		i := lo + k
+	v := inv_mon_view(g)
+	v.index = clamp(g.bag_mon, 0, max(nmon - 1, 0))
+	draw_list_chrome(v, nmon, rl.Rectangle{v.x - 8, v.y - 8, v.w + 16, f32(INV_MON_VISIBLE) * v.row_h + 16})
+	for k in 0..<v.rows {
+		i := v.first + k
 		if i >= nmon {
 			break
 		}
@@ -2055,7 +1998,7 @@ draw_inventory :: proc(g: ^Game) {
 			continue
 		}
 		cr := &g.colony.roster[s].creature
-		rec := inv_mon_rect(k, g.bag_mon_scroll - f32(lo)*INV_MON_ROW)
+		rec := inv_mon_rect(v, k)
 		sel := i == g.bag_mon
 		hover := rl.CheckCollisionPointRec(mp, rec)
 		bg := rl.Color{26, 28, 38, 240}
@@ -2076,9 +2019,6 @@ draw_inventory :: proc(g: ^Game) {
 	if nmon == 0 {
 		rl.DrawText(g.bag_arena ? "Nobody is at the tower." : "No monsters yet.",
 			i32(inv_mon_x()), i32(p.y) + 130, 15, rl.Color{150, 150, 170, 255})
-	} else if inv_mon_max_scroll(g) > 0 {
-		rl.DrawText(fmt.ctprintf("%d of %d   (wheel to scroll)", lo + 1, nmon),
-			i32(inv_mon_x()), i32(p.y + p.height) - 40, 13, rl.Color{140, 140, 160, 255})
 	}
 
 	// ---- right: the bag ----
@@ -2420,6 +2360,11 @@ draw_upgrades :: proc(g: ^Game) {
 		}
 	}
 	scissor_end()
+
+	// The same scrollbar every list screen uses.
+	visible_rows := max(int(clip.height / 62), 1)
+	draw_scrollbar(rl.Rectangle{p.x + p.width - 12, clip.y, 6, clip.height},
+		int(g.upgrade_scroll / 62), visible_rows, UPGRADE_ROWS)
 
 	rl.DrawText("U / Esc to close   -   wheel to scroll   -   children unlock when their parent reaches the shown level", i32(p.x) + 24, i32(p.y + p.height) - 24, 13, rl.Color{140, 140, 160, 255})
 }

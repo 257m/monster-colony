@@ -46,9 +46,7 @@ Game :: struct {
 	arena_event_open: bool,
 
 	// monster encyclopedia
-	show_encyclopedia:  bool,
-	encyclopedia_index: int,
-	encyclopedia_first: int,
+
 
 	// improvements dex
 	show_improvements:  bool,
@@ -56,11 +54,10 @@ Game :: struct {
 	improvement_first:  int,
 
 	// move dex
-	show_moves:  bool,
-	move_index:  int,
-	move_first:  int,
-	dex_index:   int, // the ability / item dex's cursor
+	show_dex:    bool,
 	dex_tab:     int,
+	dex_index:   int,
+	dex_first:   int,
 
 	// tutorial tips window
 	show_tips: bool,
@@ -72,7 +69,7 @@ Game :: struct {
 	show_bag:  bool,
 	bag_index: int,
 	bag_mon:   int, // the monster selected in the inventory
-	bag_mon_scroll: f32,
+	bag_mon_first: int,
 	bag_arena: bool, // the inventory is showing a run's pack, not the colony's
 	bag_first: int,
 
@@ -247,9 +244,7 @@ end_run :: proc(g: ^Game) {
 
 close_all_panels :: proc(g: ^Game) {
 	g.show_deck = false
-	g.show_encyclopedia = false
 	g.show_improvements = false
-	g.show_moves = false
 	g.show_tips = false
 	g.relic_place_active = false
 	g.show_bag = false
@@ -381,16 +376,13 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_deck_viewer(g, dt)
 		return
 	}
-	if g.show_encyclopedia {
-		update_encyclopedia(g)
-		return
-	}
+
 	if g.show_improvements {
 		update_improvements(g)
 		return
 	}
-	if g.show_moves {
-		update_moves(g)
+	if g.show_dex {
+		update_dex(g)
 		return
 	}
 	if g.show_bag {
@@ -434,10 +426,9 @@ game_update :: proc(g: ^Game, dt: f32) {
 		g.show_settings = true
 		return
 	}
-	if (g.mode == .MAP || g.mode == .STARTER || g.mode == .ARENA) && rl.IsKeyPressed(.M) {
-		g.show_encyclopedia = true
-		g.encyclopedia_index = 0
-		g.encyclopedia_first = 0
+	// M goes straight to the monster tab; L opens the dex where it was.
+	if (g.mode == .MAP || g.mode == .STARTER || g.mode == .ARENA || g.mode == .BATTLE) && rl.IsKeyPressed(.M) {
+		open_dex(g, DEX_MONSTERS)
 		return
 	}
 	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.I) {
@@ -446,10 +437,8 @@ game_update :: proc(g: ^Game, dt: f32) {
 		g.improvement_first = 0
 		return
 	}
-	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.L) {
-		g.show_moves = true
-		g.move_index = 0
-		g.move_first = 0
+	if (g.mode == .MAP || g.mode == .ARENA || g.mode == .BATTLE) && rl.IsKeyPressed(.L) {
+		open_dex(g, g.dex_tab)
 		return
 	}
 	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.G) {
@@ -1036,14 +1025,11 @@ game_draw :: proc(g: ^Game) {
 	if g.show_settings {
 		draw_settings(g)
 	}
-	if g.show_encyclopedia {
-		draw_encyclopedia(g)
-	}
 	if g.show_improvements {
 		draw_improvements(g)
 	}
-	if g.show_moves {
-		draw_moves(g)
+	if g.show_dex {
+		draw_dex(g)
 	}
 	if g.show_upgrades {
 		draw_upgrades(g)

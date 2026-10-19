@@ -1379,3 +1379,16 @@ it stored, is lost).
   to the room between them — verified against every combination of XP and deck
   size, including six-figure totals (0 collisions). **Followup**'s description
   went back to "5 dmg, +5 combo".
+- Phase 84 ✅ **one dex, four tabs**: the monster encyclopedia and the move dex
+  are now a single reference — **MONSTERS / CARDS / ABILITIES / ITEMS** — opened
+  with `L` from the map, the tower *or* mid-battle (looking a species up while a
+  fight is on is exactly when you want it), and with `M` straight to the monster
+  tab. The species detail (portrait, typing, evolution line, stats, starter
+  deck, learnset, ability pool, blurb) moved across wholesale, so the separate
+  encyclopedia panel is gone.
+
+- Phase 85 ✅ **one scrollbar**: `draw_scrollbar` is now a shared helper —
+  `draw_list_chrome` uses it for every list screen, the **inventory's monster
+  column** became a `List_View` (so it gets the same bar and "N / total" pager
+  as the dex), and the **upgrades tree** draws it too instead of scrolling
+  silently. Every list you can scroll now looks the same.
