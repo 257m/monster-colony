@@ -387,15 +387,17 @@ arena_apply_set :: proc(c: ^Creature, set: Species_Set) {
 }
 
 // Crystals a single floor banks. The run's payout is the sum of these, so it is
-// a function of how deep you got — and it is deliberately back-loaded. The
-// tower pays *nothing* for the first twenty floors and only a trickle for a
-// long while after that, so a short climb is not a crystal faucet and the deep
-// floors are where a run actually pays.
+// a function of how deep you got — and it is back-loaded, but not *that*
+// back-loaded: the tower pays nothing for the first ten floors, then a crystal a
+// floor with the curve bending up from there.
 //
-//   30 -> 0    50 -> 1    100 -> 4    250 -> 12    500 -> 29    1000 -> 73
+//   10 -> 0   11 -> 1   50 -> 2   100 -> 3   250 -> 8   500 -> 19   1000 -> 49
 arena_floor_purse :: proc(floor: int) -> int {
 	f := max(floor - ARENA_PURSE_DELAY, 0)
-	return f / 20 + f * f / 40000
+	if f <= 0 {
+		return 0
+	}
+	return 1 + (f-1)/40 + (f-1)*(f-1)/40000
 }
 
 // Between floors the tower mends your team — but the higher you climb, the

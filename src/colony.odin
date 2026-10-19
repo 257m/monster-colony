@@ -93,7 +93,7 @@ BEACON_VULN            :: 2    // Vulnerable applied to wilds attacking near a B
 ARENA_ENTRY_COST       :: 40
 ARENA_TEAM_SIZE        :: 6
 ARENA_LEVEL_BONUS      :: 2
-ARENA_PURSE_DELAY     :: 20  // floors the tower pays nothing at all for
+ARENA_PURSE_DELAY     :: 10  // floors the tower pays nothing at all for
 // The Arena is a *run*: one flat entry fee buys a chain of floors, starting at
 // floor 1 every time. Each cleared floor banks its purse; the run ends when you
 // cash out (keeping the winnings) or when your party wipes (losing them).

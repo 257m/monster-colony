@@ -1330,3 +1330,26 @@ it stored, is lost).
   keeps the pack** — it transfers into the colony bag as far as it has room, and
   tells you if something had to be left behind — while a wipe or an abandon
   loses it along with the winnings. `SAVE_VERSION` is **16**.
+- Phase 77 ✅ **look things up mid-run, and while choosing**: the tower screen has
+  **Decks** (and the inventory, and `V` from anywhere), the read-only reference
+  panels open in `.ARENA` too (`M` monster dex, `L` dex, `I` improvements, `K`
+  help, `P` settings, `G`/`J` the pack), and the **level-up / reward-card overlay
+  has a "View deck" button** — with `V` working there too — because deciding
+  which card to learn without seeing what the monster already runs is guesswork.
+  The deck viewer draws above the choice and takes input first.
+
+- Phase 78 ✅ **the dex grew tabs**: `L` is now **CARDS / ABILITIES / ITEMS**
+  (Tab or Left/Right, or click a tab). Abilities get a description and the list
+  of species that can have them; items get their icon, description and the
+  generated effect breakdown. 19 abilities and 12 items, all with real text.
+
+- Phase 79 ✅ **the deck viewer's Equip was blind**: it silently took
+  `colony.items[0]`, which is the real reason gearing read as "there is just an
+  Equip option". It now hands off to the inventory, focused on the monster you
+  were looking at, where the item is actually chosen. Unequip routes to the
+  run's pack mid-run.
+
+- Phase 80 ✅ **the tower pays a little sooner**: `ARENA_PURSE_DELAY` is 10 (was
+  20) and the curve starts paying from floor 11 — 1 crystal a floor at first,
+  bending up slowly (floor 50 -> 1, 100 -> 3, 250 -> 7, 500 -> 18, 1000 -> 49).
+  A run to floor 100 banks 150 crystals.

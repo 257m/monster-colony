@@ -59,6 +59,8 @@ Game :: struct {
 	show_moves:  bool,
 	move_index:  int,
 	move_first:  int,
+	dex_index:   int, // the ability / item dex's cursor
+	dex_tab:     int,
 
 	// tutorial tips window
 	show_tips: bool,
@@ -338,8 +340,23 @@ game_update :: proc(g: ^Game, dt: f32) {
 		set_status(g, audio_toggle_mute() ? "Sound muted." : "Sound on.")
 	}
 
-	// A pending move choice (level-up / battle reward) blocks everything else.
+	// A pending move choice (level-up / battle reward) blocks everything else —
+	// except the deck viewer, which is the one thing you want while choosing.
 	if len(g.colony.choices) > 0 {
+		if g.show_deck {
+			update_deck_viewer(g, dt)
+			return
+		}
+		if g.show_bag {
+			update_inventory(g)
+			return
+		}
+		if rl.IsKeyPressed(.V) && len(g.colony.roster) > 0 {
+			g.show_deck = true
+			g.view_index = clamp(monster_by_id(&g.colony, g.colony.choices[0].monster_id), 0, len(g.colony.roster) - 1)
+			g.view_scroll = 0
+			return
+		}
 		update_move_choice(g)
 		return
 	}
@@ -409,34 +426,34 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_unit_picker(g)
 		return
 	}
-	if (g.mode == .MAP || g.mode == .STARTER) && rl.IsKeyPressed(.K) {
+	if (g.mode == .MAP || g.mode == .STARTER || g.mode == .ARENA) && rl.IsKeyPressed(.K) {
 		g.show_help = true
 		return
 	}
-	if (g.mode == .MAP || g.mode == .STARTER) && rl.IsKeyPressed(.P) {
+	if (g.mode == .MAP || g.mode == .STARTER || g.mode == .ARENA) && rl.IsKeyPressed(.P) {
 		g.show_settings = true
 		return
 	}
-	if (g.mode == .MAP || g.mode == .STARTER) && rl.IsKeyPressed(.M) {
+	if (g.mode == .MAP || g.mode == .STARTER || g.mode == .ARENA) && rl.IsKeyPressed(.M) {
 		g.show_encyclopedia = true
 		g.encyclopedia_index = 0
 		g.encyclopedia_first = 0
 		return
 	}
-	if g.mode == .MAP && rl.IsKeyPressed(.I) {
+	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.I) {
 		g.show_improvements = true
 		g.improvement_index = 0
 		g.improvement_first = 0
 		return
 	}
-	if g.mode == .MAP && rl.IsKeyPressed(.L) {
+	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.L) {
 		g.show_moves = true
 		g.move_index = 0
 		g.move_first = 0
 		return
 	}
-	if g.mode == .MAP && rl.IsKeyPressed(.G) {
-		open_inventory(g)
+	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.G) {
+		open_inventory(g, arena = g.mode == .ARENA)
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.U) {
@@ -447,9 +464,9 @@ game_update :: proc(g: ^Game, dt: f32) {
 		g.show_quests = true
 		return
 	}
-	if g.mode == .MAP && rl.IsKeyPressed(.J) {
+	if (g.mode == .MAP || g.mode == .ARENA) && rl.IsKeyPressed(.J) {
 		// Relics live in the inventory now, alongside items.
-		open_inventory(g)
+		open_inventory(g, arena = g.mode == .ARENA)
 		return
 	}
 	if g.mode == .MAP && rl.IsKeyPressed(.Z) {
@@ -493,7 +510,7 @@ game_update :: proc(g: ^Game, dt: f32) {
 		update_results(g)
 		return
 	}
-	if g.mode == .MAP && len(g.colony.roster) > 0 && rl.IsKeyPressed(.V) {
+	if (g.mode == .MAP || g.mode == .ARENA) && len(g.colony.roster) > 0 && rl.IsKeyPressed(.V) {
 		g.show_deck = true
 		g.view_index = clamp(g.selected, 0, len(g.colony.roster) - 1)
 		g.view_scroll = 0
@@ -1019,9 +1036,6 @@ game_draw :: proc(g: ^Game) {
 	if g.show_settings {
 		draw_settings(g)
 	}
-	if g.show_deck {
-		draw_deck_viewer(g)
-	}
 	if g.show_encyclopedia {
 		draw_encyclopedia(g)
 	}
@@ -1030,9 +1044,6 @@ game_draw :: proc(g: ^Game) {
 	}
 	if g.show_moves {
 		draw_moves(g)
-	}
-	if g.show_bag {
-		draw_inventory(g)
 	}
 	if g.show_upgrades {
 		draw_upgrades(g)
@@ -1058,6 +1069,12 @@ game_draw :: proc(g: ^Game) {
 	}
 	if len(g.colony.choices) > 0 {
 		draw_move_choice(g)
+	}
+	if g.show_deck {
+		draw_deck_viewer(g)
+	}
+	if g.show_bag {
+		draw_inventory(g)
 	}
 	if g.confirm_kind != .NONE {
 		draw_confirm(g)
