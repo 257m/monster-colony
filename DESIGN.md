@@ -1330,7 +1330,7 @@ it stored, is lost).
   keeps the pack** — it transfers into the colony bag as far as it has room, and
   tells you if something had to be left behind — while a wipe or an abandon
   loses it along with the winnings. `SAVE_VERSION` is **16**.
-- Phase 77 ✅ **look things up mid-run, and while choosing**: the tower screen has
+- Phase 77 ✅ **look things up mid-run, and while choosing**: the tower has
   **Decks** (and the inventory, and `V` from anywhere), the read-only reference
   panels open in `.ARENA` too (`M` monster dex, `L` dex, `I` improvements, `K`
   help, `P` settings, `G`/`J` the pack), and the **level-up / reward-card
