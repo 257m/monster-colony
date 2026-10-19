@@ -449,7 +449,7 @@ colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
 	// A trial floor fields its gym: a fixed team with a theme, a little tougher
 	// than the floors around it, and each member fighting as a named set.
 	if arena_is_trial_floor(floor) && !arena_is_event_floor(floor) {
-		gym := arena_gym_for(floor)
+		gym := arena_gym_for(c, floor)
 		glvl := int(f32(lvl) * ARENA_GYM_LEVEL_MULT)
 		for member in gym.team {
 			mon_lvl := SPECIES[member.species].role == .BOSS ? glvl : int(f32(glvl) * mult)
@@ -473,6 +473,17 @@ colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
 		// A challenger arrives as one of its species' sets, not a stock wild.
 		sets := SPECIES_SETS[m.creature.species]
 		arena_apply_set(&m.creature, sets[rng_below(&c.rng, MAX_SETS)])
+	}
+}
+
+// Top the party's energy back up. Entering the tower does this, so the energy
+// spent walking to the Arena tile does not come out of the run's first fight.
+arena_refill_party :: proc(c: ^Colony, hex: Hex) {
+	for &m in c.roster {
+		if m.wild || m.creature.hp <= 0 || !hex_equal(m.pos, hex) {
+			continue
+		}
+		m.creature.energy = m.creature.energy_max
 	}
 }
 

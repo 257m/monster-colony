@@ -1215,3 +1215,13 @@ it stored, is lost).
   (Blight/Venom Sac), Stormwing (Daze/Cleansing Bloom), Ashfang (Fury/
   Bloodstone) and Dreadhorn (Ambush/Weakpoint Lens), each running its named set
   at your best monster's level, so the tower is an even fight.
+- Phase 66 ✅ **trials are seeded per run, and announced**: entering the tower
+  draws an `arena_run_seed`, and both the gym order and the event offers are
+  derived from it — so a run is coherent (no gym repeats until the whole list
+  has been seen, and the same floor offers the same thing however many times you
+  look) while the next run is different. The panel now shows what is coming
+  (`Ahead: 10 Emberworks  20 a decision  30 Tidehollow`), so a run can be
+  planned around its gyms rather than reacted to. And **entering floor 1
+  refills the party's energy** (`arena_refill_party`), so the energy spent
+  walking to the Arena tile does not come out of the first fight.
+  `SAVE_VERSION` is **14**.

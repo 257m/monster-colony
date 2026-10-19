@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:strings"
 
 // ============================================================================
 // ARENA TRIALS (Phase 64)
@@ -16,6 +17,16 @@ import "core:fmt"
 ARENA_TRIAL_EVERY       :: 10 // a set-piece floor every this many floors
 ARENA_TRIAL_EVENT_EVERY :: 3  // every Nth trial is an event rather than a gym
 ARENA_GYM_LEVEL_MULT    :: 1.25
+
+// A cheap, stable hash of (run seed, n). A run's gym order and its event offers
+// are both derived from it, so they are fixed for the whole run — you can be
+// told what is coming and plan around it — while a fresh run gets its own.
+arena_run_hash :: proc(seed: u64, n: u64) -> u64 {
+	z := seed + n*0x9E3779B97F4A7C15 + 0x2545F4914F6CDD1D
+	z = (z ~ (z >> 30)) * 0xBF58476D1CE4E5B9
+	z = (z ~ (z >> 27)) * 0x94D049BB133111EB
+	return z ~ (z >> 31)
+}
 
 arena_is_trial_floor :: proc(floor: int) -> bool {
 	return floor > 0 && floor % ARENA_TRIAL_EVERY == 0
@@ -148,13 +159,48 @@ ARENA_GYMS := [?]Gym {
 	},
 }
 
-// The gym a trial floor fields, cycling through the list.
-arena_gym_for :: proc(floor: int) -> ^Gym {
-	i := (arena_trial_index(floor) - 1) % len(ARENA_GYMS)
-	if i < 0 {
-		i += len(ARENA_GYMS)
+// Which gym of the run a trial floor is (1-based, counting only gym trials).
+arena_gym_number :: proc(floor: int) -> int {
+	t := arena_trial_index(floor)
+	return t - t / ARENA_TRIAL_EVENT_EVERY
+}
+
+// The gym a trial floor fields. Each run gets its own ordering of the list: the
+// cycle is rotated by a run-derived offset and walked by a run-derived stride
+// (always odd, so it never falls into a short loop over the list), which means
+// no gym repeats until the whole list has been seen.
+arena_gym_for :: proc(c: ^Colony, floor: int) -> ^Gym {
+	n := len(ARENA_GYMS)
+	g := max(arena_gym_number(floor) - 1, 0)
+	cycle := g / n
+	slot := g % n
+	offset := int(arena_run_hash(c.arena_run_seed, u64(cycle)*2 + 1) % u64(n))
+	stride := 1 + 2*int(arena_run_hash(c.arena_run_seed, u64(cycle)*2 + 2)%u64(max(n/2, 1)))
+	return &ARENA_GYMS[(offset + slot*stride) % n]
+}
+
+// The next few trial floors, so the run can be planned around them.
+arena_trials_ahead :: proc(c: ^Colony, floor: int) -> cstring {
+	sb := strings.builder_make(context.temp_allocator)
+	shown := 0
+	for f := floor + 1; f <= floor + ARENA_TRIAL_EVERY*4 && shown < 3; f += 1 {
+		if !arena_is_trial_floor(f) {
+			continue
+		}
+		if shown > 0 {
+			strings.write_string(&sb, "   ")
+		}
+		if arena_is_event_floor(f) {
+			fmt.sbprintf(&sb, "%d a decision", f)
+		} else {
+			fmt.sbprintf(&sb, "%d %s", f, arena_gym_for(c, f).name)
+		}
+		shown += 1
 	}
-	return &ARENA_GYMS[i]
+	if shown == 0 {
+		return cstring("Ahead:  none")
+	}
+	return fmt.ctprintf("Ahead:  %s", strings.to_string(sb))
 }
 
 // The index of a named set within a species' sets (0 when it isn't there).
@@ -312,8 +358,9 @@ event_offer_item :: proc(c: ^Colony, rng: ^Rng, mon: int) -> (Event_Option, bool
 	return Event_Option{kind = .ITEM, mon = mon, item = pool[rng_below(rng, len(pool))]}, true
 }
 
-// Build the event for a floor. Seeded off the floor alone, so the offers are the
-// same every time you look at them — there is nothing to gain by backing out.
+// Build the event for a floor. Seeded off the run and the floor together, so the
+// offers are the same every time you look at them within a run — there is
+// nothing to gain by backing out — while a fresh run offers something else.
 arena_make_event :: proc(c: ^Colony, hex: Hex, floor: int) {
 	ev := &c.arena_event
 	ev.floor = floor
@@ -322,7 +369,7 @@ arena_make_event :: proc(c: ^Colony, hex: Hex, floor: int) {
 	ev.title = flavor.title
 	ev.text = flavor.text
 
-	rng := rng_make(u64(floor)*0x9E3779B97F4A7C15 + 0x5DEECE66D)
+	rng := rng_make(arena_run_hash(c.arena_run_seed, u64(floor)))
 	party, n := arena_party_members(c, hex)
 	if n == 0 {
 		return

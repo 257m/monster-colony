@@ -2106,6 +2106,13 @@ update_arena :: proc(g: ^Game) {
 			// with, so it neither drifts up under you nor responds to how you
 			// level while you're inside.
 			g.colony.arena_base_level = arena_party_level(&g.colony, hex)
+			// Each run gets its own seed: its gym order and its event offers are
+			// derived from it, so they hold for the whole climb and differ next
+			// time out.
+			g.colony.arena_run_seed = rng_next_u64(&g.colony.rng)
+			// Walking here spent energy from the same pool the fights draw on.
+			// Starting the climb tops everyone back up, so travel costs nothing.
+			arena_refill_party(&g.colony, hex)
 		}
 		// A trial floor that is an event is settled by a decision, not a fight.
 		if arena_is_event_floor(max(g.colony.arena_floor, 1)) {
@@ -2144,30 +2151,31 @@ draw_arena :: proc(g: ^Game) {
 	heal_iv := arena_heal_interval(floor)
 	if running {
 		rl.DrawText(fmt.ctprintf("Winnings so far: %d crystals  -  cash out to keep them.", g.colony.arena_run_crystals),
-			i32(p.x) + 28, i32(p.y) + 96, 17, rl.Color{150, 225, 170, 255})
+			i32(p.x) + 28, i32(p.y) + 94, 17, rl.Color{150, 225, 170, 255})
 		rl.DrawText("Lose the whole party and the run - and the winnings - are gone.",
-			i32(p.x) + 28, i32(p.y) + 120, 15, rl.Color{225, 165, 140, 255})
+			i32(p.x) + 28, i32(p.y) + 116, 15, rl.Color{225, 165, 140, 255})
 	} else {
 		rl.DrawText(fmt.ctprintf("Entry: %d gold for one run. Floors start at 1, every time.", ARENA_ENTRY_COST),
-			i32(p.x) + 28, i32(p.y) + 96, 17, rl.Color{215, 200, 175, 255})
+			i32(p.x) + 28, i32(p.y) + 94, 17, rl.Color{215, 200, 175, 255})
 		rl.DrawText("Climb as far as you can, then cash out - or wipe and lose it all.",
-			i32(p.x) + 28, i32(p.y) + 120, 15, rl.Color{200, 185, 160, 255})
+			i32(p.x) + 28, i32(p.y) + 116, 15, rl.Color{200, 185, 160, 255})
 	}
 	if arena_is_event_floor(floor) {
 		rl.DrawText("A trial floor: no fight, but a choice to make.",
 			i32(p.x) + 28, i32(p.y) + 150, 16, rl.Color{225, 210, 150, 255})
 	} else if arena_is_trial_floor(floor) {
-		rl.DrawText(fmt.ctprintf("A trial floor: the gym %s, tougher than usual.", arena_gym_for(floor).name),
-			i32(p.x) + 28, i32(p.y) + 150, 16, rl.Color{225, 210, 150, 255})
+		rl.DrawText(fmt.ctprintf("A trial floor: the gym %s, tougher than usual.", arena_gym_for(&g.colony, floor).name),
+			i32(p.x) + 28, i32(p.y) + 142, 16, rl.Color{225, 210, 150, 255})
 	} else {
 		rl.DrawText(fmt.ctprintf("Next: %d challengers around level %d, built to beat the team you bring.",
 			team, arena_challenger_level(&g.colony, g.colony.roster[g.selected].pos)),
 			i32(p.x) + 28, i32(p.y) + 150, 16, rl.Color{215, 200, 175, 255})
 	}
-	rl.DrawText(fmt.ctprintf("A heal comes every %d floor%s here.", heal_iv, heal_iv == 1 ? "" : "s"),
-		i32(p.x) + 28, i32(p.y) + 174, 15, rl.Color{180, 210, 180, 255})
-	rl.DrawText(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals),
-		i32(p.x) + 28, i32(p.y) + 204, 18, rl.Color{235, 210, 120, 255})
+	rl.DrawText(arena_trials_ahead(&g.colony, floor),
+		i32(p.x) + 28, i32(p.y) + 166, 14, rl.Color{190, 195, 215, 255})
+	rl.DrawText(fmt.ctprintf("A heal every %d floor%s.   Gold %d   Crystals %d",
+		heal_iv, heal_iv == 1 ? "" : "s", colony_total_gold(&g.colony), g.colony.crystals),
+		i32(p.x) + 28, i32(p.y) + 192, 16, rl.Color{210, 205, 175, 255})
 
 	mp := mouse_pos()
 	// Fight / enter.
@@ -2183,7 +2191,7 @@ draw_arena :: proc(g: ^Game) {
 		case arena_is_event_floor(floor):
 			fl = fmt.ctprintf("Floor %d  -  a decision", floor)
 		case arena_is_trial_floor(floor):
-			fl = fmt.ctprintf("Floor %d  -  %s", floor, arena_gym_for(floor).name)
+			fl = fmt.ctprintf("Floor %d  -  %s", floor, arena_gym_for(&g.colony, floor).name)
 		case:
 			fl = fmt.ctprintf("Fight floor %d", floor)
 		}

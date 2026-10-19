@@ -17,7 +17,7 @@ import "core:time"
 // ============================================================================
 
 SAVE_MAGIC   :: "MCV1"
-SAVE_VERSION :: 13
+SAVE_VERSION :: 14
 SAVE_SLOTS   :: 3
 // The autosave is a 4th, special slot: the game writes it every so often and the
 // save panel only lets you load from it.
@@ -62,6 +62,10 @@ sw_i64 :: proc(w: ^Save_Writer, v: i64) {
 	for i in 0 ..< 8 {
 		append(&w.buf, u8(u >> (u64(i) * 8)))
 	}
+}
+
+sw_u64 :: proc(w: ^Save_Writer, v: u64) {
+	sw_i64(w, transmute(i64)v)
 }
 
 sw_f32 :: proc(w: ^Save_Writer, v: f32) {
@@ -109,6 +113,10 @@ sr_i64 :: proc(r: ^Save_Reader) -> i64 {
 		u |= u64(sr_u8(r)) << (u64(i) * 8)
 	}
 	return i64(u)
+}
+
+sr_u64 :: proc(r: ^Save_Reader) -> u64 {
+	return transmute(u64)sr_i64(r)
 }
 
 sr_f32 :: proc(r: ^Save_Reader) -> f32 {
@@ -330,6 +338,7 @@ save_colony :: proc(w: ^Save_Writer, c: ^Colony) {
 	sw_int(w, c.arena_best_floor)
 	sw_int(w, c.arena_run_crystals)
 	sw_int(w, c.arena_base_level)
+	sw_u64(w, c.arena_run_seed)
 	for sp in Species_Id {
 		sw_int(w, c.bosses_slain[sp] ? 1 : 0)
 	}
@@ -401,6 +410,7 @@ load_colony :: proc(r: ^Save_Reader, c: ^Colony) {
 	c.arena_best_floor = sr_int(r)
 	c.arena_run_crystals = sr_int(r)
 	c.arena_base_level = sr_int(r)
+	c.arena_run_seed = sr_u64(r)
 	for sp in Species_Id {
 		c.bosses_slain[sp] = sr_int(r) != 0
 	}
