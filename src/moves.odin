@@ -477,8 +477,8 @@ MOVE_DATA := [Move_Id]Move{
 	// ------------------------------------------------------------------------
 	// X-cost: spends the whole energy bank; damage/block are PER ENERGY. Trades
 	// the turn (and map movement) for one big swing.
-	.All_In       = {name = "All-In",       desc = "5 dmg x energy",            cost = 0.0, element = .NEUTRAL, rarity = .RARE, x_cost = true, damage = 5, hits = 1, exhaust = true},
-	.Bulwark      = {name = "Bulwark",      desc = "4 block x energy",          cost = 0.0, element = .NEUTRAL, rarity = .RARE, x_cost = true, kind = .SKILL, targets = {.SELF}, block = 4},
+	.All_In       = {name = "All-In",       desc = "10 dmg x energy",           cost = 0.0, element = .NEUTRAL, rarity = .RARE, x_cost = true, damage = 10, hits = 1, exhaust = true},
+	.Bulwark      = {name = "Bulwark",      desc = "8 block x energy",          cost = 0.0, element = .NEUTRAL, rarity = .RARE, x_cost = true, kind = .SKILL, targets = {.SELF}, block = 8},
 	// Retain: stays in hand so you can replay it next turn.
 	.Hold_the_Line = {name = "Hold the Line", desc = "8 block, retain",         cost = 1.0, element = .NEUTRAL, rarity = .UNCOMMON, kind = .SKILL, targets = {.SELF}, block = 8, retain = true},
 	.Meditate     = {name = "Meditate",     desc = "+1 en, draw 1, retain",     cost = 0.5, element = .NEUTRAL, rarity = .COMMON, kind = .SKILL, targets = {.SELF}, energy_give = 1, draw = 1, retain = true},
@@ -536,7 +536,7 @@ MOVE_DATA := [Move_Id]Move{
 	// Elemental top-ups.
 	.Jolt            = {name = "Jolt",            desc = "3 dmg",                 cost = 0.5, element = .ELECTRIC, rarity = .COMMON,   damage = 3, hits = 1},
 	.Static_Shock    = {name = "Static Shock",    desc = "5 dmg, 1 stun",         cost = 1.5, element = .ELECTRIC, rarity = .UNCOMMON, damage = 5, hits = 1, stun = 1},
-	.Overcharge      = {name = "Overcharge",      desc = "5 dmg x energy",        cost = 0.0, element = .ELECTRIC, rarity = .RARE,     x_cost = true, damage = 5, hits = 1, exhaust = true},
+	.Overcharge      = {name = "Overcharge",      desc = "10 dmg x energy",       cost = 0.0, element = .ELECTRIC, rarity = .RARE,     x_cost = true, damage = 10, hits = 1, exhaust = true},
 	.Short_Circuit   = {name = "Short Circuit",   desc = "4 dmg, burn 2 energy",  cost = 1.0, element = .ELECTRIC, rarity = .UNCOMMON, damage = 4, hits = 1, energy_burn = 2},
 	.Chain_Lightning = {name = "Chain Lightning", desc = "4 dmg x3",             cost = 2.0, element = .ELECTRIC, rarity = .RARE,     damage = 4, hits = 3},
 	.Capacitor       = {name = "Capacitor",       desc = "+3 en, draw 1",         cost = 1.0, element = .ELECTRIC, rarity = .UNCOMMON, kind = .SKILL, targets = {.SELF}, energy_give = 3, draw = 1},

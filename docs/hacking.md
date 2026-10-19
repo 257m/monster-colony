@@ -26,8 +26,10 @@ Edit its entry in `MOVE_DATA` (`moves.odin`) and its `desc`. Nothing else.
 ### B. Add a move
 1. Add an id to `Move_Id`.
 2. Add a `MOVE_DATA[.YourMove] = { ... }` entry (give it a `desc`).
-3. To make it obtainable, put it in a species' `starter`/`learnset`/`move_pool`
-   or in `COMMON_MOVES`. (Remember: wilds only use `starter`.)
+3. To make it obtainable, put it in a species' `learnset` (wilds grow into it),
+   `starter` (its opening deck) or `move_pool` (reward cards and Arena sets).
+   There is no shared generic pool — a species can only offer cards it could
+   plausibly run.
 4. If it introduces a **new effect field**, also teach `play_creature_card`
    (apply it), `move_value` (value it for the AI), and any UI that shows it.
 
@@ -42,9 +44,14 @@ Edit its entry in `MOVE_DATA` (`moves.odin`) and its `desc`. Nothing else.
 5. Add a term to `move_value` so the AI values it.
 
 ### D. Add a species
-Append a `Species{...}` literal to `SPECIES`. That's enough to exist. To make it
-appear as a wild, add its index to the relevant `spawn_species_for` case; to make
-it selectable, add it to `STARTER_SPECIES`.
+1. Append a `Species{...}` literal to `SPECIES` — and append, don't insert:
+   `Species_Id` ordinals are written into saves.
+2. Add a matching `ABILITY_POOLS[Species_Id]` entry and a `SPECIES_SETS` entry
+   (or re-run the sets generator). Both tables are indexed by `Species_Id` and
+   the compiler will tell you if you forget one.
+3. To make it appear as a wild, add it to a `spawn_*` table; to make it
+   selectable, add it to `STARTER_SPECIES`. The Arena picks it up automatically
+   (the builder reads `SPECIES` and `SPECIES_SETS`).
 
 ### E. Add a terrain
 1. Add to `Terrain`.
@@ -118,7 +125,50 @@ hover preview). Keep both in sync or the preview lies.
 - Energy is **one pool** on `Creature.energy` (there is no `Monster.energy`).
   Both `colony_move` and card play read/write it. Battles must **not** zero it
   (`creature_reset_battle_state` intentionally doesn't).
+- `energy_regen` (per turn) is the income; `energy_max` is the **bank**, and the
+  bank is what decides how hard a fight opens. Species banks are deliberately
+  small (4–6, from `base_energy_max`) because a large bank lets turn one dump a
+  whole hand — that is why fights used to end in three rounds. Halving the banks
+  (Phase 88) took the average auto-fight from 2.7 to 4.1 rounds. X-cost cards
+  (`All_In`, `Bulwark`, `Overcharge`) spend the *whole* bank, so they scale with
+  it: if you retune the banks, retune those too.
 - XP is on `Creature.xp` (moved off `Monster`) so the battle UI can read it.
+
+### Allocations
+- **`fmt.ctprintf` allocates on the frame's temp allocator**, which is reset once
+  per frame — perfect for anything drawn immediately, and it is why the codebase
+  formats inline instead of caching strings. **`fmt.aprintf` allocates on the
+  heap and you must `delete` it.** If you find yourself calling `aprintf` inside
+  a `draw_*` or `update_*` proc, you almost certainly want `ctprintf`; a heap
+  string built every frame and never freed is a silent leak.
+- When a proc needs both (e.g. `effect_tooltip` for a tooltip that *keeps* the
+  string, and the same text for immediate drawing), define the text once with
+  `ctprintf` and make the owned version a thin `aprintf("%s", ...)` wrapper. See
+  `effect_tooltip_text` / `effect_tooltip` in `battle.odin`.
+- Per-frame `make([dynamic]…)` is a smell: use a fixed array or
+  `make(…, context.temp_allocator)`. Anything allocated with the temp allocator
+  needs no `delete` — it dies at the end of the frame.
+- Quick leak check: wrap the frame in `mem.Tracking_Allocator` and confirm the
+  live-block count does not grow across many frames.
+
+### The UI layer
+- **Everything is laid out in a 1280×720 design space.** Never call
+  `rl.GetMousePosition` or use `rl.GetScreenWidth` for layout — use `mouse_pos()`
+  and `screen_w()`/`screen_h()`. Draw through the camera the frame already
+  entered (`ui_camera`); `scissor_*` takes design-space rects and maps them.
+- **Use the shared widgets**: `draw_panel` (fill + outline), `draw_button` with a
+  `Button_Style` (there are four presets), `draw_row` for selectable rows,
+  `List_View` + `list_navigate` + `draw_list_chrome` for anything scrollable, and
+  `draw_scrollbar` directly if you need the bar on its own. Hand-rolling a
+  rounded rect + outline pair, or a `hover ? a : b` colour pick, is how the look
+  drifts apart — that is exactly how the dex's scrollbar ended up under a
+  selected row.
+- **Anything drawn next to a number gets `fit_text`d** to the room it has.
+  Long species names, XP totals and deck counts have all collided with their
+  neighbours at some point.
+- Hoverable widgets call `ui_want_hand()` so the cursor changes.
+- Tooltips are **queued** (`tooltip_set` / `tooltip_set_owned`) and drawn last,
+  because an immediate-mode tooltip would be painted over by later draws.
 
 ---
 
@@ -136,8 +186,14 @@ feature, delete its helpers too.
 - The colony controls hint says "N new run", but `N` is only handled on the
   **game-over** screen. (Easy fix: handle `N` on the map too, or drop it from the
   hint.)
-- Battle stalemates are capped by `MAX_ROUNDS` (30): the higher remaining-HP
-  fraction wins.
+- A battle only ends early on a genuine stalemate — `STALL_ROUNDS` (12) rounds
+  with **no HP lost anywhere** — with `SAFETY_ROUNDS` (200) as a last-ditch net
+  so a bug can never freeze the game. There is no flat round cap any more.
 - Reward cards are a flat ~18% drop (`resolve_won`) picking an unknown move from
-  `move_pool` + `COMMON_MOVES`.
-- The repo currently has many uncommitted changes; commit deliberately.
+  the species' `move_pool`.
+- `arena_challenger_level` integrates the XP curve floor-by-floor, so it is O(floor)
+  per call. Fine at 1000 floors (microseconds, once a frame), but a closed form
+  would be tidier.
+- Roughly 34 places still hand-roll a rounded-rect + outline pair instead of
+  calling `draw_panel`, and `ui_want_hand()` is used far less often than
+  `draw_button` — see "The UI layer" above.

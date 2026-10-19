@@ -1414,3 +1414,23 @@ it stored, is lost).
   `effect_tooltip_text`, on the temp allocator, with the owned version as a thin
   wrapper; and the build-mode radius preview allocated a `[dynamic]Hex` per
   frame, now on the temp allocator. Verified: 501 panel draws leak 0 blocks.
+- Phase 88 ✅ **smaller energy banks**: a battle used to open with a monster
+  holding its *whole* bank (8–12), so turn one dumped a hand and fights were
+  over in about three rounds. Every species' `base_energy_max` is now **4–6**
+  against an unchanged regen of ~1.5–2, so the opening burst is two or three
+  turns' worth instead of five to eight. Measured over 360 auto-fights with the
+  same party and seeds: average length **2.7 -> 4.1 rounds**, and card plays
+  made in round one fell from 74% to 68%. The three X-cost cards spend the whole
+  bank, so they were doubled to match (`All_In` 5 -> 10 damage per energy,
+  `Bulwark` 4 -> 8 Block, `Overcharge` 5 -> 10).
+
+- Phase 89 ✅ **the docs caught up**: `docs/` had drifted five days behind — it
+  still described the encyclopedia panel, the relics panel, `COMMON_MOVES`, the
+  30-round cap and the old energy model. `architecture.md`'s file table and
+  every core type are current (including the Arena's run state), the routing
+  order and the "move choice blocks everything except the deck viewer" rule are
+  written down, and the Arena, sets, powers, trials and the effects panel all
+  have entries. `hacking.md` gained a **Conventions** section — allocations
+  (`ctprintf` vs `aprintf`), the 1280×720 design space, and "use the shared
+  widgets" — because that is where the recent UI bugs came from. 1,446 -> 1,725
+  lines.

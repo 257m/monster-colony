@@ -57,9 +57,10 @@ Anything that changes HP/energy/statuses changes it on the real colony
 There is **no side alternation**. Each *turn* (a hand/energy refresh) cycles a
 Speed-sorted queue of every living monster.
 
-1. **`begin_round`** runs when nobody can act: stalemate check against
-   `MAX_ROUNDS`, end-of-round cleanup, `round += 1`, `creature_begin_round` for
-   all, then `build_order` and `advance`.
+1. **`begin_round`** runs when nobody can act: the stalemate check
+   (`STALL_ROUNDS` rounds with no HP lost anywhere, plus the `SAFETY_ROUNDS`
+   net), end-of-round cleanup, `round += 1`, `creature_begin_round` for all, then
+   `build_order` and `advance`.
 2. **`build_order`** builds `order`: one `Actor` per **living party member** and
    per living wild. It **shuffles**, then stable-sorts by `speed` descending —
    so equal speeds are a coin flip, faster monsters act first.
@@ -142,23 +143,35 @@ DEBUFF, DEFEND, WEAKEN, SHATTER, CAPTURE`).
 | `poison` | ticks down each round | lose `poison × POISON_PCT` of **max HP** at round start, then −1 |
 | `burn` | ticks down each round | lose `burn × BURN_PCT` of **max HP** at round start, then −1 |
 | `regen` | ticks down each round | heal `regen × REGEN_PCT` of **max HP** at round start, then −1 |
-| `thorns` | persists | reflect `thorns × THORNS_REFLECT_PCT` of the hit back |
-| `stun` | consumed per round | skip the creature's action(s) |
+| `thorns` | persists (one stack per hit) | reflect a slice of the **attacker's max HP**, `THORNS_HP_PCT` per stack on a diminishing curve |
+| `stun` | consumed per round | **Daze**: fumbles that many cards out of the creature's hand at the start of its turn. Costs no energy and the turn continues — it is a disruption, not a skip. |
 
 Damage/heal-over-time statuses tick in `tick_status` (called from
 `begin_round`); **Stun** is consumed in `advance` (`actor_is_stunned`, guarded
 by `stun_round` so it only decays once per round) and DoT deaths are checked at
 the round boundary. Thorns fire from `play_creature_card` after a hit lands.
 **These are all percentages** (`POISON_PCT` 2%, `BURN_PCT` 3%, `REGEN_PCT` 3%,
-`THORNS_REFLECT_PCT` 10% per stack) so they scale with HP instead of going stale.
-Lifesteal (Leech/Gnaw/Phoenix, the Vampiric ability, the Vampire Fang item) is a
-fraction of the damage dealt. Cards apply them via the
-`poison`/`burn`/`stun`/`regen`/`thorns` fields on
-`Move` (`STATUS_MOVES` in `creature.odin`).
+`THORNS_HP_PCT` 6.25% of the attacker's max HP per stack, on a diminishing curve
+that never reaches 100%) so they scale with HP instead of going stale. Lifesteal
+(Leech, Devour, Riptide/Maelstrom, the Vampiric ability, the Siphon Gland item)
+is a fraction of the damage dealt. Cards apply them via the
+`poison`/`burn`/`stun`/`regen`/`thorns` fields on `Move`.
+
+**Poison vs Burn** are deliberately different: Poison phases straight through
+Block (it is the answer to turtling), while Burn is absorbed by Block *and*
+weakens the burned creature's damage (`BURN_WEAKEN_PER_STACK`, capped).
 
 `creature_reset_battle_state` clears all per-battle statuses at battle start
-(**not** energy). `build_effects` + `draw_effects_row/column` render them as
-chips with their multipliers, and each chip has a hover tooltip.
+(**not** energy). `build_effects` renders them as chips with their multipliers,
+each with a hover tooltip. The chip rows are deliberately tiny and a buffed
+monster overflows them fast, so **`S` opens the scrollable ACTIVE EFFECTS panel**
+(`draw_battle_effects`) — every living creature on both sides, every effect in
+full, two columns, modal.
+
+**Powers** (`powers.odin`) are the per-battle effects granted by POWER cards —
+Toxic, Rage, Combustion, Barricade, Demon Form, Sanguine, Metronome, Scavenger,
+Juggernaut, Bastion, Flow. They live in `Creature.powers: [Power]int` and are
+ticked by `power_*` helpers; `POWER_TOXIC_POISON` etc. are the rates.
 
 ## Actions
 
@@ -183,11 +196,52 @@ chips with their multipliers, and each chip has a hover tooltip.
 - `player_ai_step` runs the *same* greedy heuristic for your side during
   auto-fight (for whichever party member's turn it is).
 
+Three things here are load-bearing, because getting them wrong spins the fight
+forever:
+
+- **`card_worth_playing` is the single gate.** The turn gate (`actor_can_act` /
+  `enemy_has_card`) and *both* AIs must answer "is this card usable right now?"
+  the same way. A `move_value` of −4 (a Dazed, which exhausts) used to be skipped
+  by the chooser while the gate counted it playable — the monster got a turn it
+  could never take, and the fight hung.
+- **`MAX_PLAYS_PER_ROUND`** (12) retires any monster that has spent its round.
+  It exists to catch genuine loops, like a retained card that pays for itself
+  (Meditate costs 0.5 and hands back 1).
+- **A failed play retires the actor** (`enemy_step`) rather than re-picking the
+  same card, and **`advance` settles a wiped side itself** — a side killed by
+  item recoil, a poison tick or reflected thorns was never marked `.LOST`, and
+  the other side took turns at nobody forever.
+
+Auto-fights settle themselves: `update_battle` skips the "click to continue"
+gate when `battle.auto_play` is set.
+
 ## End of fight
 
 - `phase = .WON` / `.LOST` / `.CAPTURED` freezes the engine (only timers tick).
 - `main.odin` picks them up: `resolve_won` / `resolve_lost` (see
   [architecture.md](architecture.md)).
+- There is **no flat round cap**. A fight ends early only on a genuine standstill
+  (`STALL_ROUNDS`, 12 rounds with no HP lost on either side — the higher
+  remaining-HP fraction wins), with `SAFETY_ROUNDS` (200) as a last-ditch net so
+  a bug can never freeze the game. A 480-fight sample averages 4.1 rounds.
+
+## The Arena (`battle_arena`)
+
+An Arena fight is an ordinary battle with three differences:
+
+- **It is fought by the monsters standing on the tile** (`build_attack(g, hex, 0)`
+  from the Arena screen), not everyone within a hex of it — and a tile holds six,
+  so a party can never exceed `PARTY_MAX`.
+- **Colony relics are stripped** (no Relic Tower projection). The one relic
+  effect that *does* apply is the run's own **boons**
+  (`arena_boon_counts`), which die with the run.
+- On a win, `resolve_won` banks the floor's purse instead of paying it
+  (`arena_clear_floor`), and returns you to the **Arena screen** rather than the
+  map while the run is live.
+
+The reference panels stay available mid-battle: `V` (deck viewer), `L` (dex),
+`M` (dex on the monster tab), `S` (active effects), `D` (piles). See
+[ui-and-input.md](ui-and-input.md).
 
 ## Battle rendering
 

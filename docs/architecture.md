@@ -4,31 +4,39 @@
 
 | File | Lines* | Responsibility |
 |---|---|---|
-| `src/main.odin` | ~775 | `Game` state, `main()`, lifecycle, update/draw dispatch, colony update, build/trade update |
-| `src/ui_colony.odin` | ~660 | Colony-screen rendering: map monsters, floats, HUD, roster, legend |
-| `src/ui_panels.odin` | ~1585 | Every overlay panel: deck, dexes, bag, upgrades, nursery, storage, save, arena, build/trade |
-| `src/ui_screens.odin` | ~240 | Title, starter picker and game-over screens |
-| `src/ui_draw.odin` | ~180 | Shared UI drawing: `draw_panel`, `draw_button` (+ styles), `draw_row`, `List_View` (list nav + chrome) |
-| `src/battle_glue.odin` | ~700 | Map ⇄ battle glue: attacker picker, begin/update/resolve, results |
-| `src/colony.odin` | ~1860 | Constants, types, improvement table, terrain, hex/grid, generation, economy, turn loop, movement |
-| `src/colony_improvements.odin` | ~250 | Improvement metadata accessors, build/cost/repair, heat |
-| `src/colony_wilds.odin` | ~685 | Wild spawning/roaming/AI, raids, heat, alphas |
+| `src/main.odin` | ~1075 | `Game` state, `main()`, lifecycle, update/draw dispatch, colony update, build/trade update |
+| `src/ui_colony.odin` | ~1170 | Colony-screen rendering: map monsters, floats, HUD, roster, legend |
+| `src/ui_panels.odin` | ~3600 | Every overlay panel: the dex, inventory, upgrades, quests, nursery, storage, save, arena, event |
+| `src/ui_screens.odin` | ~230 | Title, starter picker and game-over screens |
+| `src/ui_draw.odin` | ~395 | Shared UI drawing: `draw_panel`, `draw_button` (+ styles), `draw_row`, `draw_scrollbar`, `List_View`, tooltips, `fit_text` |
+| `src/screen.odin` | ~90 | The design-space layer: `screen_w`/`screen_h`, `mouse_pos`, `ui_camera`, `scissor_*` |
+| `src/battle_glue.odin` | ~865 | Map ⇄ battle glue: attacker picker, begin/update/resolve, results |
+| `src/colony.odin` | ~2240 | Constants, types, improvement table, terrain, hex/grid, generation, economy, turn loop, movement |
+| `src/colony_improvements.odin` | ~295 | Improvement metadata accessors, build/cost/repair, heat |
+| `src/colony_wilds.odin` | ~1545 | Wild spawning/roaming/AI, raids, heat, alphas, **and the Arena's team builder** |
+| `src/arena_trials.odin` | ~605 | Arena gyms, event floors, run boons, the sample team |
 | `src/colony_storage.odin` | ~315 | Dens/Nurseries: stasis, breeding, item cap |
-| `src/battle.odin` | ~1665 | The battle engine + battle rendering |
-| `src/creature.odin` | ~830 | `Species` table, `Creature` struct, stat/level helpers, genetics |
-| `src/abilities.odin` | ~120 | Species ability pools, names/descriptions, battle-start hook |
-| `src/items.odin` | ~110 | Item table, effects, battle-start hook |
-| `src/upgrades.odin` | ~176 | Crystal progression tree: upgrades, costs, effect readers |
-| `src/web.odin` | ~93 | Browser (wasm) entry: exported `main_start` / `main_update` / … |
+| `src/battle.odin` | ~3445 | The battle engine + battle rendering |
+| `src/creature.odin` | ~1430 | `Species` table, `Creature` struct, stat/level helpers, genetics, sets lookup |
+| `src/sets.odin` | ~570 | `SPECIES_SETS`: every species' three Arena loadouts (ability + item + deck) |
+| `src/abilities.odin` | ~305 | Species ability pools, names/descriptions, battle hooks |
+| `src/powers.odin` | ~140 | Per-battle POWER effects (Toxic, Rage, Combustion, …) |
+| `src/items.odin` | ~165 | Item table, effects, battle-start hook |
+| `src/relics.odin` | ~275 | Relic table, Relic Towers, range, battle application |
+| `src/upgrades.odin` | ~225 | Crystal progression tree: upgrades, costs, effect readers |
+| `src/milestones.odin` | ~165 | The quest board's milestones (incl. per-boss and Arena floors) |
+| `src/world_events.odin` | ~125 | Random world events (spawns, alphas, tremors) |
+| `src/skirmish.odin` | ~105 | Headless auto-battles, for testing balance |
+| `src/web.odin` | ~110 | Browser (wasm) entry: exported `main_start` / `main_update` / … |
 | `src/web_allocator.odin` | ~110 | Emscripten-backed allocator used by the web build |
-| `src/moves.odin` | ~292 | `Element` chart, `Move` struct, `MOVE_DATA`, `Move_Id` enum |
-| `src/hex_math.odin` | ~100 | Axial hex coordinate math (incl. `hex_range`) |
-| `src/hex_render.odin` | ~140 | Hex <-> screen transforms, camera, hex drawing, `visible_hex_bounds` |
-| `src/improvement_icons.odin` | ~355 | Animated improvement icons drawn on the map |
-| `src/tile_detail.odin` | ~158 | Procedural per-terrain tile detail (rocks, grass, mushrooms…) |
-| `src/rng.odin` | ~49 | SplitMix64 PRNG |
-| `src/audio.odin` | ~384 | Synthesised sound effects + looping music (no asset files) |
-| `src/save.odin` | ~495 | Save format: serialization + slots + panel data |
+| `src/moves.odin` | ~785 | `Element` chart, `Move` struct, `MOVE_DATA`, `Move_Id` enum |
+| `src/hex_math.odin` | ~105 | Axial hex coordinate math (incl. `hex_range`) |
+| `src/hex_render.odin` | ~145 | Hex <-> screen transforms, camera, hex drawing, `visible_hex_bounds` |
+| `src/improvement_icons.odin` | ~415 | Animated improvement icons drawn on the map |
+| `src/tile_detail.odin` | ~220 | Procedural per-terrain tile detail (rocks, grass, mushrooms…) |
+| `src/rng.odin` | ~45 | SplitMix64 PRNG |
+| `src/audio.odin` | ~470 | Synthesised sound effects + looping music (no asset files) |
+| `src/save.odin` | ~595 | Save format: serialization + slots + panel data |
 | `src/save_io_desktop.odin` | ~25 | Save file I/O (`#+build !js`) |
 | `src/save_io_js.odin` | ~20 | Save stubs for the browser build (`#+build js`) |
 
@@ -42,13 +50,17 @@ A single fighter. This is the unit both the colony and battle care about.
 ```
 species, name, level, xp
 hp, max_hp
-block, vulnerable, strength, defense_buff, defense_debuff   // per-battle state
-power, defense, speed     // floats, scaled from the species by level
+block, vulnerable, strength, dexterity
+power, defense, speed, defense_buff, defense_debuff   // per-battle state
+poison, burn, regen, thorns, stun                     // statuses (tick per round)
 energy, energy_regen, energy_max   // ONE pool shared map <-> battle
+ability: Ability, item: Item       // one of each per creature
+powers: [Power]int                 // per-battle POWER effects (Toxic, Rage, …)
 genes: [Gene]int          // 0-5 per-stat genetic bonus (Phase 8)
-deck, draw_pile, hand, discard     // Move_Id arrays
+deck, draw_pile, hand, discard, exhausted   // Move_Id arrays
 played                    // cards played this turn (combo synergy)
-shake, flash              // transient draw-only feedback
+shake, flash, fx_t        // transient draw-only feedback
+player: bool              // owned by you (relic stat bonuses apply to these)
 ```
 
 `Creature` **owns** its `deck`/piles (heap arrays) — see `creature_copy`,
@@ -83,28 +95,46 @@ tiles: [dynamic]^Tile, tile_index: map[u64]int   // the infinite map
 roster, graveyard: [dynamic]Monster
 storage: [dynamic]Monster   // monsters in Dens/Nurseries (Phase 10)
 choices: [dynamic]Move_Choice // pending level-up / reward card picks
-gold, crystals, capture_cards, gold_cap, food_cap
+gold, crystals, crystals_earned, capture_cards, gold_cap, food_cap
 turn, floor, seed, rng, start_hex, next_id
 pending_tiles: [dynamic]Hex   // tiles where a wild and your monster share
 messages: [dynamic]string     // world notifications
 floats:   [dynamic]Tile_Float // transient per-tile production popups
 shop:     [dynamic]Shop_Offer // Trading Post stock, rerolled each turn
-items:    [dynamic]Item       // unequipped item bag
+items:    [dynamic]Item       // the colony's item bag
+relic_bag: [dynamic]Relic     // relics not yet slotted into a Relic Tower
 upgrades: [Upgrade]int        // crystal progression levels
 heat, raid_timer, raids       // Phase D: raid pressure + scheduling
+bosses_slain: [Species_Id]bool // per-boss flags for the quest board
+
+// The Arena *run* (Phase 54+). A run is one chain of floors:
+arena_run: bool, arena_floor: int, arena_best_floor: int
+arena_run_crystals: int       // banked so far; paid on cash-out, lost on a wipe
+arena_base_level: int         // the party's average level when the run started
+arena_run_seed: u64           // fixes this run's gym order and event offers
+arena_boons: [dynamic]Relic   // run-scoped relics (die with the run)
+arena_items: [dynamic]Item    // the run's own unbounded pack
+arena_event: Arena_Event      // the pending trial-floor offer
 ```
 
 ### `Game` (`main.odin`)
 Owns the whole session:
 ```
-mode: Game_Mode (TITLE|STARTER|MAP|BATTLE|GAME_OVER), renderer, colony, has_colony,
+mode: Game_Mode (TITLE|STARTER|MAP|ARENA|BATTLE|GAME_OVER), renderer, colony, has_colony,
 selected, quit
-show_deck/view_index/view_scroll, show_encyclopedia/...
+show_deck/view_index/view_scroll                 // the deck viewer (V)
+show_dex/dex_tab/dex_index/dex_first             // the dex (L, M)
+show_bag/bag_index/bag_first/bag_arena/bag_mon   // the inventory (G, J)
+show_upgrades/upgrade_scroll, show_quests, show_improvements/...,
+show_graveyard, show_nursery, show_storage, show_save, show_help,
+show_settings, show_tips, show_fps, show_minimap
 status, status_timer
 build_mode/build_hex/has_build, trade_open
-battle: Battle, has_battle, battle_choice_open, battle_hex, battle_forced, ...
+battle: Battle, has_battle, battle_choice_open, battle_hex, battle_forced,
+        battle_arena, battle_choice_open
 attack_select_open, attack_ids, attack_chosen
 results_open, results: Battle_Results
+relic_place/relic_place_active, unit_picker_open, confirm_kind
 seed_rng
 ```
 
@@ -116,7 +146,10 @@ enemy_ids, captured_ids: [dynamic]int
 target, active, enemy_acting, capture_cards
 phase: Battle_Phase, round, timer
 order: [dynamic]Actor, order_pos     // the initiative queue (every living monster)
-rng, log, popups, shake
+auto_play: bool                      // the AI is playing your side (auto-fight)
+stall, stall_hp: int                 // rounds with no HP lost anywhere (stalemate valve)
+rng, log, log_scroll, popups, hit_fx, shake
+show_piles, show_effects             // D = piles, S = the active-effects panel
 ```
 
 `Actor` is `{ side: Battle_Side, index: int }` — all of your party and every
@@ -172,9 +205,15 @@ into the colony.
 are handled **before** the mode switch and return early, in priority order:
 
 ```
-deck viewer > encyclopedia > attack-select > battle-choice > results
-> V (deck) > { STARTER | MAP | BATTLE | GAME_OVER }
+move choice > confirm > attack-select > battle-choice > results
+> deck viewer > dex > inventory > upgrades > quests > graveyard > nursery
+> storage > save > unit picker > { TITLE | STARTER | MAP | ARENA | BATTLE | GAME_OVER }
 ```
+
+A pending move choice (level-up / reward card) blocks everything **except** the
+deck viewer and the inventory, which is deliberate: you want to see what a
+monster already runs while picking its next card. Those two therefore also
+**draw after** `draw_move_choice`, so they sit on top of it.
 
 If you add a new modal overlay, you must add it to **both** `game_update`
 (early-return branch) and `game_draw` (draw after the mode switch), and clear it
@@ -197,3 +236,9 @@ in `reset_to_starter`. See [ui-and-input.md](ui-and-input.md).
 | Wild AI (spawn/roam/attack) | `colony_spawn_wilds` … `colony_resolve_wild_actions` |
 | A panel or HUD line | the `draw_*` procs in `main.odin` |
 | Input | `game_update` + the per-mode `update_*` procs |
+| The Arena: floors, teams, level curve | `colony_wilds.odin` (the `arena_*` block) |
+| Arena gyms / event floors | `arena_trials.odin` |
+| A species' Arena loadouts | `SPECIES_SETS` in `sets.odin` |
+| Per-battle POWER effects | `powers.odin` |
+| The quest board | `milestones.odin` |
+| The design space / UI scale | `screen.odin` |
