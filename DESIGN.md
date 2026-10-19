@@ -1354,3 +1354,14 @@ it stored, is lost).
   20) and the curve starts paying from floor 11 — 1 crystal a floor at first,
   bending up slowly (floor 50 -> 1, 100 -> 3, 250 -> 7, 500 -> 18, 1000 -> 49).
   A run to floor 100 banks 150 crystals.
+- Phase 81 ✅ **honest card faces**: two cards read as something they are not.
+  **Toxic** said "attacks poison", which reads as "this attack poisons", when it
+  is a POWER card that grants *the caster* a lasting effect — "your hits poison"
+  now. **Overwhelm** said "8 dmg, +8 vuln", which reads as "applies 8
+  Vulnerable", when `vuln_bonus` is a *conditional damage bonus*: it deals +8
+  **if** the target is already Vulnerable (it is the payoff of the Mark / Expose
+  setup, and applies none itself) — now "8 dmg, +8 vs vuln". Five other vague
+  faces fixed too (Metronome, Scavenger, Barricade, Rage, Followup). And card
+  descriptions are **clipped** to the card face — 7 of the 116 were running off
+  it — with the hover tooltip and the dex's EFFECTS list carrying the full text
+  (both were already accurate).

@@ -396,7 +396,7 @@ MOVE_DATA := [Move_Id]Move{
 	.Sting        = {name = "Sting",       desc = "5 dmg",                     cost = 1.0, element = .POISON, damage = 5, hits = 1},
 	.Haze         = {name = "Haze",         desc = "clear all boosts",          cost = 1.0, element = .ICE, rarity = .UNCOMMON, targets = {.ENEMY, .SELF, .ALLY}, clear_boosts = true},
 	// Powers: played once, exhaust, and their effect lasts the rest of the fight.
-	.Barricade    = {name = "Barricade",    desc = "keep block",                cost = 3.0, element = .NEUTRAL, rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Barricade, power_stacks = 1, exhaust = true},
+	.Barricade    = {name = "Barricade",    desc = "block persists",            cost = 3.0, element = .NEUTRAL, rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Barricade, power_stacks = 1, exhaust = true},
 	.Juggernaut   = {name = "Juggernaut",   desc = "block -> damage",           cost = 2.0, element = .NEUTRAL, rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Juggernaut, power_stacks = 1, exhaust = true},
 	.Demon_Form   = {name = "Demon Form",   desc = "+2 str each turn",          cost = 3.0, element = .NEUTRAL, rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Demon_Form, power_stacks = 1, exhaust = true},
 
@@ -408,7 +408,7 @@ MOVE_DATA := [Move_Id]Move{
 	.Hone         = {name = "Hone",         desc = "+5 str",                    cost = 1.0, element = .NEUTRAL, rarity = .COMMON,   kind = .SKILL, targets = {.SELF}, strength = 5},
 	// Vulnerable setup -> Overwhelm payoff.
 	.Mark         = {name = "Mark",         desc = "vuln 3 turns",              cost = 0.5, element = .NEUTRAL, rarity = .COMMON,   kind = .SKILL, vulnerable = 3},
-	.Overwhelm    = {name = "Overwhelm",    desc = "8 dmg, +8 vuln",            cost = 2.0, element = .NEUTRAL, rarity = .UNCOMMON, damage = 8, hits = 1, vuln_bonus = 8},
+	.Overwhelm    = {name = "Overwhelm",    desc = "8 dmg, +8 vs vuln",         cost = 2.0, element = .NEUTRAL, rarity = .UNCOMMON, damage = 8, hits = 1, vuln_bonus = 8},
 	// Multi-hit: each hit rolls lifesteal / on-hit powers separately.
 	.Fang_Flurry  = {name = "Fang Flurry",  desc = "3 dmg x3",                  cost = 1.5, element = .NEUTRAL, rarity = .UNCOMMON, damage = 3, hits = 3},
 	// Powers the multi-hit build (Sanguine heals per hit).
@@ -470,7 +470,7 @@ MOVE_DATA := [Move_Id]Move{
 	.Cull         = {name = "Cull",         desc = "6 dmg, +10 low hp",         cost = 1.5, element = .NEUTRAL,  rarity = .UNCOMMON, damage = 6, hits = 1, execute_bonus = 10, execute_pct = 0.4},
 	.Concuss      = {name = "Concuss",      desc = "4 dmg, stun 1",             cost = 1.5, element = .NEUTRAL,  rarity = .UNCOMMON, damage = 4, hits = 1, stun = 1},
 	// Power.
-	.Rage         = {name = "Rage",         desc = "attack: +3 block",          cost = 1.5, element = .NEUTRAL,  rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Rage, power_stacks = 1, exhaust = true},
+	.Rage         = {name = "Rage",         desc = "attacks: +3 block",         cost = 1.5, element = .NEUTRAL,  rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Rage, power_stacks = 1, exhaust = true},
 
 	// ------------------------------------------------------------------------
 	// Pool wave 3 — decision-dense mechanics.
@@ -495,12 +495,12 @@ MOVE_DATA := [Move_Id]Move{
 	.Blackout     = {name = "Blackout",     desc = "foe -3 energy",             cost = 1.0, element = .NEUTRAL, rarity = .UNCOMMON, kind = .SKILL, energy_burn = 3},
 	// More powers.
 	.Combustion   = {name = "Combustion",   desc = "burn all foes",             cost = 2.0, element = .EMBER,   rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Combustion, power_stacks = 1, exhaust = true},
-	.Toxic        = {name = "Toxic",        desc = "attacks poison",            cost = 2.0, element = .POISON,  rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Toxic, power_stacks = 1, exhaust = true},
+	.Toxic        = {name = "Toxic",        desc = "your hits poison",          cost = 2.0, element = .POISON,  rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Toxic, power_stacks = 1, exhaust = true},
 	.Bastion      = {name = "Bastion",      desc = "+4 block/turn",             cost = 2.0, element = .GROUND,  rarity = .RARE, kind = .POWER, targets = {.SELF}, grant_power = .Bastion, power_stacks = 1, exhaust = true},
 	// Bread and butter.
 	.Bash         = {name = "Bash",         desc = "10 dmg, 2 vuln",            cost = 2.0, element = .NEUTRAL,  rarity = .UNCOMMON, damage = 10, hits = 1, vulnerable = 2},
 	.Rampart      = {name = "Rampart",      desc = "10 block",                  cost = 1.0, element = .NEUTRAL,  rarity = .COMMON,   kind = .SKILL, targets = {.SELF}, block = 10},
-	.Followup     = {name = "Followup",     desc = "5 dmg, +5 combo",           cost = 1.0, element = .NEUTRAL,  rarity = .COMMON,   damage = 5, hits = 1, combo_bonus = 5},
+	.Followup     = {name = "Followup",     desc = "5 dmg, +5 if 2nd",          cost = 1.0, element = .NEUTRAL,  rarity = .COMMON,   damage = 5, hits = 1, combo_bonus = 5},
 	.Warcry       = {name = "Warcry",       desc = "+2 str, draw 1",            cost = 0.5, element = .NEUTRAL,  rarity = .COMMON,   kind = .SKILL, targets = {.SELF}, strength = 2, draw = 1},
 	.Cleave       = {name = "Cleave",       desc = "9 dmg",                     cost = 1.5, element = .NEUTRAL,  rarity = .COMMON,   damage = 9, hits = 1},
 	.Sunder       = {name = "Sunder",       desc = "4 dmg, -3 def",             cost = 1.0, element = .GROUND,   rarity = .UNCOMMON, damage = 4, hits = 1, defense_down = 3},
@@ -530,8 +530,8 @@ MOVE_DATA := [Move_Id]Move{
 	// Reward-only utility cards (no learnset grants them; they come from
 	// `move_pool` rewards).
 	.Dazzle       = {name = "Dazzle",       desc = "1 stun, add 2 Dazed",       cost = 1.5, element = .NEUTRAL,  rarity = .UNCOMMON, kind = .SKILL, stun = 1, add_move = .Dazed, add_count = 2, add_where = .HAND, add_to_target = true},
-	.Metronome    = {name = "Metronome",    desc = "power: combo strength",     cost = 2.0, element = .NEUTRAL,  rarity = .RARE,     kind = .POWER, targets = {.SELF}, grant_power = .Metronome, power_stacks = 1, exhaust = true},
-	.Scavenger    = {name = "Scavenger",    desc = "power: draw on exhaust",     cost = 2.0, element = .NEUTRAL,  rarity = .UNCOMMON, kind = .POWER, targets = {.SELF}, grant_power = .Scavenger, power_stacks = 1, exhaust = true},
+	.Metronome    = {name = "Metronome",    desc = "+1 STR at 3 cards",        cost = 2.0, element = .NEUTRAL,  rarity = .RARE,     kind = .POWER, targets = {.SELF}, grant_power = .Metronome, power_stacks = 1, exhaust = true},
+	.Scavenger    = {name = "Scavenger",    desc = "draw on exhaust",           cost = 2.0, element = .NEUTRAL,  rarity = .UNCOMMON, kind = .POWER, targets = {.SELF}, grant_power = .Scavenger, power_stacks = 1, exhaust = true},
 	.Slime_Spit   = {name = "Slime Spit",   desc = "5 dmg, 2 Dazed",            cost = 1.5, element = .POISON,   rarity = .UNCOMMON, damage = 5, hits = 1, add_move = .Dazed, add_count = 2, add_where = .HAND, add_to_target = true},
 	// Elemental top-ups.
 	.Jolt            = {name = "Jolt",            desc = "3 dmg",                 cost = 0.5, element = .ELECTRIC, rarity = .COMMON,   damage = 3, hits = 1},

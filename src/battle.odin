@@ -2340,7 +2340,9 @@ draw_card :: proc(id: Move_Id, rec: rl.Rectangle, playable_in, hovered: bool) {
 	nw := rl.MeasureText(name, 16)
 	rl.DrawText(name, i32(r.x + r.width / 2) - nw / 2, i32(r.y + 40), 16, COL_TEXT)
 
-	desc := fmt.ctprintf("%s", m.desc)
+	// Clipped, so a long description can't run off the card face. The hover
+	// tooltip and the dex carry the full text.
+	desc := fit_text(m.desc, 13, i32(r.width) - 8)
 	dw := rl.MeasureText(desc, 13)
 	rl.DrawText(desc, i32(r.x + r.width / 2) - dw / 2, i32(r.y + r.height - 30), 13, rl.Color{215, 215, 228, 255})
 
