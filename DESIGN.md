@@ -1476,3 +1476,10 @@ it stored, is lost).
   reads "cleanse self/ally", so it does what the name suggests.
   `move_target_label` already had the "self or ally" case, and the card face
   fits the new line (109px of 116).
+- Phase 95 ✅ **Purify says it heals**: its face read "cleanse an ally" while
+  carrying an 8% heal. It reads "cleanse, heal ally" now (109px of the card
+  face's 116). Swept every card with a heal, leech, draw, energy or regen effect
+  against its one-line description — Purify was the only one dropping a
+  substantial secondary effect; the rest either name it ("drain" for leech,
+  "devour" for Devour's heal + leech, "draw N", "+N en", "+2 regen") or have
+  none. The hover tooltip and the dex's EFFECTS list always spelled both out.
