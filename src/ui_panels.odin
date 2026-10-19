@@ -1534,11 +1534,12 @@ draw_item_effects :: proc(it: Item, x, y: i32, size: i32) -> i32 {
 //
 // Two columns: your monsters on the left, your bag on the right. Pick a monster,
 // then pick an item, and it is worn — a swap sends whatever it was wearing back
-// to the bag. Relics slot into a Relic Tower instead. The selected slot's full
-// breakdown shows underneath.
+// to the bag, and Unequip strips it. Relics slot into a Relic Tower instead.
 //
-// The whole thing works mid-run too: the Arena screen opens it directly, so a
-// party can be re-geared between floors.
+// Opened from the Arena screen it shows something else entirely: only the
+// monsters standing on the tower tile, and only the run's own pack
+// (`Colony.arena_items`), which is unbounded and dies with the run. The colony's
+// bag is out of reach mid-climb.
 // ----------------------------------------------------------------------------
 
 INV_COLS :: 7
@@ -1567,9 +1568,21 @@ inv_mon_rect :: proc(i: int, scroll: f32 = 0) -> rl.Rectangle {
 	return rl.Rectangle{inv_mon_x(), p.y + 122 + f32(i)*INV_MON_ROW - scroll, INV_MON_W, INV_MON_ROW - 4}
 }
 
-inv_mon_count :: proc(c: ^Colony) -> int {
+// The tile the Arena party is standing on (the selected monster's).
+arena_inv_hex :: proc(g: ^Game) -> Hex {
+	if g.selected >= 0 && g.selected < len(g.colony.roster) {
+		return g.colony.roster[g.selected].pos
+	}
+	return g.colony.start_hex
+}
+
+inv_mon_count :: proc(g: ^Game) -> int {
+	if g.bag_arena {
+		_, n := arena_party_members(&g.colony, arena_inv_hex(g))
+		return n
+	}
 	n := 0
-	for m in c.roster {
+	for m in g.colony.roster {
 		if !m.wild {
 			n += 1
 		}
@@ -1578,9 +1591,16 @@ inv_mon_count :: proc(c: ^Colony) -> int {
 }
 
 // The roster index of the Nth monster in the list (-1 if there is none).
-inv_mon_roster :: proc(c: ^Colony, i: int) -> int {
+inv_mon_roster :: proc(g: ^Game, i: int) -> int {
+	if g.bag_arena {
+		party, n := arena_party_members(&g.colony, arena_inv_hex(g))
+		if i < 0 || i >= n {
+			return -1
+		}
+		return party[i]
+	}
 	n := 0
-	for m, j in c.roster {
+	for m, j in g.colony.roster {
 		if m.wild {
 			continue
 		}
@@ -1592,8 +1612,8 @@ inv_mon_roster :: proc(c: ^Colony, i: int) -> int {
 	return -1
 }
 
-inv_mon_max_scroll :: proc(c: ^Colony) -> f32 {
-	n := max(inv_mon_count(c) - INV_MON_VISIBLE, 0)
+inv_mon_max_scroll :: proc(g: ^Game) -> f32 {
+	n := max(inv_mon_count(g) - INV_MON_VISIBLE, 0)
 	return f32(n) * INV_MON_ROW
 }
 
@@ -1641,90 +1661,92 @@ Inv_Entry :: struct {
 	relic:    Relic,
 }
 
-inv_count :: proc(c: ^Colony) -> int {
-	return len(c.items) + len(c.relic_bag)
+// The bag on show: the run's pack, or the colony's items and relics.
+inv_count :: proc(g: ^Game) -> int {
+	if g.bag_arena {
+		return len(g.colony.arena_items)
+	}
+	return len(g.colony.items) + len(g.colony.relic_bag)
 }
 
-inv_entry_at :: proc(c: ^Colony, i: int) -> (Inv_Entry, bool) {
+inv_entry_at :: proc(g: ^Game, i: int) -> (Inv_Entry, bool) {
 	if i < 0 {
 		return {}, false
 	}
-	if i < len(c.items) {
-		return Inv_Entry{item = c.items[i]}, true
+	if g.bag_arena {
+		if i < len(g.colony.arena_items) {
+			return Inv_Entry{item = g.colony.arena_items[i]}, true
+		}
+		return {}, false
 	}
-	j := i - len(c.items)
-	if j < len(c.relic_bag) {
-		return Inv_Entry{is_relic = true, relic = c.relic_bag[j]}, true
+	if i < len(g.colony.items) {
+		return Inv_Entry{item = g.colony.items[i]}, true
+	}
+	j := i - len(g.colony.items)
+	if j < len(g.colony.relic_bag) {
+		return Inv_Entry{is_relic = true, relic = g.colony.relic_bag[j]}, true
 	}
 	return {}, false
 }
 
-// Open the inventory, pointing at whichever monster is selected on the map.
-open_inventory :: proc(g: ^Game) {
-	g.show_bag = true
-	g.bag_index = 0
-	g.bag_first = 0
-	g.bag_mon_scroll = 0
-	g.bag_mon = 0
-	for m, j in g.colony.roster {
-		if m.wild {
-			continue
+// The list position of the monster selected on the map, if it is in the list.
+inv_focus_monster :: proc(g: ^Game) -> int {
+	for i in 0..<inv_mon_count(g) {
+		if inv_mon_roster(g, i) == g.selected {
+			return i
 		}
-		if j == g.selected {
-			g.bag_mon = inv_mon_list_pos(&g.colony, j)
-			break
-		}
-	}
-}
-
-// Where roster index `j` sits in the list.
-inv_mon_list_pos :: proc(c: ^Colony, j: int) -> int {
-	n := 0
-	for m, k in c.roster {
-		if m.wild {
-			continue
-		}
-		if k == j {
-			return n
-		}
-		n += 1
 	}
 	return 0
 }
 
-// Equip the bag item at `bag_index` onto the Nth monster in the list.
+// Open the inventory. `arena` shows the run's pack and the tower party instead.
+open_inventory :: proc(g: ^Game, arena := false) {
+	g.show_bag = true
+	g.bag_arena = arena
+	g.bag_index = 0
+	g.bag_first = 0
+	g.bag_mon_scroll = 0
+	g.bag_mon = inv_focus_monster(g)
+}
+
+// Equip a bag item onto the Nth monster in the list. A swap returns the old item
+// to the same bag it came from.
 equip_bag_item_to :: proc(g: ^Game, bag_index, list_pos: int) -> bool {
-	s := inv_mon_roster(&g.colony, list_pos)
+	s := inv_mon_roster(g, list_pos)
 	if s < 0 {
 		return false
 	}
-	if bag_index < 0 || bag_index >= len(g.colony.items) {
+	c := &g.colony
+	bag := g.bag_arena ? &c.arena_items : &c.items
+	if bag_index < 0 || bag_index >= len(bag) {
 		return false
 	}
-	item := g.colony.items[bag_index]
-	ordered_remove(&g.colony.items, bag_index)
-	old := g.colony.roster[s].creature.item
-	creature_equip_item(&g.colony.roster[s].creature, item)
+	item := bag[bag_index]
+	ordered_remove(bag, bag_index)
+	old := c.roster[s].creature.item
+	creature_equip_item(&c.roster[s].creature, item)
 	if old != .NONE {
-		append(&g.colony.items, old)
+		append(bag, old)
 	}
 	return true
 }
 
 // Take whatever the Nth monster is wearing back into the bag.
 unequip_monster :: proc(g: ^Game, list_pos: int) -> bool {
-	s := inv_mon_roster(&g.colony, list_pos)
+	s := inv_mon_roster(g, list_pos)
 	if s < 0 || g.colony.roster[s].creature.item == .NONE {
 		return false
 	}
-	append(&g.colony.items, g.colony.roster[s].creature.item)
-	creature_equip_item(&g.colony.roster[s].creature, .NONE)
+	c := &g.colony
+	bag := g.bag_arena ? &c.arena_items : &c.items
+	append(bag, c.roster[s].creature.item)
+	creature_equip_item(&c.roster[s].creature, .NONE)
 	return true
 }
 
 // The name of the monster the inventory is pointed at, for button labels.
 inv_target_name :: proc(g: ^Game) -> cstring {
-	s := inv_mon_roster(&g.colony, g.bag_mon)
+	s := inv_mon_roster(g, g.bag_mon)
 	if s < 0 {
 		return cstring("nobody")
 	}
@@ -1736,12 +1758,11 @@ update_inventory :: proc(g: ^Game) {
 		g.show_bag = false
 		return
 	}
-	c := &g.colony
-	nmon := inv_mon_count(c)
+	nmon := inv_mon_count(g)
 	g.bag_mon = clamp(g.bag_mon, 0, max(nmon - 1, 0))
 	g.bag_mon_scroll -= rl.GetMouseWheelMove() * 60
-	g.bag_mon_scroll = clamp(g.bag_mon_scroll, 0, inv_mon_max_scroll(c))
-	n := inv_count(c)
+	g.bag_mon_scroll = clamp(g.bag_mon_scroll, 0, inv_mon_max_scroll(g))
+	n := inv_count(g)
 	g.bag_index = clamp(g.bag_index, 0, max(n - 1, 0))
 	if !rl.IsMouseButtonPressed(.LEFT) {
 		return
@@ -1767,12 +1788,12 @@ update_inventory :: proc(g: ^Game) {
 		}
 	}
 
-	entry, ok := inv_entry_at(c, g.bag_index)
-	if !ok {
-		return
-	}
+	entry, ok := inv_entry_at(g, g.bag_index)
 	// The action button: wear the selected item, or arm relic placement.
 	if rl.CheckCollisionPointRec(mp, inv_action_rect()) {
+		if !ok {
+			return
+		}
 		if entry.is_relic {
 			g.relic_place = entry.relic
 			g.relic_place_active = true
@@ -1780,22 +1801,20 @@ update_inventory :: proc(g: ^Game) {
 			set_status(g, "Click a Relic Tower to slot it. Esc cancels.")
 		} else if equip_bag_item_to(g, g.bag_index, g.bag_mon) {
 			set_status(g, fmt.ctprintf("Equipped to %s.", inv_target_name(g)))
-			g.bag_index = clamp(g.bag_index, 0, max(inv_count(c) - 1, 0))
+			g.bag_index = clamp(g.bag_index, 0, max(inv_count(g) - 1, 0))
 		} else {
 			set_status(g, "No monster to equip.")
 		}
 		return
 	}
-	// The second button: pull the relic out of a tower, or strip the monster.
-	if entry.is_relic {
-		if rl.CheckCollisionPointRec(mp, inv_unequip_rect()) {
-			if !remove_relic_nearest(c, c.start_hex, entry.relic) {
+	// The second button: pull a relic out of a tower, or strip the monster. It
+	// works with an empty bag, which is exactly when you want it.
+	if rl.CheckCollisionPointRec(mp, inv_unequip_rect()) {
+		if ok && entry.is_relic {
+			if !remove_relic_nearest(&g.colony, g.colony.start_hex, entry.relic) {
 				set_status(g, "No tower holds that relic.")
 			}
-			return
-		}
-	} else if rl.CheckCollisionPointRec(mp, inv_unequip_rect()) {
-		if unequip_monster(g, g.bag_mon) {
+		} else if unequip_monster(g, g.bag_mon) {
 			set_status(g, fmt.ctprintf("%s is no longer wearing anything.", inv_target_name(g)))
 		} else {
 			set_status(g, "That monster has nothing equipped.")
@@ -1811,22 +1830,24 @@ draw_inventory :: proc(g: ^Game) {
 
 	p := inv_panel_rect()
 	draw_panel(p, rl.Color{18, 20, 28, 248}, rl.Color{150, 170, 220, 255})
-	rl.DrawText("INVENTORY", i32(p.x) + 24, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
-	rl.DrawText("Click a monster, then an item, then Equip.",
-		i32(p.x) + 24, i32(p.y) + 56, 15, rl.Color{170, 180, 200, 255})
+	title := g.bag_arena ? cstring("THE PACK") : cstring("INVENTORY")
+	rl.DrawText(title, i32(p.x) + 24, i32(p.y) + 16, 30, rl.Color{220, 228, 245, 255})
+	sub := g.bag_arena ? cstring("This run's pack. Click a monster, then an item, then Equip. It comes home if you cash out.") : cstring("Click a monster, then an item, then Equip.")
+	rl.DrawText(fit_text(string(sub), 15, i32(p.width) - 48), i32(p.x) + 24, i32(p.y) + 56, 15, rl.Color{170, 180, 200, 255})
 
 	mp := mouse_pos()
 
-	// ---- left: your monsters ----
-	rl.DrawText("YOUR MONSTERS", i32(inv_mon_x()), i32(p.y) + 96, 15, rl.Color{150, 160, 180, 255})
-	nmon := inv_mon_count(&g.colony)
+	// ---- left: the monsters ----
+	mon_head := g.bag_arena ? cstring("AT THE TOWER") : cstring("YOUR MONSTERS")
+	rl.DrawText(mon_head, i32(inv_mon_x()), i32(p.y) + 96, 15, rl.Color{150, 160, 180, 255})
+	nmon := inv_mon_count(g)
 	lo := int(g.bag_mon_scroll / INV_MON_ROW)
 	for k in 0..<INV_MON_VISIBLE {
 		i := lo + k
 		if i >= nmon {
 			break
 		}
-		s := inv_mon_roster(&g.colony, i)
+		s := inv_mon_roster(g, i)
 		if s < 0 {
 			continue
 		}
@@ -1850,21 +1871,22 @@ draw_inventory :: proc(g: ^Game) {
 			cr.item == .NONE ? rl.Color{120, 120, 140, 255} : item_color(cr.item))
 	}
 	if nmon == 0 {
-		rl.DrawText("No monsters yet.", i32(inv_mon_x()), i32(p.y) + 130, 15, rl.Color{150, 150, 170, 255})
-	} else if inv_mon_max_scroll(&g.colony) > 0 {
-		hint := fmt.ctprintf("%d of %d   (wheel to scroll)", lo + 1, nmon)
-		rl.DrawText(hint, i32(inv_mon_x()), i32(p.y + p.height) - 40, 13, rl.Color{140, 140, 160, 255})
+		rl.DrawText(g.bag_arena ? "Nobody is at the tower." : "No monsters yet.",
+			i32(inv_mon_x()), i32(p.y) + 130, 15, rl.Color{150, 150, 170, 255})
+	} else if inv_mon_max_scroll(g) > 0 {
+		rl.DrawText(fmt.ctprintf("%d of %d   (wheel to scroll)", lo + 1, nmon),
+			i32(inv_mon_x()), i32(p.y + p.height) - 40, 13, rl.Color{140, 140, 160, 255})
 	}
 
 	// ---- right: the bag ----
-	n := inv_count(&g.colony)
-	rl.DrawText(fmt.ctprintf("BAG   (%d items, %d relics)", len(g.colony.items), len(g.colony.relic_bag)),
-		i32(inv_bag_x()), i32(p.y) + 96, 15, rl.Color{150, 160, 180, 255})
+	n := inv_count(g)
+	head := g.bag_arena ? fmt.ctprintf("PACK   (%d items - unbounded)", len(g.colony.arena_items)) : fmt.ctprintf("BAG   (%d items, %d relics)", len(g.colony.items), len(g.colony.relic_bag))
+	rl.DrawText(head, i32(inv_bag_x()), i32(p.y) + 96, 15, rl.Color{150, 160, 180, 255})
 	for i in 0..<n {
 		if i >= INV_COLS * 4 {
 			break
 		}
-		entry, _ := inv_entry_at(&g.colony, i)
+		entry, _ := inv_entry_at(g, i)
 		rec := inv_slot_rect(i)
 		sel := i == g.bag_index
 		hover := rl.CheckCollisionPointRec(mp, rec)
@@ -1890,51 +1912,50 @@ draw_inventory :: proc(g: ^Game) {
 	}
 
 	// ---- the selected slot's breakdown ----
-	entry, ok := inv_entry_at(&g.colony, g.bag_index)
-	if !ok {
-		rl.DrawText("The bag is empty. Items drop from battles and trial floors; relics from bosses.",
-			i32(inv_bag_x()), i32(p.y) + 480, 15, rl.Color{150, 150, 170, 255})
-		rl.DrawText("G / Esc to close", i32(inv_bag_x()), i32(p.y + p.height) - 30, 15, rl.Color{150, 150, 170, 255})
-		return
-	}
-	col := entry.is_relic ? rl.Color{235, 195, 110, 255} : item_color(entry.item)
 	dr := inv_detail_rect()
-	rl.DrawRectangleRounded(dr, 0.03, 8, rl.Color{22, 24, 32, 255})
-	rl.DrawRectangleRoundedLinesEx(dr, 0.03, 8, 2, rl.Color{54, 58, 74, 255})
-	if entry.is_relic {
-		draw_relic_icon(entry.relic, dr.x + 34, dr.y + 50, 1.1)
+	entry, ok := inv_entry_at(g, g.bag_index)
+	if ok {
+		col := entry.is_relic ? rl.Color{235, 195, 110, 255} : item_color(entry.item)
+		rl.DrawRectangleRounded(dr, 0.03, 8, rl.Color{22, 24, 32, 255})
+		rl.DrawRectangleRoundedLinesEx(dr, 0.03, 8, 2, rl.Color{54, 58, 74, 255})
+		if entry.is_relic {
+			draw_relic_icon(entry.relic, dr.x + 34, dr.y + 50, 1.1)
+		} else {
+			draw_item_icon(entry.item, dr.x + 34, dr.y + 50, 1.1)
+		}
+		name := entry.is_relic ? relic_name(entry.relic) : item_name(entry.item)
+		kind := entry.is_relic ? cstring("Relic  -  slot into a Relic Tower") : cstring("Held item  -  one per monster")
+		rl.DrawText(name, i32(dr.x) + 70, i32(dr.y) + 10, 20, rl.Color{235, 235, 245, 255})
+		rl.DrawText(kind, i32(dr.x) + 70, i32(dr.y) + 34, 14, col)
+		if entry.is_relic {
+			draw_text_wrapped(relic_desc(entry.relic), i32(dr.x) + 70, i32(dr.y) + 56, 15, i32(dr.width) - 90,
+				rl.Color{200, 205, 220, 255})
+			placed := relics_placed(&g.colony)
+			rl.DrawText(fmt.ctprintf("In the bag: %d    slotted in towers: %d    (copies stack)",
+				relics_unplaced(&g.colony, entry.relic), placed[entry.relic]),
+				i32(dr.x) + 70, i32(dr.y) + 112, 14, rl.Color{180, 185, 205, 255})
+		} else {
+			draw_item_effects(entry.item, i32(dr.x) + 70, i32(dr.y) + 56, 15)
+		}
 	} else {
-		draw_item_icon(entry.item, dr.x + 34, dr.y + 50, 1.1)
-	}
-	name := entry.is_relic ? relic_name(entry.relic) : item_name(entry.item)
-	kind := entry.is_relic ? cstring("Relic  -  slot into a Relic Tower") : cstring("Held item  -  one per monster")
-	rl.DrawText(name, i32(dr.x) + 70, i32(dr.y) + 10, 20, rl.Color{235, 235, 245, 255})
-	rl.DrawText(kind, i32(dr.x) + 70, i32(dr.y) + 34, 14, col)
-	if entry.is_relic {
-		draw_text_wrapped(relic_desc(entry.relic), i32(dr.x) + 70, i32(dr.y) + 56, 15, i32(dr.width) - 90,
-			rl.Color{200, 205, 220, 255})
-		placed := relics_placed(&g.colony)
-		rl.DrawText(fmt.ctprintf("In the bag: %d    slotted in towers: %d    (copies stack)",
-			relics_unplaced(&g.colony, entry.relic), placed[entry.relic]),
-			i32(dr.x) + 70, i32(dr.y) + 112, 14, rl.Color{180, 185, 205, 255})
-	} else {
-		draw_item_effects(entry.item, i32(dr.x) + 70, i32(dr.y) + 56, 15)
+		msg := g.bag_arena ? cstring("The pack is empty. Trial floors are where a run hands out gear.") : cstring("The bag is empty. Items drop from battles; relics from bosses.")
+		rl.DrawText(msg, i32(dr.x), i32(dr.y) + 40, 15, rl.Color{150, 150, 170, 255})
 	}
 
-	// ---- actions ----
-	s := inv_mon_roster(&g.colony, g.bag_mon)
+	// ---- actions (drawn even with an empty bag: that is when Unequip matters) ----
+	s := inv_mon_roster(g, g.bag_mon)
 	worn: cstring = "nothing"
 	if s >= 0 && g.colony.roster[s].creature.item != .NONE {
 		worn = item_name(g.colony.roster[s].creature.item)
 	}
-	if entry.is_relic {
+	if ok && entry.is_relic {
 		draw_button(inv_action_rect(), "Place in a Relic Tower", true, BUTTON_PANEL, 16)
 		if rl.CheckCollisionPointRec(mp, inv_action_rect()) {
 			tooltip_set("Close the inventory and click a Relic Tower to slot this relic into it.")
 		}
 		draw_button(inv_unequip_rect(), "Take back (nearest tower)", relics_placed(&g.colony)[entry.relic] > 0, BUTTON_PANEL, 16)
 	} else {
-		draw_button(inv_action_rect(), fmt.ctprintf("Equip to %s", inv_target_name(g)), s >= 0, BUTTON_PANEL, 16)
+		draw_button(inv_action_rect(), fmt.ctprintf("Equip to %s", inv_target_name(g)), ok && s >= 0, BUTTON_PANEL, 16)
 		draw_button(inv_unequip_rect(), fmt.ctprintf("Unequip %s  (wearing: %s)", inv_target_name(g), worn),
 			s >= 0 && g.colony.roster[s].creature.item != .NONE, BUTTON_PANEL, 16)
 	}
@@ -2269,6 +2290,7 @@ update_arena :: proc(g: ^Game) {
 		c.crystals_earned += banked
 		colony_notify(c, "Cashed out: %d crystals banked.", banked)
 		audio_play(.CRYSTAL)
+		arena_keep_pack(c)
 		c.arena_run = false
 		c.arena_run_crystals = 0
 		c.arena_floor = 1
@@ -2280,18 +2302,20 @@ update_arena :: proc(g: ^Game) {
 		set_status(g, save_game(g, AUTOSAVE_SLOT) ? "Run saved." : "Could not save.")
 		return
 	}
-	// Re-gear between floors: the inventory opens right over the tower screen.
+	// Re-gear between floors: the inventory opens right over the tower screen,
+	// showing only this run's pack and the monsters on the tile.
 	if rl.CheckCollisionPointRec(mp, arena_items_rect()) {
-		open_inventory(g)
+		open_inventory(g, arena = true)
 		return
 	}
 	// Abandon: the same as a wipe, but on your own terms.
 	if c.arena_run && rl.CheckCollisionPointRec(mp, arena_leave_rect()) {
-		colony_notify(c, "Run abandoned - %d crystals lost.", c.arena_run_crystals)
+		colony_notify(c, "Run abandoned - %d crystals and the pack are lost.", c.arena_run_crystals)
 		c.arena_run = false
 		c.arena_run_crystals = 0
 		c.arena_floor = 1
 		clear(&c.arena_boons)
+		clear(&c.arena_items)
 		g.mode = .MAP
 		return
 	}

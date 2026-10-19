@@ -17,7 +17,7 @@ import "core:time"
 // ============================================================================
 
 SAVE_MAGIC   :: "MCV1"
-SAVE_VERSION :: 15
+SAVE_VERSION :: 16
 SAVE_SLOTS   :: 3
 // The autosave is a 4th, special slot: the game writes it every so often and the
 // save panel only lets you load from it.
@@ -343,6 +343,10 @@ save_colony :: proc(w: ^Save_Writer, c: ^Colony) {
 	for r in c.arena_boons {
 		sw_enum(w, r)
 	}
+	sw_int(w, len(c.arena_items))
+	for it in c.arena_items {
+		sw_enum(w, it)
+	}
 	for sp in Species_Id {
 		sw_int(w, c.bosses_slain[sp] ? 1 : 0)
 	}
@@ -419,6 +423,12 @@ load_colony :: proc(r: ^Save_Reader, c: ^Colony) {
 		bn := sr_int(r)
 		for _ in 0..<bn {
 			append(&c.arena_boons, sr_enum(r, Relic))
+		}
+	}
+	{
+		in_ := sr_int(r)
+		for _ in 0..<in_ {
+			append(&c.arena_items, sr_enum(r, Item))
 		}
 	}
 	for sp in Species_Id {

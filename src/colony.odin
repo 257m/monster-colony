@@ -564,6 +564,7 @@ Colony :: struct {
 	arena_base_level:   int, // the party's average level when the run started
 	arena_run_seed:     u64, // fixes this run's gym order and event offers
 	arena_boons:        [dynamic]Relic, // relics picked up this run; dropped when it ends
+	arena_items:        [dynamic]Item,  // the run's own pack: unbounded, and only this run's
 	arena_event:        Arena_Event, // the pending trial-floor offer (regenerated per floor)
 
 	// Boss relics you own but haven't slotted into a tower yet (Phase 25/44).

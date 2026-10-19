@@ -71,6 +71,7 @@ Game :: struct {
 	bag_index: int,
 	bag_mon:   int, // the monster selected in the inventory
 	bag_mon_scroll: f32,
+	bag_arena: bool, // the inventory is showing a run's pack, not the colony's
 	bag_first: int,
 
 	// crystal progression panel

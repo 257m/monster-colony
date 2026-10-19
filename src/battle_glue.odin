@@ -776,6 +776,7 @@ resolve_lost :: proc(g: ^Game) {
 		g.colony.arena_run_crystals = 0
 		g.colony.arena_floor = 1
 		clear(&g.colony.arena_boons)
+		clear(&g.colony.arena_items)
 	}
 	g.mode = .MAP
 	if player_monster_count(&g.colony) == 0 {

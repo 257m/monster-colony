@@ -1317,3 +1317,16 @@ it stored, is lost).
   monster by selecting it out on the map first, which is why it read as "there
   is just an Equip button". The Arena screen has an **Items** button, so a party
   can be re-geared between floors without leaving the tower.
+- Phase 76 ✅ **the run's pack, and a Unequip that is always there**: the
+  inventory had no Unequip when the bag was empty — which is exactly when you
+  want it, since an empty bag means everything is already worn. Both action
+  buttons now draw regardless. And opened from the Arena screen the panel shows
+  something else entirely: only the monsters **standing on the tower tile**, and
+  only `Colony.arena_items` — the run's own pack, **unbounded** and separate
+  from the colony's bag, so the colony's inventory is genuinely out of reach
+  mid-climb and a long run can't be squeezed by the Vault cap. Trial floors put
+  their items into the pack rather than straight onto a monster (the event offer
+  now reads "Take the Bloodstone"), so you choose who wears what. **Cashing out
+  keeps the pack** — it transfers into the colony bag as far as it has room, and
+  tells you if something had to be left behind — while a wipe or an abandon
+  loses it along with the winnings. `SAVE_VERSION` is **16**.

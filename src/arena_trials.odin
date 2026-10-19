@@ -451,6 +451,27 @@ arena_boons_label :: proc(c: ^Colony) -> cstring {
 	return fmt.ctprintf("Boons:  %s", strings.to_string(sb))
 }
 
+// Cashing out keeps the run's pack: whatever the climb picked up comes home with
+// you, as far as the colony's bag has room for it.
+arena_keep_pack :: proc(c: ^Colony) {
+	kept := 0
+	for it in c.arena_items {
+		if len(c.items) >= colony_item_cap(c) {
+			break
+		}
+		append(&c.items, it)
+		kept += 1
+	}
+	left := len(c.arena_items) - kept
+	clear(&c.arena_items)
+	if kept > 0 {
+		colony_notify(c, "%d item%s come home with you.", kept, kept == 1 ? "" : "s")
+	}
+	if left > 0 {
+		colony_notify(c, "No room for %d of them - build a Vault.", left)
+	}
+}
+
 // Apply a chosen offer.
 arena_apply_event_option :: proc(c: ^Colony, hex: Hex, o: Event_Option) {
 	switch o.kind {
@@ -469,9 +490,10 @@ arena_apply_event_option :: proc(c: ^Colony, hex: Hex, o: Event_Option) {
 		cr.ability = o.ability
 		colony_notify(c, "%s sets aside %s and takes up %s.", cr.name, ability_name(old), ability_name(o.ability))
 	case .ITEM:
-		cr := &c.roster[o.mon].creature
-		creature_equip_item(cr, o.item)
-		colony_notify(c, "%s takes the %s.", cr.name, ITEM_DATA[o.item].name)
+		// Into the run's own pack, not straight onto a monster: the Items panel
+		// (opened from the tower) is where you decide who wears it.
+		append(&c.arena_items, o.item)
+		colony_notify(c, "The %s goes into the pack for this run.", ITEM_DATA[o.item].name)
 	case .RELIC:
 		// A boon, not a colony relic: it lasts the run and is dropped when the
 		// run ends, so an event floor can't be farmed for permanent relics.
@@ -509,11 +531,7 @@ event_option_label :: proc(c: ^Colony, o: Event_Option) -> cstring {
 		}
 		return fmt.ctprintf("%s takes %s", name, ability_name(o.ability))
 	case .ITEM:
-		name := "?"
-		if o.mon >= 0 && o.mon < len(c.roster) {
-			name = c.roster[o.mon].creature.name
-		}
-		return fmt.ctprintf("%s takes the %s", name, ITEM_DATA[o.item].name)
+		return fmt.ctprintf("Take the %s", ITEM_DATA[o.item].name)
 	case .RELIC:
 		return fmt.ctprintf("Take the %s for this run", relic_name(o.relic))
 	case .REST:
