@@ -1209,8 +1209,8 @@ it stored, is lost).
   floor alone, so backing out and coming back never re-rolls them. Floors
   10/20/40/50/70/80… are gyms; 30/60/90/120… are events.
 
-- Phase 65 ✅ **a sample team, for testing** (`SAMPLE_TEAM`): press **`grave`** in
-  the colony view and six ready-made monsters arrive at your entrance — Gravemaw
+- Phase 65 ✅ **a sample team, for testing** (`SAMPLE_TEAM`): press **`** in the
+  colony view and six ready-made monsters arrive at your entrance — Gravemaw
   (Bulwark/Grit Charm), Rimewarden (Bramble/Spiked Carapace), Bogmaw
   (Blight/Venom Sac), Stormwing (Daze/Cleansing Bloom), Ashfang (Fury/
   Bloodstone) and Dreadhorn (Ambush/Weakpoint Lens), each running its named set
