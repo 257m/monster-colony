@@ -1197,3 +1197,21 @@ it stored, is lost).
   spawns rarely in one fitting terrain (lava, crystal cove, jungle, desert,
   tundra, dungeon) and each gets three synergy sets of its own. `SAVE_VERSION`
   is **12**.
+- Phase 64 ✅ **Arena trials**: every tenth floor is a set-piece. Most are
+  **gyms** — a fixed, hand-built team from a cycling list of eight, each with a
+  theme, one boss leading it and members fighting as *named* sets (so the list
+  survives the generator reshuffling), at `ARENA_GYM_LEVEL_MULT` (1.25) above
+  the floor. Every third trial is instead an **event**: a decision floor with no
+  fight. The tower offers three concrete changes to the team you brought — trade
+  a card for a better one from that monster's move pool, swap an ability for
+  another its species can have, take a held item, take a relic, or mend the
+  party — and you may always **walk on unchanged**. Offers are seeded off the
+  floor alone, so backing out and coming back never re-rolls them. Floors
+  10/20/40/50/70/80… are gyms; 30/60/90/120… are events.
+
+- Phase 65 ✅ **a sample team, for testing** (`SAMPLE_TEAM`): press **`grave`** in
+  the colony view and six ready-made monsters arrive at your entrance — Gravemaw
+  (Bulwark/Grit Charm), Rimewarden (Bramble/Spiked Carapace), Bogmaw
+  (Blight/Venom Sac), Stormwing (Daze/Cleansing Bloom), Ashfang (Fury/
+  Bloodstone) and Dreadhorn (Ambush/Weakpoint Lens), each running its named set
+  at your best monster's level, so the tower is an even fight.

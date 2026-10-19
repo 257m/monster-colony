@@ -620,40 +620,10 @@ resolve_won :: proc(g: ^Game) {
 			floor := max(g.colony.arena_floor, 1)
 			// The floor's purse is *banked*, not paid: the run pays out when you
 			// cash out, and a wipe loses it.
-			purse := arena_floor_purse(floor) + bonus
-			g.colony.arena_run_crystals += purse
-			res.crystals = purse
-			// Arenas drop gold too, on top of the kill loot.
-			res.gold += colony_deposit_gold(&g.colony, hex, ARENA_GOLD_PER_FLOOR + floor * 2)
-			// Climb a floor, and remember the high-water mark.
-			g.colony.arena_floor = floor + 1
-			if g.colony.arena_floor > g.colony.arena_best_floor {
-				g.colony.arena_best_floor = g.colony.arena_floor
-			}
-			// The tower's spring. HP is a **full** heal plus a cleanse, and it
-			// thins as you climb; energy is a full refill on its own, later
-			// cadence, so the top of the tower stops topping your team up.
-			healed := arena_heals_on(floor)
-			refilled := arena_energy_on(floor)
-			if healed || refilled {
-				for &m in g.colony.roster {
-					if m.wild || m.creature.hp <= 0 || !hex_equal(m.pos, hex) {
-						continue
-					}
-					if healed {
-						m.creature.hp = m.creature.max_hp
-						creature_cleanse_status(&m.creature)
-					}
-					if refilled {
-						m.creature.energy = m.creature.energy_max
-					}
-				}
-				switch {
-				case healed && refilled: colony_notify(&g.colony, "The tower's spring mends and refills your party.")
-				case healed:             colony_notify(&g.colony, "The tower's spring mends your party.")
-				case:                    colony_notify(&g.colony, "The tower's spring refills your party.")
-				}
-			}
+			purse, gold := arena_clear_floor(&g.colony, hex, floor)
+			res.crystals = purse + bonus
+			g.colony.arena_run_crystals += bonus
+			res.gold += gold
 			colony_notify(&g.colony, "Arena floor %d cleared - %d crystals banked.", floor, purse)
 			audio_play(.CRYSTAL)
 		} else if boss_killed {

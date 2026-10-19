@@ -2107,6 +2107,13 @@ update_arena :: proc(g: ^Game) {
 			// level while you're inside.
 			g.colony.arena_base_level = arena_party_level(&g.colony, hex)
 		}
+		// A trial floor that is an event is settled by a decision, not a fight.
+		if arena_is_event_floor(max(g.colony.arena_floor, 1)) {
+			arena_make_event(&g.colony, hex, max(g.colony.arena_floor, 1))
+			g.arena_open = false
+			g.arena_event_open = true
+			return
+		}
 		colony_spawn_arena_team(&g.colony, hex)
 		g.arena_open = false
 		g.battle_hex = hex
@@ -2146,9 +2153,17 @@ draw_arena :: proc(g: ^Game) {
 		rl.DrawText("Climb as far as you can, then cash out - or wipe and lose it all.",
 			i32(p.x) + 28, i32(p.y) + 120, 15, rl.Color{200, 185, 160, 255})
 	}
-	rl.DrawText(fmt.ctprintf("Next: %d challengers around level %d, built to beat the team you bring.",
-		team, arena_challenger_level(&g.colony, g.colony.roster[g.selected].pos)),
-		i32(p.x) + 28, i32(p.y) + 150, 16, rl.Color{215, 200, 175, 255})
+	if arena_is_event_floor(floor) {
+		rl.DrawText("A trial floor: no fight, but a choice to make.",
+			i32(p.x) + 28, i32(p.y) + 150, 16, rl.Color{225, 210, 150, 255})
+	} else if arena_is_trial_floor(floor) {
+		rl.DrawText(fmt.ctprintf("A trial floor: the gym %s, tougher than usual.", arena_gym_for(floor).name),
+			i32(p.x) + 28, i32(p.y) + 150, 16, rl.Color{225, 210, 150, 255})
+	} else {
+		rl.DrawText(fmt.ctprintf("Next: %d challengers around level %d, built to beat the team you bring.",
+			team, arena_challenger_level(&g.colony, g.colony.roster[g.selected].pos)),
+			i32(p.x) + 28, i32(p.y) + 150, 16, rl.Color{215, 200, 175, 255})
+	}
 	rl.DrawText(fmt.ctprintf("A heal comes every %d floor%s here.", heal_iv, heal_iv == 1 ? "" : "s"),
 		i32(p.x) + 28, i32(p.y) + 174, 15, rl.Color{180, 210, 180, 255})
 	rl.DrawText(fmt.ctprintf("Gold: %d      Crystals: %d", colony_total_gold(&g.colony), g.colony.crystals),
@@ -2162,7 +2177,17 @@ draw_arena :: proc(g: ^Game) {
 	bg := afford ? (hover ? rl.Color{120, 60, 40, 255} : rl.Color{88, 46, 32, 255}) : rl.Color{40, 36, 34, 255}
 	rl.DrawRectangleRounded(btn, 0.22, 8, bg)
 	rl.DrawRectangleRoundedLinesEx(btn, 0.22, 8, 2, afford ? rl.Color{230, 150, 90, 255} : rl.Color{100, 90, 80, 255})
-	fl := running ? fmt.ctprintf("Fight floor %d", floor) : fmt.ctprintf("Enter the tower   (%d gold)", ARENA_ENTRY_COST)
+	fl := fmt.ctprintf("Enter the tower   (%d gold)", ARENA_ENTRY_COST)
+	if running {
+		switch {
+		case arena_is_event_floor(floor):
+			fl = fmt.ctprintf("Floor %d  -  a decision", floor)
+		case arena_is_trial_floor(floor):
+			fl = fmt.ctprintf("Floor %d  -  %s", floor, arena_gym_for(floor).name)
+		case:
+			fl = fmt.ctprintf("Fight floor %d", floor)
+		}
+	}
 	fw := rl.MeasureText(fl, 20)
 	rl.DrawText(fl, i32(btn.x + btn.width / 2) - fw / 2, i32(btn.y + btn.height / 2) - 11, 20, afford ? rl.Color{250, 235, 220, 255} : rl.Color{150, 140, 130, 255})
 
@@ -2183,6 +2208,91 @@ draw_arena :: proc(g: ^Game) {
 	ll := cstring("Walk away")
 	lw := rl.MeasureText(ll, 16)
 	rl.DrawText(ll, i32(lr.x + lr.width / 2) - lw / 2, i32(lr.y + lr.height / 2) - 8, 16, rl.Color{190, 185, 200, 255})
+}
+
+// ----------------------------------------------------------------------------
+// Arena trial: the event floor
+//
+// A decision floor. Three concrete offers, each a change to the team you
+// brought, and always the option to walk on unchanged.
+// ----------------------------------------------------------------------------
+
+arena_event_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	return rl.Rectangle{sw / 2 - 330, sh / 2 - 200, 660, 400}
+}
+
+arena_event_option_rect :: proc(i: int) -> rl.Rectangle {
+	p := arena_event_panel_rect()
+	return rl.Rectangle{p.x + 30, p.y + 168 + f32(i) * 56, p.width - 60, 48}
+}
+
+arena_event_skip_rect :: proc() -> rl.Rectangle {
+	p := arena_event_panel_rect()
+	return rl.Rectangle{p.x + 30, p.y + 344, p.width - 60, 34}
+}
+
+update_arena_event :: proc(g: ^Game) {
+	if rl.IsKeyPressed(.ESCAPE) {
+		g.arena_event_open = false
+		return
+	}
+	if !rl.IsMouseButtonPressed(.LEFT) {
+		return
+	}
+	mp := mouse_pos()
+	ev := &g.colony.arena_event
+	for i in 0..<ev.count {
+		if rl.CheckCollisionPointRec(mp, arena_event_option_rect(i)) {
+			hex := g.colony.roster[g.selected].pos
+			arena_apply_event_option(&g.colony, hex, ev.options[i])
+			_, gold := arena_clear_floor(&g.colony, hex, max(ev.floor, 1))
+			colony_notify(&g.colony, "The trial is settled. %d gold.", gold)
+			g.arena_event_open = false
+			return
+		}
+	}
+	if rl.CheckCollisionPointRec(mp, arena_event_skip_rect()) {
+		hex := g.colony.roster[g.selected].pos
+		_, gold := arena_clear_floor(&g.colony, hex, max(ev.floor, 1))
+		colony_notify(&g.colony, "You walk on. %d gold.", gold)
+		g.arena_event_open = false
+		return
+	}
+}
+
+draw_arena_event :: proc(g: ^Game) {
+	sw := f32(screen_w())
+	sh := f32(screen_h())
+	rl.DrawRectangle(0, 0, i32(sw), i32(sh), rl.Color{0, 0, 0, 180})
+
+	p := arena_event_panel_rect()
+	rl.DrawRectangleRounded(p, 0.05, 8, rl.Color{28, 24, 20, 250})
+	rl.DrawRectangleRoundedLinesEx(p, 0.05, 8, 3, rl.Color{210, 180, 110, 255})
+
+	ev := &g.colony.arena_event
+	rl.DrawText(fmt.ctprintf("FLOOR %d  -  %s", ev.floor, ev.title),
+		i32(p.x) + 28, i32(p.y) + 18, 24, rl.Color{240, 215, 140, 255})
+	draw_text_wrapped(fmt.ctprintf("%s", ev.text), i32(p.x) + 28, i32(p.y) + 56, 16, i32(p.width) - 56,
+		rl.Color{205, 200, 190, 255})
+
+	mp := mouse_pos()
+	for i in 0..<ev.count {
+		r := arena_event_option_rect(i)
+		hover := rl.CheckCollisionPointRec(mp, r)
+		rl.DrawRectangleRounded(r, 0.18, 8, hover ? rl.Color{70, 60, 40, 255} : rl.Color{44, 40, 32, 255})
+		rl.DrawRectangleRoundedLinesEx(r, 0.18, 8, 2, hover ? rl.Color{240, 200, 120, 255} : rl.Color{140, 124, 88, 255})
+		label := event_option_label(&g.colony, ev.options[i])
+		rl.DrawText(label, i32(r.x) + 16, i32(r.y + r.height / 2) - 9, 17, rl.Color{245, 235, 215, 255})
+	}
+
+	sr := arena_event_skip_rect()
+	shover := rl.CheckCollisionPointRec(mp, sr)
+	rl.DrawRectangleRounded(sr, 0.3, 8, shover ? rl.Color{46, 44, 52, 255} : rl.Color{34, 32, 38, 255})
+	sl := cstring("Walk on unchanged")
+	sw2 := rl.MeasureText(sl, 16)
+	rl.DrawText(sl, i32(sr.x + sr.width / 2) - sw2 / 2, i32(sr.y + sr.height / 2) - 8, 16, rl.Color{190, 185, 200, 255})
 }
 
 // ----------------------------------------------------------------------------
@@ -2646,6 +2756,7 @@ HELP_RIGHT := [?]Help_Line{
 	{"K", "this help"},
 	{"P", "settings (sound, display, last turn)"},
 	{"X", "mute / unmute sound"},
+	{"`", "sample team (for testing the Arena tower)"},
 	{"Esc", "close the current panel"},
 }
 

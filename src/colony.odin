@@ -565,6 +565,7 @@ Colony :: struct {
 	arena_best_floor:   int,
 	arena_run_crystals: int,
 	arena_base_level:   int, // the party's average level when the run started
+	arena_event:        Arena_Event, // the pending trial-floor offer (regenerated per floor)
 
 	// Boss relics you own but haven't slotted into a tower yet (Phase 25/44).
 	// Placed relics live on the tower tile itself; see `src/relics.odin`.

@@ -27,6 +27,10 @@ Species_Set :: struct {
 	deck:    []Move_Id,
 }
 
+// Hey this is for whenever you look at this again. Can you give me a
+// description of what each set name is supposed to do? Like the 
+// different types you have.
+
 SPECIES_SETS := [Species_Id][MAX_SETS]Species_Set{
 	.Emberling = {
 		{name = "Ruin", ability = .Vengeance, item = .Grudge_Idol, deck = []Move_Id{.Reckoning, .Blood_Pact,

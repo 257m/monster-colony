@@ -1246,6 +1246,16 @@ thematic_status_move :: proc(el: Element) -> (Move_Id, bool) {
 	return .Tackle, false
 }
 
+// Does this creature already run the card?
+move_in_deck :: proc(c: ^Creature, id: Move_Id) -> bool {
+	for m in c.deck {
+		if m == id {
+			return true
+		}
+	}
+	return false
+}
+
 // Wilds fight with a real deck: their learnset moves up to their level, a
 // thematic status card once they're tough enough, then starter basics to fill.
 // Player creatures keep their curated starter deck — this is wilds only (called

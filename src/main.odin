@@ -44,6 +44,7 @@ Game :: struct {
 	build_preview: Improvement, // hovered build option (for radius preview)
 	trade_open: bool,
 	arena_open: bool,
+	arena_event_open: bool,
 
 	// monster encyclopedia
 	show_encyclopedia:  bool,
@@ -564,6 +565,7 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		g.build_mode = !g.build_mode
 		g.trade_open = false
 		g.arena_open = false
+	g.arena_event_open = false
 		g.has_build = false
 		g.build_preview = .NONE
 		g.build_scroll = 0
@@ -602,6 +604,10 @@ update_colony :: proc(g: ^Game, dt: f32) {
 		update_trade(g)
 		return
 	}
+	if g.arena_event_open {
+		update_arena_event(g)
+		return
+	}
 	if g.arena_open {
 		update_arena(g)
 		return
@@ -612,6 +618,12 @@ update_colony :: proc(g: ^Game, dt: f32) {
 	}
 	if rl.IsKeyPressed(.T) && selected_on_arena(g) {
 		g.arena_open = true
+		return
+	}
+
+	// Testing aid: drop a ready-made team at the entrance (see SAMPLE_TEAM).
+	if rl.IsKeyPressed(.GRAVE) {
+		colony_grant_sample_team(&g.colony)
 		return
 	}
 
@@ -988,6 +1000,9 @@ game_draw :: proc(g: ^Game) {
 		}
 		if g.arena_open {
 			draw_arena(g)
+		}
+		if g.arena_event_open {
+			draw_arena_event(g)
 		}
 	case .BATTLE:
 		draw_battle(&g.battle)

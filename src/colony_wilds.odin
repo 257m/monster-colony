@@ -445,6 +445,22 @@ colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
 	floor := max(c.arena_floor, 1)
 	lvl := arena_challenger_level(c, hex)
 	mult := arena_regular_level_mult(floor)
+
+	// A trial floor fields its gym: a fixed team with a theme, a little tougher
+	// than the floors around it, and each member fighting as a named set.
+	if arena_is_trial_floor(floor) && !arena_is_event_floor(floor) {
+		gym := arena_gym_for(floor)
+		glvl := int(f32(lvl) * ARENA_GYM_LEVEL_MULT)
+		for member in gym.team {
+			mon_lvl := SPECIES[member.species].role == .BOSS ? glvl : int(f32(glvl) * mult)
+			spawn_wild_at(c, hex, member.species, mon_lvl, mature = false)
+			m := &c.roster[len(c.roster) - 1]
+			sets := SPECIES_SETS[m.creature.species]
+			arena_apply_set(&m.creature, sets[arena_set_index(m.creature.species, member.set)])
+		}
+		return
+	}
+
 	n := arena_team_size_for(floor)
 	avoid := make([dynamic]Species_Id, 0, context.temp_allocator)
 	for _ in 0..<n {
@@ -458,6 +474,45 @@ colony_spawn_arena_team :: proc(c: ^Colony, hex: Hex) {
 		sets := SPECIES_SETS[m.creature.species]
 		arena_apply_set(&m.creature, sets[rng_below(&c.rng, MAX_SETS)])
 	}
+}
+
+// Bank a cleared floor, climb, and hand out the tower's rest. Shared by a won
+// battle and by a trial floor settled without a fight.
+arena_clear_floor :: proc(c: ^Colony, hex: Hex, floor: int) -> (purse, gold: int) {
+	purse = arena_floor_purse(floor)
+	c.arena_run_crystals += purse
+	// Arenas drop gold too, on top of kill loot.
+	gold = colony_deposit_gold(c, hex, ARENA_GOLD_PER_FLOOR + floor * 2)
+	// Climb a floor, and remember the high-water mark.
+	c.arena_floor = floor + 1
+	if c.arena_floor > c.arena_best_floor {
+		c.arena_best_floor = c.arena_floor
+	}
+	// The tower's spring. HP is a **full** heal plus a cleanse, and it thins as
+	// you climb; energy is a full refill on its own, later cadence, so the top
+	// of the tower stops topping your team up.
+	healed := arena_heals_on(floor)
+	refilled := arena_energy_on(floor)
+	if healed || refilled {
+		for &m in c.roster {
+			if m.wild || m.creature.hp <= 0 || !hex_equal(m.pos, hex) {
+				continue
+			}
+			if healed {
+				m.creature.hp = m.creature.max_hp
+				creature_cleanse_status(&m.creature)
+			}
+			if refilled {
+				m.creature.energy = m.creature.energy_max
+			}
+		}
+		switch {
+		case healed && refilled: colony_notify(c, "The tower's spring mends and refills your party.")
+		case healed:             colony_notify(c, "The tower's spring mends your party.")
+		case:                    colony_notify(c, "The tower's spring refills your party.")
+		}
+	}
+	return
 }
 
 // Wilds grow up in the world, too: one spawned at or past its evolve level may
