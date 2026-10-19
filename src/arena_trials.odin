@@ -186,7 +186,7 @@ arena_gym_for :: proc(c: ^Colony, floor: int) -> ^Gym {
 arena_trials_ahead :: proc(c: ^Colony, floor: int) -> cstring {
 	sb := strings.builder_make(context.temp_allocator)
 	shown := 0
-	for f := floor + 1; f <= floor + ARENA_TRIAL_EVERY*4 && shown < 3; f += 1 {
+	for f := floor + 1; f <= floor + ARENA_TRIAL_EVERY*3 && shown < 2; f += 1 {
 		if !arena_is_trial_floor(f) {
 			continue
 		}
@@ -448,7 +448,7 @@ arena_boons_label :: proc(c: ^Colony) -> cstring {
 		}
 		shown += 1
 	}
-	return fmt.ctprintf("Run boons:  %s", strings.to_string(sb))
+	return fmt.ctprintf("Boons:  %s", strings.to_string(sb))
 }
 
 // Apply a chosen offer.

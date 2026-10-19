@@ -1296,3 +1296,12 @@ it stored, is lost).
   so a message fits on one line, and the log now keeps the **last 40** messages
   and **scrolls** (wheel over it, or PgUp/PgDn; a new line snaps back to the
   present). The enemy row is full width again.
+- Phase 74 ✅ **the Arena screen's columns no longer collide**: the left column's
+  lines ran under the party panel, and the party rows stacked their HP number,
+  HP bar, item and energy bar on top of each other. The party row is now three
+  clear bands — name and ability, then the HP bar with its number centred inside
+  it (shadowed so it reads over the fill), then a short energy bar with the held
+  item to its right — at `ARENA_ROW_H` (50). The panel grew to 900x520 so six
+  rows fit above the buttons, every left-column line is clipped to
+  `ARENA_COL_W` (430) with `fit_text`, and the two lines that were too long were
+  shortened. Longest line now measures 396px against 430.

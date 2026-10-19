@@ -1202,6 +1202,11 @@ fit_text :: proc(text: string, size: i32, max_w: i32) -> cstring {
 	return cstring("...")
 }
 
+// `fit_text` for a line built with fmt.
+fit_textf :: proc(size: i32, max_w: i32, format: string, args: ..any) -> cstring {
+	return fit_text(string(fmt.ctprintf(format, ..args)), size, max_w)
+}
+
 draw_text_wrapped :: proc(cs: cstring, x, y: i32, size: i32, max_w: i32, col: rl.Color) -> i32 {
 	text := cstring_bytes(cs)
 	buf: [1024]u8
@@ -2066,18 +2071,21 @@ draw_upgrades :: proc(g: ^Game) {
 arena_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(screen_w())
 	sh := f32(screen_h())
-	return rl.Rectangle{sw / 2 - 450, sh / 2 - 240, 900, 480}
+	return rl.Rectangle{sw / 2 - 450, sh / 2 - 260, 900, 520}
 }
+
+// The left column runs from p.x + 28 to the party column at p.x + 460.
+ARENA_COL_W :: f32(430)
 
 arena_fight_rect :: proc() -> rl.Rectangle {
 	p := arena_panel_rect()
-	return rl.Rectangle{p.x + 28, p.y + 340, p.width - 56, 46}
+	return rl.Rectangle{p.x + 28, p.y + 380, p.width - 56, 46}
 }
 
 arena_cashout_rect :: proc() -> rl.Rectangle {
 	p := arena_panel_rect()
 	w := (p.width - 56 - 24) / 3
-	return rl.Rectangle{p.x + 28, p.y + 394, w, 34}
+	return rl.Rectangle{p.x + 28, p.y + 434, w, 34}
 }
 
 arena_save_rect :: proc() -> rl.Rectangle {
@@ -2180,6 +2188,11 @@ update_arena :: proc(g: ^Game) {
 }
 
 // Your party, as brought.
+// A party row, laid out in three clear bands so nothing overlaps: name and
+// ability on top, then the HP bar with its number inside it, then a short energy
+// bar with the held item to its right.
+ARENA_ROW_H :: f32(50)
+
 draw_arena_party :: proc(g: ^Game, x, y, w: f32) {
 	rl.DrawText("YOUR PARTY", i32(x), i32(y), 15, rl.Color{150, 160, 180, 255})
 	hex := g.colony.roster[g.selected].pos
@@ -2190,19 +2203,30 @@ draw_arena_party :: proc(g: ^Game, x, y, w: f32) {
 			continue
 		}
 		cr := &m.creature
-		rl.DrawRectangleRounded(rl.Rectangle{x, row, w, 44}, 0.12, 6, rl.Color{26, 28, 36, 240})
-		rl.DrawRectangleRoundedLinesEx(rl.Rectangle{x, row, w, 44}, 0.12, 6, 1, rl.Color{58, 60, 74, 255})
-		rl.DrawText(fmt.ctprintf("%s   Lvl %d", cr.name, cr.level), i32(x) + 10, i32(row) + 4, 15, rl.Color{225, 228, 240, 255})
+		rl.DrawRectangleRounded(rl.Rectangle{x, row, w, ARENA_ROW_H}, 0.12, 6, rl.Color{26, 28, 36, 240})
+		rl.DrawRectangleRoundedLinesEx(rl.Rectangle{x, row, w, ARENA_ROW_H}, 0.12, 6, 1, rl.Color{58, 60, 74, 255})
+		// Band 1: name and ability.
+		rl.DrawText(fit_textf(15, i32(w) - 120, "%s   Lvl %d", cr.name, cr.level),
+			i32(x) + 10, i32(row) + 4, 15, rl.Color{225, 228, 240, 255})
 		ab := ability_name(cr.ability)
 		aw := rl.MeasureText(ab, 12)
 		rl.DrawText(ab, i32(x + w) - aw - 10, i32(row) + 6, 12, rl.Color{200, 180, 240, 255})
-		draw_bar(rl.Rectangle{x + 10, row + 23, w - 20, 9}, cr.hp, cr.max_hp, COL_HP)
-		rl.DrawText(fmt.ctprintf("%d/%d", cr.hp, cr.max_hp), i32(x) + 14, i32(row) + 22, 10, rl.Color{235, 235, 245, 255})
+		// Band 2: the HP bar, with its number centred inside it (shadowed so it
+		// stays readable over the fill).
+		hp_rec := rl.Rectangle{x + 10, row + 23, w - 20, 12}
+		draw_bar(hp_rec, cr.hp, cr.max_hp, COL_HP)
+		hp_txt := fmt.ctprintf("%d/%d", cr.hp, cr.max_hp)
+		hw := rl.MeasureText(hp_txt, 10)
+		rl.DrawText(hp_txt, i32(hp_rec.x + hp_rec.width / 2) - hw / 2 + 1, i32(hp_rec.y) + 2, 10, rl.Color{0, 0, 0, 200})
+		rl.DrawText(hp_txt, i32(hp_rec.x + hp_rec.width / 2) - hw / 2, i32(hp_rec.y) + 1, 10, rl.Color{245, 245, 250, 255})
+		// Band 3: a short energy bar, with the held item to its right.
+		draw_bar(rl.Rectangle{x + 10, row + 40, 120, 6}, int(cr.energy * 100), int(max(cr.energy_max, 0.01) * 100), COL_ENERGY)
+		en_txt := fmt.ctprintf("En %s/%s", fmt_num(cr.energy), fmt_num(cr.energy_max))
+		rl.DrawText(en_txt, i32(x) + 138, i32(row) + 36, 11, rl.Color{150, 190, 235, 255})
 		it := item_name(cr.item)
 		iw := rl.MeasureText(it, 11)
-		rl.DrawText(it, i32(x + w) - iw - 10, i32(row) + 29, 11, rl.Color{190, 190, 205, 255})
-		draw_bar(rl.Rectangle{x + 10, row + 34, w - 20, 5}, int(cr.energy * 100), int(max(cr.energy_max, 0.01) * 100), COL_ENERGY)
-		row += 48
+		rl.DrawText(it, i32(x + w) - iw - 10, i32(row) + 36, 11, rl.Color{190, 190, 205, 255})
+		row += ARENA_ROW_H + 4
 	}
 }
 
@@ -2224,33 +2248,34 @@ draw_arena :: proc(g: ^Game) {
 
 	heal_iv := arena_heal_interval(floor)
 	if running {
-		rl.DrawText(fmt.ctprintf("Winnings: %d crystals  -  cash out to keep them.", g.colony.arena_run_crystals),
+		rl.DrawText(fit_textf(17, i32(ARENA_COL_W), "Winnings: %d crystals banked.", g.colony.arena_run_crystals),
 			i32(p.x) + 28, i32(p.y) + 88, 17, rl.Color{150, 225, 170, 255})
-		rl.DrawText("Lose the party and the run - and the winnings - are gone.",
+		rl.DrawText(fit_text("Lose the party and the run - and the winnings - are gone.", 14, i32(ARENA_COL_W)),
 			i32(p.x) + 28, i32(p.y) + 110, 14, rl.Color{225, 165, 140, 255})
 	} else {
-		rl.DrawText(fmt.ctprintf("Entry: %d gold for one run. Floors start at 1, every time.", ARENA_ENTRY_COST),
+		rl.DrawText(fit_textf(17, i32(ARENA_COL_W), "Entry: %d gold for one run.", ARENA_ENTRY_COST),
 			i32(p.x) + 28, i32(p.y) + 88, 17, rl.Color{215, 200, 175, 255})
-		rl.DrawText("Climb as far as you can, then cash out - or wipe and lose it all.",
+		rl.DrawText(fit_text("Climb as far as you can, then cash out.", 14, i32(ARENA_COL_W)),
 			i32(p.x) + 28, i32(p.y) + 110, 14, rl.Color{200, 185, 160, 255})
 	}
 	if arena_is_event_floor(floor) {
-		rl.DrawText("A trial floor: no fight, but a choice to make.",
+		rl.DrawText(fit_text("A trial floor: no fight, but a choice to make.", 15, i32(ARENA_COL_W)),
 			i32(p.x) + 28, i32(p.y) + 134, 15, rl.Color{225, 210, 150, 255})
 	} else if arena_is_trial_floor(floor) {
-		rl.DrawText(fmt.ctprintf("A trial floor: the gym %s, tougher than usual.", arena_gym_for(&g.colony, floor).name),
+		rl.DrawText(fit_textf(15, i32(ARENA_COL_W), "A trial floor: the gym %s.", arena_gym_for(&g.colony, floor).name),
 			i32(p.x) + 28, i32(p.y) + 134, 15, rl.Color{225, 210, 150, 255})
 	} else {
-		rl.DrawText(fmt.ctprintf("Next: %d challengers around level %d, built to beat the team you bring.",
+		rl.DrawText(fit_textf(15, i32(ARENA_COL_W), "Next: %d challengers around level %d.",
 			arena_team_size_for(floor), arena_challenger_level(&g.colony, g.colony.roster[g.selected].pos)),
 			i32(p.x) + 28, i32(p.y) + 134, 15, rl.Color{215, 200, 175, 255})
 	}
-	rl.DrawText(arena_trials_ahead(&g.colony, floor), i32(p.x) + 28, i32(p.y) + 156, 13, rl.Color{190, 195, 215, 255})
-	rl.DrawText(fmt.ctprintf("A heal every %d floor%s.   Gold %d   Crystals %d",
+	rl.DrawText(fit_text(string(arena_trials_ahead(&g.colony, floor)), 13, i32(ARENA_COL_W)),
+		i32(p.x) + 28, i32(p.y) + 156, 13, rl.Color{190, 195, 215, 255})
+	rl.DrawText(fit_textf(14, i32(ARENA_COL_W), "A heal every %d floor%s.   Gold %d   Crystals %d",
 		heal_iv, heal_iv == 1 ? "" : "s", colony_total_gold(&g.colony), g.colony.crystals),
 		i32(p.x) + 28, i32(p.y) + 178, 14, rl.Color{210, 205, 175, 255})
 	if boons := arena_boons_label(&g.colony); len(boons) > 0 {
-		rl.DrawText(boons, i32(p.x) + 28, i32(p.y) + 198, 13, rl.Color{200, 185, 235, 255})
+		rl.DrawText(fit_text(string(boons), 13, i32(ARENA_COL_W)), i32(p.x) + 28, i32(p.y) + 198, 13, rl.Color{200, 185, 235, 255})
 	}
 	draw_arena_party(g, p.x + 468, p.y + 16, p.width - 496)
 
