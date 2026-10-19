@@ -1031,8 +1031,11 @@ DEX_TABS      :: 4
 
 // Every tab uses the same list chrome, so the scrollbar and pager are identical
 // everywhere they appear.
-DEX_ROWS :: 21
-DEX_LIST :: List_View{rows = DEX_ROWS, row_h = 26, x = 40, y = 120, w = 340}
+DEX_ROWS :: 19
+DEX_LIST :: List_View{rows = DEX_ROWS, row_h = 26, x = 40, y = 152, w = 326}
+
+// The tabs sit below the title and subtitle, not on top of them.
+DEX_TAB_Y :: f32(104)
 
 dex_ability_count :: proc() -> int {
 	n := 0
@@ -1093,7 +1096,7 @@ dex_count :: proc(g: ^Game) -> int {
 }
 
 dex_tab_rect :: proc(i: int) -> rl.Rectangle {
-	return rl.Rectangle{30 + f32(i) * 132, 62, 124, 34}
+	return rl.Rectangle{30 + f32(i) * 132, DEX_TAB_Y, 124, 34}
 }
 
 // Open the dex on a tab, keeping the cursor where it was for that tab.
@@ -1272,7 +1275,7 @@ draw_dex :: proc(g: ^Game) {
 	v := DEX_LIST
 	v.index = clamp(g.dex_index, 0, max(n - 1, 0))
 	v.first = g.dex_first
-	panel := rl.Rectangle{30, 108, 350, f32(DEX_ROWS) * v.row_h + 12}
+	panel := rl.Rectangle{30, 140, 350, f32(DEX_ROWS) * v.row_h + 12}
 	draw_list_chrome(v, n, panel)
 	for row in 0..<v.rows {
 		i := v.first + row
@@ -1316,7 +1319,7 @@ draw_dex :: proc(g: ^Game) {
 
 	// ---- the detail ----
 	dx := f32(410)
-	dy := f32(120)
+	dy := f32(152)
 	right := f32(sw) - 40
 
 	if g.dex_tab == DEX_MONSTERS {
@@ -1696,7 +1699,7 @@ inv_panel_rect :: proc() -> rl.Rectangle {
 }
 
 // --- the monster column ---
-INV_MON_W       :: f32(340)
+INV_MON_W       :: f32(330)
 INV_MON_ROW     :: f32(44)
 INV_MON_VISIBLE :: 10
 
@@ -1987,7 +1990,7 @@ draw_inventory :: proc(g: ^Game) {
 	nmon := inv_mon_count(g)
 	v := inv_mon_view(g)
 	v.index = clamp(g.bag_mon, 0, max(nmon - 1, 0))
-	draw_list_chrome(v, nmon, rl.Rectangle{v.x - 8, v.y - 8, v.w + 16, f32(INV_MON_VISIBLE) * v.row_h + 16})
+	draw_list_chrome(v, nmon, rl.Rectangle{v.x - 8, v.y - 8, v.w + 26, f32(INV_MON_VISIBLE) * v.row_h + 16})
 	for k in 0..<v.rows {
 		i := v.first + k
 		if i >= nmon {

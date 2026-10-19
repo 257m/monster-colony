@@ -159,25 +159,33 @@ draw_list_screen_header :: proc(title, subtitle: cstring) {
 	rl.DrawText(subtitle, 40, 80, 16, rl.Color{140, 140, 160, 255})
 }
 
-// A vertical scrollbar for anything that scrolls, drawn only when there is more
-// than fits. Every list screen uses this one, so they all look alike.
+// A vertical scrollbar for anything that scrolls. The track is always drawn —
+// a short list should look like a long one, just with a full-height thumb — so
+// every screen that scrolls reads the same.
 draw_scrollbar :: proc(track: rl.Rectangle, first, rows, n: int) {
-	if n <= rows || rows <= 0 || track.height <= 8 {
+	if rows <= 0 || track.height <= 8 {
 		return
 	}
 	rl.DrawRectangleRounded(track, 0.5, 4, rl.Color{40, 42, 54, 255})
-	frac := f32(clamp(first, 0, n - rows)) / f32(n - rows)
-	thumb_h := track.height * f32(rows) / f32(n)
+	frac := f32(0)
+	thumb_h := track.height
+	if n > rows {
+		frac = f32(clamp(first, 0, n - rows)) / f32(n - rows)
+		thumb_h = max(track.height * f32(rows) / f32(n), 18)
+	}
 	thumb := rl.Rectangle{track.x, track.y + (track.height - thumb_h) * frac, track.width, thumb_h}
 	rl.DrawRectangleRounded(thumb, 0.5, 4, rl.Color{130, 140, 170, 255})
 }
 
-// The left list panel's chrome: the box, the scrollbar (only when the list
-// overflows) and the "N / total" pager. The caller draws the rows themselves.
+// The left list panel's chrome: the box, the scrollbar and the "N / total"
+// pager. The caller draws the rows themselves. The list has to be narrower than
+// the panel so its rows never paint over the bar.
 draw_list_chrome :: proc(v: List_View, n: int, panel: rl.Rectangle) {
 	draw_panel(panel, rl.Color{18, 20, 28, 255}, rl.Color{60, 62, 80, 255}, 0.03, 6, 2)
-	if n > v.rows {
-		draw_scrollbar(rl.Rectangle{panel.x + panel.width - 9, panel.y + 8, 5, panel.height - 16}, v.first, v.rows, n)
+	// The bar is placed off the *list*, not the panel, so its rows can never
+	// paint over it however the caller sizes the two.
+	draw_scrollbar(rl.Rectangle{v.x + v.w + 6, v.y + 4, 5, f32(v.rows) * v.row_h - 8}, v.first, v.rows, n)
+	if n > 0 {
 		rl.DrawText(fmt.ctprintf("%d / %d", v.index + 1, n), i32(panel.x) + 10, i32(panel.y + panel.height) + 6, 15, rl.Color{150, 150, 170, 255})
 	}
 }

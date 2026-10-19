@@ -1392,3 +1392,14 @@ it stored, is lost).
   column** became a `List_View` (so it gets the same bar and "N / total" pager
   as the dex), and the **upgrades tree** draws it too instead of scrolling
   silently. Every list you can scroll now looks the same.
+- Phase 86 ✅ **the dex's chrome, fixed properly**: merging the two panels
+  reintroduced three layout faults. The list rows were as wide as their panel,
+  so the *selected row highlight* painted over the scrollbar — the bar is now
+  positioned off the **list** (`v.x + v.w + 6`), not the panel, so no caller can
+  make its rows cover it however it sizes the two (6px clear in both the dex and
+  the inventory). The tabs sat at y=62, right on top of the DEX title and
+  subtitle — they moved to `DEX_TAB_Y` (104), with the list panel at 140. And a
+  short list drew *no* scrollbar at all, so ABILITIES (19) and ITEMS (12) looked
+  nothing like MONSTERS (60) — `draw_scrollbar` now always draws the track, with
+  a full-height thumb when everything fits, so every list that can scroll looks
+  the same whether it needs to or not.
