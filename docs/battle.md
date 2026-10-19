@@ -247,7 +247,9 @@ The reference panels stay available mid-battle: `V` (deck viewer), `L` (dex),
 
 `draw_battle` (in `battle.odin`) draws everything: `draw_enemies` (name, level +
 **element-type chips**, ability, HP bar, energy bar with `En cur/max +regen`,
-modifier chip row), `draw_player_panel` (name, ability, stats, HP, **XP bar**, an
+modifier chip row — the parts are laid out as one vertical stack with a couple of
+pixels between each, and the level reads "Lv 4" rather than "Lv4", which looks
+like "Lvl"), `draw_player_panel` (name, ability, stats, HP, **XP bar**, an
 energy bar that shows a dim **regen preview** and `cur / max +regen per turn`,
 deck size, modifier row), `draw_party_field` (your whole party as info cards on
 the field — avatar, name, level/element, HP numbers, energy bar, active buff

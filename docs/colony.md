@@ -130,7 +130,11 @@ shown in the HUD. Once past `RAID_GRACE`, `colony_raids` counts `raid_timer` dow
 raiders' level**) leading hot raids. Raid spawns **ignore spawn deterrence**
 (they don't check `tile_prevents_spawn` or watchtower/beacon/scarecrow radii).
 The HUD shows `Raids from turn 35` / `Raid in N` / `Raid calm (low heat)` and a
-notification fires when the grace ends. In `colony_roam_wilds`, non-`WILD` roles
+notification fires when the grace ends. An alpha can also arrive on its own via
+the `DISTANT_ROAR` world event, which stays out of the event pool until
+`ALPHA_EVENT_GRACE` (40) — it is the one world event that hunts your buildings,
+so it waits until the colony has had time to put up walls. In
+`colony_roam_wilds`, non-`WILD` roles
 use `step_hunt`: raiders head to `nearest_player_or_improvement_hex` (the closer
 of your monsters and your buildings), alphas to `nearest_player_hex` (your
 monsters), battering fortifications in the way. They're skipped by

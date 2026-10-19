@@ -1453,3 +1453,17 @@ it stored, is lost).
   encyclopedia panel). Both print `fmt_num(sp.base_energy)` now, so they read
   "Energy 1.5 regen / 4 max". Swept the rest: every other energy readout in the
   game (`draw_energy`, the enemy row, the party field) already used `fmt_num`.
+- Phase 92 ✅ **alphas stay out of the early game**: an alpha could arrive on
+  turn one, because the `DISTANT_ROAR` world event was in the pool from the
+  start (the raid alphas were already gated behind `RAID_GRACE` and doubled
+  heat). The roar now joins the pool at `ALPHA_EVENT_GRACE` (40) — it is the one
+  world event that hunts your buildings, so it waits until the colony has had
+  time to put up walls. Verified over 4000 turns: 0 alpha events at turn 5,
+  ~1 in 28 turns after the gate.
+
+- Phase 93 ✅ **two battle-row readability fixes**: the enemy name's line box
+  overlapped the element-type chips beneath it by 2px, so the name now sits at
+  `ey-72` with the chips at `ey-56` — every part of the card (name, chips,
+  ability, avatar, HP, energy, boost dots) is now laid out with a positive
+  gap, verified as a stack. And the level read **"Lv1"**, which at that size is
+  indistinguishable from "Lvl"; it reads **"Lv 1"** now.

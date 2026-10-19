@@ -2779,16 +2779,18 @@ draw_enemies :: proc(b: ^Battle) {
 		e := b.enemies[i]
 		ex := enemy_slot_x(slot, spread)
 		// A smaller avatar leaves the ability line its own row above it.
-		radius := f32(26)
+		radius := f32(25)
 		ox, oy := creature_offset(e)
 		draw_creature_avatar(rl.Vector2{ex + ox, ey + oy}, radius, e, e.hp <= 0)
 
 		name := fmt.ctprintf("%s", e.name)
 		nw := rl.MeasureText(name, 14)
-		rl.DrawText(name, i32(ex) - nw / 2, i32(ey) - 70, 14, COL_TEXT)
+		rl.DrawText(name, i32(ex) - nw / 2, i32(ey) - 72, 14, COL_TEXT)
 
-		// Level, then the enemy's element types as coloured chips.
-		lvl := fmt.ctprintf("Lv%d", e.level)
+		// Level, then the enemy's element types as coloured chips. The name sits
+		// a clear line above the chips — they used to overlap it.
+		// "Lv 1" rather than "Lv1", which reads as "Lvl" at this size.
+		lvl := fmt.ctprintf("Lv %d", e.level)
 		lw := rl.MeasureText(lvl, 11)
 		els := creature_elements(e)
 		chip_gap := f32(4)
@@ -2797,33 +2799,33 @@ draw_enemies :: proc(b: ^Battle) {
 			total_w += f32(rl.MeasureText(element_name(el), 10)) + 7 + chip_gap
 		}
 		x0 := ex - total_w / 2
-		rl.DrawText(lvl, i32(x0), i32(ey) - 56, 11, rl.Color{175, 175, 195, 255})
+		rl.DrawText(lvl, i32(x0), i32(ey) - 54, 11, rl.Color{175, 175, 195, 255})
 		ccx := x0 + f32(lw) + chip_gap
 		for el in els {
 			txt := element_name(el)
 			w := f32(rl.MeasureText(txt, 10)) + 7
-			crec := rl.Rectangle{ccx, ey - 58, w, 14}
+			crec := rl.Rectangle{ccx, ey - 56, w, 14}
 			col := element_color(el)
 			rl.DrawRectangleRounded(crec, 0.4, 4, rl.Color{col[0] / 5, col[1] / 5, col[2] / 5, 235})
 			rl.DrawRectangleRoundedLinesEx(crec, 0.4, 4, 1, col)
-			rl.DrawText(txt, i32(ccx) + 4, i32(ey) - 56, 10, col)
+			rl.DrawText(txt, i32(ccx) + 4, i32(ey) - 54, 10, col)
 			ccx += w + chip_gap
 		}
 
 		if e.ability != .NONE {
 			ab := ability_name(e.ability)
 			aw := rl.MeasureText(ab, 11)
-			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 42, 11, rl.Color{200, 180, 240, 255})
+			rl.DrawText(ab, i32(ex) - aw / 2, i32(ey) - 38, 11, rl.Color{200, 180, 240, 255})
 		}
 
-		hp_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 38, cw - 8, 14}
+		hp_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 32, cw - 8, 14}
 		draw_bar(hp_rec, e.hp, e.max_hp, COL_HP)
 		hp_txt := fmt.ctprintf("%d/%d", e.hp, e.max_hp)
 		hw := rl.MeasureText(hp_txt, 10)
 		rl.DrawText(hp_txt, i32(ex) - hw / 2, i32(hp_rec.y) + 1, 10, COL_TEXT)
 
 		// Energy (the same pool the wild uses on the colony map).
-		en_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 56, cw - 8, 5}
+		en_rec := rl.Rectangle{ex - cw / 2 + 4, ey + 50, cw - 8, 5}
 		draw_bar(en_rec, int(e.energy * 100), int(max(e.energy_max, 0.01) * 100), COL_ENERGY)
 		en_txt := fmt.ctprintf("En %s/%s", fmt_num(e.energy), fmt_num(e.energy_max))
 		ew := rl.MeasureText(en_txt, 10)
@@ -2832,7 +2834,7 @@ draw_enemies :: proc(b: ^Battle) {
 		// Active boosts as compact colour-coded dots — the full chips for the
 		// selected target live in the target panel, so a card stays narrow.
 		effs, ne := build_effects(e)
-		draw_effect_dots(effs[:ne], ex, ey + 74, 6)
+		draw_effect_dots(effs[:ne], ex, ey + 68, 6)
 
 		if i == b.target && e.hp > 0 {
 			rl.DrawCircleLinesV(rl.Vector2{ex, ey}, radius + 5, rl.Color{255, 235, 140, 255})

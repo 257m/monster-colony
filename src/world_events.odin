@@ -13,6 +13,10 @@ import rl "vendor:raylib"
 World_Event :: enum { TREMOR, STAMPEDE, DISTANT_ROAR, MIGRATION }
 
 WORLD_EVENT_CHANCE  :: f32(0.12)
+// An alpha is the one world event that hunts your buildings, so it stays out of
+// the pool until the colony has had time to put up walls. (Raid alphas are
+// already gated behind RAID_GRACE and a doubled heat threshold.)
+ALPHA_EVENT_GRACE   :: 40
 TREMOR_DUR          :: f32(0.6)
 TREMOR_RADIUS       :: 4
 TREMOR_BUILDING_DMG :: 14
@@ -22,7 +26,14 @@ colony_world_events :: proc(c: ^Colony) {
 	if rng_f32(&c.rng) >= WORLD_EVENT_CHANCE {
 		return
 	}
-	switch World_Event(rng_below(&c.rng, 4)) {
+	// Pick from the events that are allowed yet. The roar joins the pool at
+	// ALPHA_EVENT_GRACE and takes an even share from then on.
+	pool := [?]World_Event{.TREMOR, .STAMPEDE, .MIGRATION}
+	ev := pool[rng_below(&c.rng, len(pool))]
+	if c.turn >= ALPHA_EVENT_GRACE && rng_below(&c.rng, 4) == 3 {
+		ev = .DISTANT_ROAR
+	}
+	switch ev {
 	case .TREMOR:
 		tremor_strike(c)
 	case .STAMPEDE:
