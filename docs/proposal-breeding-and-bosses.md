@@ -45,7 +45,8 @@ lever:
 | **0.15** | **×16.0** | **today (±1%)** |
 | 0.20 | ×21.0 | 33% stronger |
 
-Stats that take points: **HP, Power, Defense, Speed**. (Energy is **OPEN 1**.)
+Stats that take points: **HP, Power, Defense, Speed** — unless OPEN 1 below
+says otherwise.
 
 | monster | HP / PWR / DEF / SPD | level | HP × | PWR × |
 |---|---|---|---|---|
@@ -60,6 +61,14 @@ A level-100 all-in damage dealer hits ~3.4× harder than a balanced one and has 
 quarter of its HP. **Level stops being a proxy for power**, and specialisation
 has a real cost — which is what makes the breeding choice interesting rather
 than a free win.
+
+### OPEN 1 — Does Energy take points?
+- **(a)** No; energy stays a species constant, points cover HP/Power/Defense/Speed.
+- **(b)** Yes, as a fifth stat.
+- **(b)** makes energy a breeding target and lets you build a tempo line, but it
+  also means a bad spread can starve a monster of the thing that lets it play
+  cards — punishing in a way the other four aren't.
+- **Default: (a).** **Blocks: stage 1.**
 
 ## 2. Two kinds of points: birth and levelling
 
@@ -99,10 +108,15 @@ child base = best of each BIRTH stat = 20/40/10/20  ->  level 90
 - **Genes are removed entirely**: `Gene`, `GENE_BONUS`, `genes_roll_random`,
   `genes_breed`, the gene row in the roster/dex, and the save fields.
 
-**OPEN 2 — the level-up screen.** Today a level-up offers 3 learnset cards. With
-100 levels, one stat click per level is 100 clicks across a monster's life.
-Suggest: stat points are always a choice but can be **banked and spent in
-batches**, and moves stay on learnset levels only.
+### OPEN 2 — How does the level-up screen ask for stat points?
+- **(a)** One point, one click, every level.
+- **(b)** Points bank, and you spend them in a batch whenever you like (a "stats"
+  tab beside the deck viewer).
+- **(c)** They auto-spend along a plan you set, re-specable from town.
+- (a) means 100 modal clicks per monster. (b) keeps the decision but at your
+  pace. (c) is the least tedious and the most "set and forget" — but it removes
+  the moment-to-moment choice.
+- **Default: (b).** **Blocks: stage 1.**
 
 ## 3. Breeding
 
@@ -119,18 +133,30 @@ batches**, and moves stay on learnset levels only.
   **Max 32 mutations per monster.**
 - **Mutation counters are inherited.** Proposal: child = mother + father
   (+1 if it mutated), so 32 arrives after ~5 generations of pushing a line.
-  **OPEN 3.**
 - **Females have a 20-turn breeding cooldown after a birth.** Males have none, so
   one good male can serve several females — which makes a second good female
   valuable. The Nursery keeps its shape (2 parents, 4 babies, 2 food/turn,
   `NURSERY_PERIOD` 8 fed turns); the cooldown sits on the female, so a Nursery
   can stall waiting on her.
-- Same species only, as today. **OPEN 4** — hybrids for a handful of pairs?
+- Same species only, as today.
 
 The consequence worth stating plainly: **a line's ceiling is set by its best
 captures plus mutations, never by grinding.** One level-60 wild with 38 Power is
 worth more than ten level-40s, and the right move is to keep looking rather than
 breed the first pair you catch.
+
+### OPEN 3 — How do mutation counters inherit?
+- **(a)** Sum of both parents (+1 if this birth mutated) — hits the 32 cap after
+  ~5 generations.
+- **(b)** The higher of the two — lines last longer, the cap arrives slowly.
+- **(c)** Random.
+- **Default: (a)** (closest to ARK). **Blocks: stage 3.**
+
+### OPEN 4 — Hybrids or same-species only?
+- **(a)** Same species only, as today.
+- **(b)** A short list of hand-authored hybrid pairs.
+- (b) is pure content and can be layered on later without changing the model.
+- **Default: (a).** **Blocks: stage 3.**
 
 ## 4. Spawns: wide bands, rare high rolls, gated by eras
 
@@ -153,12 +179,7 @@ goes, or the hunt has no point.
 At a cap of 60 you see mostly 20s and 30s, occasionally a 55 — "a good one is out
 there somewhere".
 
-**OPEN 5 — the spread bias.** A purely random spread makes most wilds mediocre at
-everything. Proposal: each wild also rolls a bias toward one or two stats (say
-60% of its points land there), so "a level-60 with 38 Power" is something that
-happens — checkable at capture, and worth hunting.
-
-**OPEN 6 — the cap table.** Sketch, tied to the era structure in §5:
+The sketch, tied to the era structure in §5 (OPEN 6 below tunes it):
 
 | progress | depth band | spawn cap |
 |---|---|---|
@@ -172,6 +193,19 @@ happens — checkable at capture, and worth hunting.
 | +1 Abyss Beta kill | 20+ | 117 |
 | … all 5 Abyss Beta | 20+ | 165 |
 
+### OPEN 5 — How strongly is a wild's spread biased?
+- **(a)** None — fully random.
+- **(b)** ~60% of its points land in one or two favoured stats.
+- **(c)** Stricter (75%+), so wilds are more lopsided and easier to judge.
+- This is the knob that decides whether "a level-60 with 38 Power" is a
+  one-in-fifty find or something you see every few captures.
+- **Default: (b).** **Blocks: stage 2.**
+
+### OPEN 6 — The spawn-cap table
+Needs the era/boss roster (OPEN 9) to settle, but the sketch in §4 works as-is.
+- **Default: the sketch as written** (30 → 165 across three eras, rising per Beta
+  kill). **Blocks: stage 2.**
+
 ## 5. Bosses: per-era rosters, three tiers, hunted by room
 
 Bosses **stop roaming**. A Boss Room is an entry point that opens its own screen
@@ -184,11 +218,9 @@ Bosses **stop roaming**. A Boss Room is an entry point that opens its own screen
 - **Tiers**: at the room you pick **Beta / Alpha / Ascendant**. Proposal:
   **Beta is open**; **Alpha unlocks on that boss's Beta kill**; **Ascendant on its
   Alpha**. A per-boss ladder, so you can push one boss deep before moving on.
-  **OPEN 7.**
 - **Era gate**: the next era's band (and its higher spawn cap) opens when **all
   of the current era's bosses are beaten at Beta**. So progressing means hunting
-  every room in a band, not farming the one you like. **OPEN 8** — should
-  Ascendant be required instead, or count toward it?
+  every room in a band, not farming the one you like.
 - **Each tier**: a bigger team, higher stats, and **one extra ability** — Beta 1,
   Alpha 2, Ascendant 3. Nothing else in the game has more than one, so the tiers
   change *what the fight is*, not just its size.
@@ -211,8 +243,29 @@ fight. Sketches, in the shape I'd like the table to take:
 | Abyss | a sovereign | heals itself unless it is Burning; immune to Poison | a **Burn** line + enough burst to out-pace the heal |
 | Abyss | a colossus | hits one monster for lethal, telegraphed | a **bulk breeder** built to eat it, plus **cleanse** |
 
-**OPEN 9 — the full 15-boss roster**: names, gimmicks, teams and which species
-they are. I'd rather design these with you than guess.
+### OPEN 7 — How do tiers unlock?
+- **(a)** Per boss: Beta → Alpha → Ascendant on that boss alone.
+- **(b)** Era-wide: all bosses at Beta unlocks Alpha for all of them.
+- (a) lets you push one favourite boss deep early; (b) makes each era a single
+  ladder. (a) plus the era gate in OPEN 8 keeps both pressures.
+- **Default: (a).** **Blocks: stage 4.**
+
+### OPEN 8 — What opens the next era?
+- **(a)** Every boss in the era beaten at **Beta**.
+- **(b)** …at **Alpha**. **(c)** …at **Ascendant** (a much longer wall).
+- **Default: (a).** **Blocks: stage 4.**
+
+### OPEN 9 — The 15-boss roster, gimmicks and teams
+Hand-authored content. The shape is the table above (gimmick → the specific
+answer).
+- **Default: I'll draft all fifteen for you to edit**, the way the species sets
+  were drafted — names, gimmicks, teams and which species each one is.
+  **Blocks: stage 4.**
+
+### OPEN 10 — Era names
+**A:** Shallows / Deepdark / Abyss  ·  **B:** Warrens / Chasm / Maw  ·
+**C:** Roothold / Underworks / Underthrone.
+- **Default: A.** Doesn't block anything — cosmetic, change whenever.
 
 ## 6. Loot — and things that aren't equipment
 
@@ -233,6 +286,10 @@ item.
 This is also where your `IDEAS.md` note applies directly: **a strong relic should
 be narrow**. Beta loot can be boring and always-useful; Ascendant loot should be
 strong and conditional, so it's a real decision rather than a strict upgrade.
+
+### OPEN 14 — The loot list (materials, trophies, blueprints)
+Names and numbers for the non-equippable drops above.
+- **Default: I'll draft them for you to edit.** **Blocks: stage 5.**
 
 ## 7. Scaling after the cap — the ceilings have to line up
 
@@ -295,10 +352,13 @@ economy they produce still has a sink once levelling stops being one.
   the raid system to stay interesting *at* the plateau rather than to keep
   climbing.
 
-**OPEN 12 — how far to rework.** Minimum: give Watchtower Block an upgrade line,
-fix Iron Idol, and either cap or re-base the three uncapped turret nodes.
-Fuller pass: re-derive all 33 improvements and the whole tree against "what is
-this worth at the cap?", and give the economy its breeding-era sinks.
+### OPEN 12 — How far to rework improvements and upgrades?
+- **(a)** Minimum: an upgrade line for Watchtower Block, fix Iron Idol, and cap
+  or re-base the three uncapped turret nodes.
+- **(b)** Full pass over all 33 improvements and the tree, answering "what is
+  this worth at the cap?"
+- **Default: (a) during the systems work, (b) as its own batch after.**
+  **Blocks: stage 6 (for (a)).**
 
 ## 8. Arena
 
@@ -309,7 +369,7 @@ strength — two level-100 teams can be 3.4× apart. Two problems:
 1. **What should the tower scale on?** Options: the party's total points (same
    as level), the sum of its *stat multipliers* (so a min-maxed team faces a
    stronger tower), or a fixed ramp with the party's own power as the variable.
-   **OPEN 11.**
+   See OPEN 11 below.
 2. **The deep floors.** Monsters cap at birth+100, and bred births reach ~200, so
    the tower's 1000 floors can't be level-driven forever. Past roughly floor 200
    difficulty should come from team size, items, boons and attrition — which is
@@ -317,6 +377,17 @@ strength — two level-100 teams can be 3.4× apart. Two problems:
 
 Also from `IDEAS.md`: **the arena should offer a choice of 3 relics** rather than
 handing you one. That drops straight into the event floors.
+
+### OPEN 11 — What does the Arena scale on now?
+- **(a)** The party's total points (i.e. its level).
+- **(b)** The sum of its stat *multipliers* — so a min-maxed team faces a
+  correspondingly stronger tower.
+- **(c)** A fixed ramp, with the party's power simply being the variable.
+- (b) is the only one that keeps the tower an even fight once breeding makes
+  level a poor description of strength — but it also means the tower deliberately
+  neutralises your specialisation, which may not be what you want the "prove
+  your team" mode to do.
+- **Default: (b).** **Blocks: stage 8.**
 
 ## 9. Queued from `IDEAS.md`
 
@@ -343,12 +414,19 @@ game. With a birth of 60 and +100 growth, a monster lives to level ~160, so:
   out to ~100, with **2–3 options at each level** so builds diverge.
 - **more learnable moves** overall: the per-species `move_pool` needs to be deep
   enough that 10–12 learnset levels each offer real choices rather than filler.
-- **OPEN 13 — deck size**: does a deck stay ~10 cards, or grow as a monster
-  levels? A fixed deck makes each new card a *replacement* decision, which suits
-  the "build" fantasy; a growing deck dilutes it.
+- **Deck size**: does a deck stay ~10 cards, or grow as a monster levels? A
+  fixed deck makes each new card a *replacement* decision, which suits the
+  "build" fantasy; a growing deck dilutes it. See OPEN 13 below.
 
 This is the biggest content job in the plan and it touches every species, so it
 should probably be its own pass after the systems are in.
+
+### OPEN 13 — Does the deck grow with level?
+- **(a)** Fixed ~10 cards; every new card is a replacement decision.
+- **(b)** Grows as the monster levels.
+- (a) keeps each learnset choice sharp and makes deck thinning meaningful;
+  (b) dilutes both but lets a high-level monster express more.
+- **Default: (a).** **Blocks: stage 7.**
 
 ## 11. What this touches
 
@@ -368,132 +446,35 @@ should probably be its own pass after the systems are in.
 - `save.odin`: version bump; genes out; points, mutations, cooldowns, boss tiers
   and era gates in.
 
-## 12. Open questions — how to answer these
+## 12. Open questions — index
 
-You don't have to answer them all, and you don't have to answer them now. Each
-one has a **default** — say nothing and I'll take it and note it in the doc. If
-you disagree later, it's a line to change, not a rebuild.
+Every question now sits in the section it belongs to, so you can answer it where
+you're reading. Nothing here is repeated; this is just the map.
 
-Two ways to answer:
+**Answering:** reply in chat (`"1a, 2b, rest default"`), or edit the question in
+place — change **OPEN n** to **DECIDED — n: (your answer)**. Each has a default
+you can leave alone; anything unanswered takes the default and gets noted, so
+nothing stalls.
 
-- **In chat**, briefly: `"1a, 2b, 3 default, rest default"` is plenty.
-- **In this file**: change **OPEN n** to **DECIDED — n: (your answer)**, or just
-  write under the question. It's your document.
+| # | question | lives in | blocks |
+|---|---|---|---|
+| 1 | does Energy take points? | §1 | stage 1 |
+| 2 | how the level-up screen asks | §2 | stage 1 |
+| 3 | mutation counter inheritance | §3 | stage 3 |
+| 4 | hybrids, or same species only | §3 | stage 3 |
+| 5 | wild spread bias strength | §4 | stage 2 |
+| 6 | the spawn-cap table | §4 | stage 2 |
+| 7 | how tiers unlock | §5 | stage 4 |
+| 8 | what opens the next era | §5 | stage 4 |
+| 9 | the 15-boss roster | §5 | stage 4 |
+| 10 | era names | §5 | nothing |
+| 11 | what the Arena scales on | §8 | stage 8 |
+| 12 | how far to rework improvements | §7 | stage 6 |
+| 13 | deck size | §10 | stage 7 |
+| 14 | the loot list | §6 | stage 5 |
 
-Only the ones under **blocks** for the next stage actually hold anything up:
-
-| to start | answer |
-|---|---|
-| stage 1 — stat points | **1, 2** |
-| stage 2 — spawns | **5, 6** |
-| stage 3 — breeding | **3, 4** |
-| stage 4 — bosses | **7, 8, 9, 10** |
-| stage 5 — loot | **14** |
-| stage 6 — colony scaling | **12** |
-| stage 7 — learnsets | **13** |
-| stage 8 — arena | **11** |
-
-So to unblock the *first* batch I need **1 and 2**, and I'd like **5 and 6** at
-the same time so spawns can follow straight on.
-
----
-
-### OPEN 1 — Does Energy take points?
-- **(a)** No; energy stays a species constant, points cover HP/Power/Defense/Speed.
-- **(b)** Yes, as a fifth stat.
-- **(b)** makes energy a breeding target and lets you build a tempo line, but it
-  also means a bad spread can starve a monster of the thing that lets it play
-  cards — punishing in a way the other four aren't.
-- **Default: (a).** **Blocks: stage 1.**
-
-### OPEN 2 — How does the level-up screen ask for stat points?
-- **(a)** One point, one click, every level.
-- **(b)** Points bank, and you spend them in a batch whenever you like (a "stats"
-  tab beside the deck viewer).
-- **(c)** They auto-spend along a plan you set, re-specable from town.
-- (a) means 100 modal clicks per monster. (b) keeps the decision but at your
-  pace. (c) is the least tedious and the most "set and forget" — but it removes
-  the moment-to-moment choice.
-- **Default: (b).** **Blocks: stage 1.**
-
-### OPEN 3 — How do mutation counters inherit?
-- **(a)** Sum of both parents (+1 if this birth mutated) — hits the 32 cap after
-  ~5 generations.
-- **(b)** The higher of the two — lines last longer, the cap arrives slowly.
-- **(c)** Random.
-- **Default: (a)** (closest to ARK). **Blocks: stage 3.**
-
-### OPEN 4 — Hybrids or same-species only?
-- **(a)** Same species only, as today.
-- **(b)** A short list of hand-authored hybrid pairs.
-- (b) is pure content and can be layered on later without changing the model.
-- **Default: (a).** **Blocks: stage 3.**
-
-### OPEN 5 — How strongly is a wild's spread biased?
-- **(a)** None — fully random.
-- **(b)** ~60% of its points land in one or two favoured stats.
-- **(c)** Stricter (75%+), so wilds are more lopsided and easier to judge.
-- This is the knob that decides whether "a level-60 with 38 Power" is a
-  one-in-fifty find or something you see every few captures.
-- **Default: (b).** **Blocks: stage 2.**
-
-### OPEN 6 — The spawn-cap table
-Needs the era/boss roster (OPEN 9) to settle, but the sketch in §4 works as-is.
-- **Default: the sketch as written** (30 → 165 across three eras, rising per Beta
-  kill). **Blocks: stage 2.**
-
-### OPEN 7 — How do tiers unlock?
-- **(a)** Per boss: Beta → Alpha → Ascendant on that boss alone.
-- **(b)** Era-wide: all bosses at Beta unlocks Alpha for all of them.
-- (a) lets you push one favourite boss deep early; (b) makes each era a single
-  ladder. (a) plus the era gate in OPEN 8 keeps both pressures.
-- **Default: (a).** **Blocks: stage 4.**
-
-### OPEN 8 — What opens the next era?
-- **(a)** Every boss in the era beaten at **Beta**.
-- **(b)** …at **Alpha**. **(c)** …at **Ascendant** (a much longer wall).
-- **Default: (a).** **Blocks: stage 4.**
-
-### OPEN 9 — The 15-boss roster, gimmicks and teams
-Hand-authored content. The shape is in §5 (gimmick → the specific answer).
-- **Default: I'll draft all fifteen for you to edit**, the way the species sets
-  were drafted — names, gimmicks, teams and which species each one is.
-  **Blocks: stage 4.**
-
-### OPEN 10 — Era names
-**A:** Shallows / Deepdark / Abyss  ·  **B:** Warrens / Chasm / Maw  ·
-**C:** Roothold / Underworks / Underthrone.
-- **Default: A.** Doesn't block anything — cosmetic, change whenever.
-
-### OPEN 11 — What does the Arena scale on now?
-- **(a)** The party's total points (i.e. its level).
-- **(b)** The sum of its stat *multipliers* — so a min-maxed team faces a
-  correspondingly stronger tower.
-- **(c)** A fixed ramp, with the party's power simply being the variable.
-- (b) is the only one that keeps the tower an even fight once breeding makes
-  level a poor description of strength — but it also means the tower deliberately
-  neutralises your specialisation, which may not be what you want the "prove
-  your team" mode to do.
-- **Default: (b).** **Blocks: stage 8.**
-
-### OPEN 12 — How far to rework improvements and upgrades?
-- **(a)** Minimum: an upgrade line for Watchtower Block, fix Iron Idol, and cap
-  or re-base the three uncapped turret nodes.
-- **(b)** Full pass over all 33 improvements and the tree, answering "what is
-  this worth at the cap?"
-- **Default: (a) during the systems work, (b) as its own batch after.**
-  **Blocks: stage 6 (for (a)).**
-
-### OPEN 13 — Does the deck grow with level?
-- **(a)** Fixed ~10 cards; every new card is a replacement decision.
-- **(b)** Grows as the monster levels.
-- (a) keeps each learnset choice sharp and makes deck thinning meaningful;
-  (b) dilutes both but lets a high-level monster express more.
-- **Default: (a).** **Blocks: stage 7.**
-
-### OPEN 14 — The loot list (materials, trophies, blueprints)
-Names and numbers for the non-equippable drops in §6.
-- **Default: I'll draft them for you to edit.** **Blocks: stage 5.**
+**To start the first batch I only need 1 and 2**; 5 and 6 would let spawns follow
+straight on.
 
 ## 13. Suggested build order
 
