@@ -162,15 +162,15 @@ happens — checkable at capture, and worth hunting.
 
 | progress | depth band | spawn cap |
 |---|---|---|
-| start | 1–9 | 30 |
-| +1 Early Beta kill | 1–9 | 35 |
-| … all 5 Early Beta | 1–9 | 55 |
-| all 5 Early Beta (era gate) | 10–19 | 60 |
-| +1 Mid Beta kill | 10–19 | 68 |
-| … all 5 Mid Beta | 10–19 | 100 |
-| all 5 Mid Beta (era gate) | 20+ | 105 |
-| +1 End Beta kill | 20+ | 117 |
-| … all 5 End Beta | 20+ | 165 |
+| start (the Shallows) | 1–9 | 30 |
+| +1 Shallows Beta kill | 1–9 | 35 |
+| … all 5 Shallows Beta | 1–9 | 55 |
+| all 5 Shallows Beta (era gate) | 10–19 | 60 |
+| +1 Deepdark Beta kill | 10–19 | 68 |
+| … all 5 Deepdark Beta | 10–19 | 100 |
+| all 5 Deepdark Beta (era gate) | 20+ | 105 |
+| +1 Abyss Beta kill | 20+ | 117 |
+| … all 5 Abyss Beta | 20+ | 165 |
 
 ## 5. Bosses: per-era rosters, three tiers, hunted by room
 
@@ -204,12 +204,12 @@ fight. Sketches, in the shape I'd like the table to take:
 
 | era | boss | gimmick | the answer |
 |---|---|---|---|
-| Early | a brood boss | adds a minion every round; loses only when the board is clear | **AoE** damage, or enough burst to ignore the adds |
-| Early | a burrower | goes untargetable every other round | **multi-hit / chip** and **regen** so dead turns cost you nothing |
-| Mid | a wall | enormous Block, thorns while Blocked | **Poison** (phases through Block) and a **thorn tank** of your own |
-| Mid | a seer | strips your Strength at the start of each round | **raw base damage** from a high-Power breeder, not buff stacking |
-| End | a sovereign | heals itself unless it is Burning; immune to Poison | a **Burn** line + enough burst to out-pace the heal |
-| End | a colossus | hits one monster for lethal, telegraphed | a **bulk breeder** built to eat it, plus **cleanse** |
+| Shallows | a brood boss | adds a minion every round; loses only when the board is clear | **AoE** damage, or enough burst to ignore the adds |
+| Shallows | a burrower | goes untargetable every other round | **multi-hit / chip** and **regen** so dead turns cost you nothing |
+| Deepdark | a wall | enormous Block, thorns while Blocked | **Poison** (phases through Block) and a **thorn tank** of your own |
+| Deepdark | a seer | strips your Strength at the start of each round | **raw base damage** from a high-Power breeder, not buff stacking |
+| Abyss | a sovereign | heals itself unless it is Burning; immune to Poison | a **Burn** line + enough burst to out-pace the heal |
+| Abyss | a colossus | hits one monster for lethal, telegraphed | a **bulk breeder** built to eat it, plus **cleanse** |
 
 **OPEN 9 — the full 15-boss roster**: names, gimmicks, teams and which species
 they are. I'd rather design these with you than guess.
@@ -234,7 +234,58 @@ This is also where your `IDEAS.md` note applies directly: **a strong relic shoul
 be narrow**. Beta loot can be boring and always-useful; Ascendant loot should be
 strong and conditional, so it's a real decision rather than a strict upgrade.
 
-## 7. Arena
+## 7. Scaling after the cap — improvements and upgrades need a pass
+
+This is the consequence of a hard ceiling that's easy to miss. Today a monster's
+power grows ~15% per level forever, so **everything else can stay flat and still
+be a small slice of a growing pie**. Once the pie stops growing (birth + 100,
+and births capped by the top spawn band), the colony layer stops being a slice
+and becomes **the whole endgame progression** — so it has to be designed for
+that, not inherited from when levels did the work.
+
+The rule to sort the existing content by:
+
+> **Anything meant to matter forever must be *relative*. Anything flat is an
+> early-game crutch that quietly deflates.**
+
+Status/effect maths already behaves: Strength is +10% damage per point, Thorns is
+a % of the attacker's max HP, Caltrops/Barracks are %s, energy regen is +1
+against a regen of ~2 (so it stays ~+50%). The problems are the flat numbers:
+
+| bonus | today | as stats plateau | proposal |
+|---|---|---|---|
+| Watchtower starting Block | `+6` flat | deflates hard | **% of max HP** |
+| Iron Idol (relic) | `+10` flat Block | deflates hard | **% of max HP** |
+| War Banner (relic) | `+2` Strength | stays relative (+20% dmg) | keep |
+| Kitchen Strength | `+2` | stays relative | keep |
+| Swift Totem (relic) | `+4` Speed | relative (initiative order) | keep |
+| Mana Shard (relic) | `+1` regen | ~+50% forever | keep |
+| Warden's Seal (relic) | `+2` Thorns | relative (% of attacker HP) | keep |
+| Training Yard XP | `+8`/turn | **meaningless at the cap** | re-purpose: XP → something else, or let it *raise* the birth cap |
+| Barracks XP | `+1`/kill | same | same |
+
+Three more things this touches:
+
+- **The XP producers lose their job.** Training Yards, Barracks and the Academy
+  upgrade all exist to accelerate levelling. Once every monster hits birth + 100
+  they're dead weight. Either they feed something else (materials, breeding
+  speed), or levelling takes long enough that they still matter — worth deciding
+  deliberately rather than discovering.
+- **The economy's sinks change.** Gold's biggest sink late is now **capture cards
+  and breeding fodder** rather than levelling. Food's is upkeep on a larger
+  roster. That's a good fit — it pushes the late game toward the breeding loop —
+  but the numbers should be checked against it.
+- **Heat plateaus.** Heat is improvements + monster levels, both of which cap, so
+  raids stop escalating. That's fine (the bosses are the escalation now) but it
+  means the raid system should be tuned to stay interesting *at* the plateau
+  rather than to keep climbing.
+
+**OPEN 12 — how far to rework.** Minimum: convert the two flat Block bonuses to
+percentages and re-purpose the XP producers. Fuller pass: re-derive every
+improvement and upgrade against a "what does this do at the cap?" question, and
+give the economy its breeding-era sinks.
+
+## 8. Arena
 
 Today the tower levels challengers from the party's *entry average level* through
 the XP curve. With birth/level points and breeding, level stops describing
@@ -243,7 +294,7 @@ strength — two level-100 teams can be 3.4× apart. Two problems:
 1. **What should the tower scale on?** Options: the party's total points (same
    as level), the sum of its *stat multipliers* (so a min-maxed team faces a
    stronger tower), or a fixed ramp with the party's own power as the variable.
-   **OPEN 10.**
+   **OPEN 11.**
 2. **The deep floors.** Monsters cap at birth+100, and bred births reach ~200, so
    the tower's 1000 floors can't be level-driven forever. Past roughly floor 200
    difficulty should come from team size, items, boons and attrition — which is
@@ -252,7 +303,7 @@ strength — two level-100 teams can be 3.4× apart. Two problems:
 Also from `IDEAS.md`: **the arena should offer a choice of 3 relics** rather than
 handing you one. That drops straight into the event floors.
 
-## 8. Queued from `IDEAS.md`
+## 9. Queued from `IDEAS.md`
 
 You said yes to implementing these; they're independent of breeding, so they can
 be a batch of their own at any point.
@@ -268,7 +319,7 @@ be a batch of their own at any point.
    expires with the run. This is close to what event floors already do, except
    the target is chosen by you and the offer isn't fixed to one monster.
 
-## 9. Learnsets have to span the new curve
+## 10. Learnsets have to span the new curve
 
 Today learnsets end around level 16–24, which was fine when level ~25 was late
 game. With a birth of 60 and +100 growth, a monster lives to level ~160, so:
@@ -277,14 +328,14 @@ game. With a birth of 60 and +100 growth, a monster lives to level ~160, so:
   out to ~100, with **2–3 options at each level** so builds diverge.
 - **more learnable moves** overall: the per-species `move_pool` needs to be deep
   enough that 10–12 learnset levels each offer real choices rather than filler.
-- **OPEN 11 — deck size**: does a deck stay ~10 cards, or grow as a monster
+- **OPEN 13 — deck size**: does a deck stay ~10 cards, or grow as a monster
   levels? A fixed deck makes each new card a *replacement* decision, which suits
   the "build" fantasy; a growing deck dilutes it.
 
 This is the biggest content job in the plan and it touches every species, so it
 should probably be its own pass after the systems are in.
 
-## 10. What this touches
+## 11. What this touches
 
 - `creature.odin`: points replace genes; `level_scale` → per-stat point scaling;
   `creature_stats_for_level` rewritten; `genes_*` deleted.
@@ -302,7 +353,7 @@ should probably be its own pass after the systems are in.
 - `save.odin`: version bump; genes out; points, mutations, cooldowns, boss tiers
   and era gates in.
 
-## 11. Open questions, collected
+## 12. Open questions, collected
 
 1. Does Energy take points, or stay fixed?
 2. Level-up flow: stat point per level, banked, or batched?
@@ -313,16 +364,21 @@ should probably be its own pass after the systems are in.
 7. Tier unlocks: per-boss Beta→Alpha→Ascendant?
 8. Era gate: all Beta kills, or a stricter bar?
 9. The 15-boss roster and their gimmicks.
-10. What the Arena scales on now.
-11. Deck size: fixed 10, or grows with level?
+10. Era names: A, B or C (or your own).
+11. What the Arena scales on now.
+12. How far to rework improvements/upgrades for the cap (see §7).
+13. Deck size: fixed 10, or grows with level?
 
-## 12. Suggested build order
+## 13. Suggested build order
 
 1. **Stat points + birth/level split + genes out** (creature, UI, saves). The
    foundation; the game should feel the same, just reshaped.
 2. **Spawns**: bands, caps, spread bias. Capture becomes interesting on its own.
 3. **Breeding**: birth-point 50/50, mutations, cooldowns. Now a line can be built.
 4. **Boss screen + eras + tiers + preview**, reusing the Arena screen's shape.
-5. **Loot and materials**, plus the sinks and the relic rule from §8.
-6. **Learnsets/move pools** across the new curve — the content pass.
-7. **Arena rescale**, last, because it depends on all of the above.
+5. **Loot and materials**, plus the sinks and the relic rule from §9.
+6. **The scaling pass** (§7): flat bonuses to percentages, XP producers
+   re-purposed, economy sinks checked at the cap. This is what keeps the colony
+   layer meaningful once monsters stop growing.
+7. **Learnsets/move pools** across the new curve — the content pass.
+8. **Arena rescale**, last, because it depends on all of the above.
