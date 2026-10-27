@@ -234,56 +234,71 @@ This is also where your `IDEAS.md` note applies directly: **a strong relic shoul
 be narrow**. Beta loot can be boring and always-useful; Ascendant loot should be
 strong and conditional, so it's a real decision rather than a strict upgrade.
 
-## 7. Scaling after the cap — improvements and upgrades need a pass
+## 7. Scaling after the cap — the ceilings have to line up
 
-This is the consequence of a hard ceiling that's easy to miss. Today a monster's
-power grows ~15% per level forever, so **everything else can stay flat and still
-be a small slice of a growing pie**. Once the pie stops growing (birth + 100,
-and births capped by the top spawn band), the colony layer stops being a slice
-and becomes **the whole endgame progression** — so it has to be designed for
-that, not inherited from when levels did the work.
+Today a monster's power grows ~15% per level forever, so every other bonus can
+stay flat and still be a sensible slice of a growing pie. With a hard ceiling the
+pie stops growing, and the question changes. Not "should this be relative?" —
+**"is the top of this upgrade line on par with the strongest monster?"**
 
-The rule to sort the existing content by:
+So flat is fine. Watchtower Block can stay flat; it just needs to *grow with
+upgrades* until its maximum is comparable to what a maxed monster brings. That
+gives each line a concrete design target, and a way to check it:
 
-> **Anything meant to matter forever must be *relative*. Anything flat is an
-> early-game crutch that quietly deflates.**
+> **At maximum, every colony bonus should be roughly as large as the strongest
+> thing a single maxed monster can do.**
 
-Status/effect maths already behaves: Strength is +10% damage per point, Thorns is
-a % of the attacker's max HP, Caltrops/Barracks are %s, energy regen is +1
-against a regen of ~2 (so it stays ~+50%). The problems are the flat numbers:
+The top of the monster progression is a birth around 195 (top spawn band plus
+the mutation cap) grown to ~295. Against that:
 
-| bonus | today | as stats plateau | proposal |
-|---|---|---|---|
-| Watchtower starting Block | `+6` flat | deflates hard | **% of max HP** |
-| Iron Idol (relic) | `+10` flat Block | deflates hard | **% of max HP** |
-| War Banner (relic) | `+2` Strength | stays relative (+20% dmg) | keep |
-| Kitchen Strength | `+2` | stays relative | keep |
-| Swift Totem (relic) | `+4` Speed | relative (initiative order) | keep |
-| Mana Shard (relic) | `+1` regen | ~+50% forever | keep |
-| Warden's Seal (relic) | `+2` Thorns | relative (% of attacker HP) | keep |
-| Training Yard XP | `+8`/turn | **meaningless at the cap** | re-purpose: XP → something else, or let it *raise* the birth cap |
-| Barracks XP | `+1`/kill | same | same |
+| bonus | today's maximum | on par with a maxed monster? |
+|---|---|---|
+| Watchtower starting Block | `+6` flat, **no upgrade line** | **no** — give it an upgrade line that grows toward a maxed monster's Block |
+| Iron Idol (relic) | `+10` flat per copy | **no** — needs a per-copy percentage or a much stronger stack |
+| Kitchen Strength | `+2` | yes — Strength is relative (+20% damage) |
+| War Banner (relic) | `+2` Strength | yes (relative) |
+| Mana Shard (relic) | `+1` energy regen | yes (~+50% of a 2/turn regen) |
+| Warden's Seal (relic) | `+2` Thorns | yes (% of the attacker's max HP) |
+| Caltrops / Barracks heal | 24% / 8% | yes (percentages) |
+| Spike Trap / Turret damage | flat, via upgrades | see below |
 
-Three more things this touches:
+### The uncapped lines are the real hazard
 
-- **The XP producers lose their job.** Training Yards, Barracks and the Academy
-  upgrade all exist to accelerate levelling. Once every monster hits birth + 100
-  they're dead weight. Either they feed something else (materials, breeding
-  speed), or levelling takes long enough that they still matter — worth deciding
-  deliberately rather than discovering.
-- **The economy's sinks change.** Gold's biggest sink late is now **capture cards
-  and breeding fodder** rather than levelling. Food's is upkeep on a larger
-  roster. That's a good fit — it pushes the late game toward the breeding loop —
-  but the numbers should be checked against it.
-- **Heat plateaus.** Heat is improvements + monster levels, both of which cap, so
-  raids stop escalating. That's fine (the bosses are the escalation now) but it
-  means the raid system should be tuned to stay interesting *at* the plateau
-  rather than to keep climbing.
+Three upgrades are `max_level = 99` **and flat** — unbounded in a game that has
+just been bounded:
 
-**OPEN 12 — how far to rework.** Minimum: convert the two flat Block bonuses to
-percentages and re-purpose the XP producers. Fuller pass: re-derive every
-improvement and upgrade against a "what does this do at the cap?" question, and
-give the economy its breeding-era sinks.
+| upgrade | per level | at level 99 |
+|---|---|---|
+| Focused Barrels | +6 Turret damage | **+594 damage** |
+| Reinforced Mounts | +12 Turret HP | **+1188 HP** |
+| Reservoir | +2 Turret charge | **+198 charge** |
+
+Either **cap them at a level whose top is on par** with a maxed monster, or
+**re-base them on the target** — e.g. a Turret shot deals a % of the *target's*
+max HP (like Poison and Thorns already do), which scales with the world and
+never needs re-tuning. The second is tidier and keeps turrets relevant at any
+depth.
+
+The two uncapped *economy* nodes (Green Thumb, Rich Seams, +25%/level) are a
+different question: they're self-limiting through `cost_growth` and they feed
+gold/food rather than damage, so they can stay uncapped — but check that the
+economy they produce still has a sink once levelling stops being one.
+
+### Two casualties worth naming
+
+- **The XP producers lose their job.** Training Yard (+8 XP/turn), Barracks
+  (+1/kill) and the Academy upgrade exist to accelerate levelling. At birth+100
+  they have nothing to accelerate. Either they feed something else (breeding
+  speed, materials) or levelling needs to be slow enough that they still matter.
+- **Heat plateaus.** Heat is improvements + monster levels, both of which now
+  cap, so raids stop escalating. Fine — the bosses are the escalation — but tune
+  the raid system to stay interesting *at* the plateau rather than to keep
+  climbing.
+
+**OPEN 12 — how far to rework.** Minimum: give Watchtower Block an upgrade line,
+fix Iron Idol, and either cap or re-base the three uncapped turret nodes.
+Fuller pass: re-derive all 33 improvements and the whole tree against "what is
+this worth at the cap?", and give the economy its breeding-era sinks.
 
 ## 8. Arena
 
