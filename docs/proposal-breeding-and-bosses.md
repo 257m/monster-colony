@@ -69,6 +69,7 @@ than a free win.
   also means a bad spread can starve a monster of the thing that lets it play
   cards — punishing in a way the other four aren't.
 - **Default: (a).** **Blocks: stage 1.**
+Answer: energy and energy regen can take points *but* they scale logarithmically. there wont be a insane difference in energy stats even with a bunch of points but a creature with few points in energy is intended to be unable to play high power cards. thats the trade off. they can still play lower energy cards if they wish. the base energy alone allows for that after all.
 
 ## 2. Two kinds of points: birth and levelling
 
@@ -117,6 +118,7 @@ child base = best of each BIRTH stat = 20/40/10/20  ->  level 90
   pace. (c) is the least tedious and the most "set and forget" — but it removes
   the moment-to-moment choice.
 - **Default: (b).** **Blocks: stage 1.**
+Answer: (b) but its still one click per level. you go into the creature's stats tab and apply the level. this can be done mid battle as well.
 
 ## 3. Breeding
 
@@ -150,7 +152,7 @@ breed the first pair you catch.
   ~5 generations.
 - **(b)** The higher of the two — lines last longer, the cap arrives slowly.
 - **(c)** Random.
-- **Default: (a)** (closest to ARK). **Blocks: stage 3.**
+- **Default: Each child has a matrilineal and a patrilineal mutation counter. the mutation counter is passed based on who passes a given stat to the child. like if it gets the mutated attack stat from its mother that adds to its mutations on its matrilineal mutation counter. each side gets 16 mutations each.
 
 ### OPEN 4 — Hybrids or same-species only?
 - **(a)** Same species only, as today.
@@ -158,19 +160,19 @@ breed the first pair you catch.
 - (b) is pure content and can be layered on later without changing the model.
 - **Default: (a).** **Blocks: stage 3.**
 
-## 4. Spawns: wide bands, rare high rolls, gated by eras
+## 4. Spawns: wide rings, rare high rolls, gated by eras
 
 Today `spawn_level_for` includes `player_top_level × 2/3`, so wilds track *your*
 level and there is never a better monster out there than the one you own. That
 goes, or the hunt has no point.
 
 - **The ceiling** comes from boss progress (below). **Heat** pushes the roll up
-  within the band without moving the ceiling, which keeps "build big and the
+  within the ring without moving the ceiling, which keeps "build big and the
   underground answers" true.
-- **The roll** is heavily low-biased: `level = floor + (cap − floor) × r²`,
-  `r` uniform, `floor = 25% of cap`. Squaring makes the top of a band rare:
+- **The roll** is heavily low-biased: `level = low + (cap − low) × r²`, `r`
+  uniform, `low = 25% of cap`. Squaring makes the top of a ring rare:
 
-| cap | floor | median | top 10% | top 1% |
+| cap | lowest | median | top 10% | top 1% |
 |---|---|---|---|---|
 | 30 | 7 | 13 | ≥28 | 30 |
 | 75 | 18 | 32 | ≥69 | ≥74 |
@@ -179,19 +181,45 @@ goes, or the hunt has no point.
 At a cap of 60 you see mostly 20s and 30s, occasionally a 55 — "a good one is out
 there somewhere".
 
-The sketch, tied to the era structure in §5 (OPEN 6 below tunes it):
+### What "depth" means here
 
-| progress | depth band | spawn cap |
+There are no floors in this game. The map is infinite and you start at
+`start_hex`, so depth is **distance from your entrance**:
+`hex_distance(start_hex, hex)`. That is already how the world thickens today
+(`dist / 4` in `spawn_level_for`), and it is the only axis that stays meaningful
+as the map grows in every direction.
+
+(`Colony.floor` exists in the save and the HUD prints "Floor 1", but nothing ever
+increments it — it is vestigial. This work should drop it, or repurpose it as the
+name of the ring you are standing in.)
+
+So **an era is a ring**, and "depth band" just means the ring:
+
+| era | ring (distance from the entrance) | notes |
 |---|---|---|
-| start (the Shallows) | 1–9 | 30 |
-| +1 Shallows Beta kill | 1–9 | 35 |
-| … all 5 Shallows Beta | 1–9 | 55 |
-| all 5 Shallows Beta (era gate) | 10–19 | 60 |
-| +1 Deepdark Beta kill | 10–19 | 68 |
-| … all 5 Deepdark Beta | 10–19 | 100 |
-| all 5 Deepdark Beta (era gate) | 20+ | 105 |
-| +1 Abyss Beta kill | 20+ | 117 |
-| … all 5 Abyss Beta | 20+ | 165 |
+| Shallows | 6–15 | boss rooms already start at `dist >= 6`, so this is the first ring one can appear in |
+| Deepdark | 16–30 | |
+| Abyss | 31+ | |
+
+Rings are **sealed** at the boundary until the era gate opens. Otherwise nothing
+stops you walking to the Abyss on turn 1 and the gate would be decoration: the
+boundary is a wall you cannot cross or work across, and beating the era's bosses
+opens it. OPEN 6 below owns the boundaries and the caps.
+
+Each ring carries its own cap, and boss progress raises it (OPEN 6 below tunes
+the numbers):
+
+| progress | Shallows (6–15) | Deepdark (16–30) | Abyss (31+) |
+|---|---|---|---|
+| start | 30 | sealed | sealed |
+| +1 Shallows Beta | 35 | sealed | sealed |
+| … all 5 Shallows Beta (era gate) | 55 | 60 | sealed |
+| +1 Deepdark Beta | 55 | 68 | sealed |
+| … all 5 Deepdark Beta (era gate) | 55 | 100 | 105 |
+| +1 Abyss Beta | 55 | 100 | 117 |
+| … all 5 Abyss Beta | 55 | 100 | 165 |
+
+Caps only rise. Nothing in this table ever makes an already-open ring easier.
 
 ### OPEN 5 — How strongly is a wild's spread biased?
 - **(a)** None — fully random.
@@ -199,12 +227,18 @@ The sketch, tied to the era structure in §5 (OPEN 6 below tunes it):
 - **(c)** Stricter (75%+), so wilds are more lopsided and easier to judge.
 - This is the knob that decides whether "a level-60 with 38 Power" is a
   one-in-fifty find or something you see every few captures.
-- **Default: (b).** **Blocks: stage 2.**
+- **Default: (a).** **Blocks: stage 2.**
 
-### OPEN 6 — The spawn-cap table
-Needs the era/boss roster (OPEN 9) to settle, but the sketch in §4 works as-is.
-- **Default: the sketch as written** (30 → 165 across three eras, rising per Beta
-  kill). **Blocks: stage 2.**
+### OPEN 6 — The depth rings and the spawn-cap table
+- **(a)** Rings of 6–15 / 16–30 / 31+ with a **sealed** boundary, as sketched.
+- **(b)** Narrower Shallows (6–12) and a longer tail, so the first ring is a
+  tutorial and the Deepdark starts sooner.
+- **(c)** No seal — rings only decide which bosses live where and which cap
+  applies. Walking deep early is then suicide rather than impossible, and the era
+  gate only decides which boss rooms are *worth* doing.
+- (a) makes progress legible and stops accidental suicide runs; (c) trusts the
+  player and removes a wall to cross. The cap numbers work either way.
+- **Default: (a)** (rings 6–15 / 16–30 / 31+, sealed). **Blocks: stage 2.**
 
 ## 5. Bosses: per-era rosters, three tiers, hunted by room
 
@@ -212,15 +246,15 @@ Bosses **stop roaming**. A Boss Room is an entry point that opens its own screen
 — same shape as the Arena's — with the boss, the preview and the tier choice.
 
 - **Three eras**: Early, Mid, End. **Each has its own roster of up to 5 bosses.**
-- **Era = depth band.** A Boss Room rolls **a random boss from its band's
-  roster**, decided when the room is generated. So you hunt for the *room*
-  holding the boss you want, not just a room.
+- **Era = a ring** (§4). A Boss Room rolls **a random boss from the roster of
+  the ring it sits in**, decided when the room is generated. So you hunt for the
+  *room* holding the boss you want, not just a room.
 - **Tiers**: at the room you pick **Beta / Alpha / Ascendant**. Proposal:
   **Beta is open**; **Alpha unlocks on that boss's Beta kill**; **Ascendant on its
   Alpha**. A per-boss ladder, so you can push one boss deep before moving on.
-- **Era gate**: the next era's band (and its higher spawn cap) opens when **all
+- **Era gate**: the next era's ring (and its higher spawn cap) opens when **all
   of the current era's bosses are beaten at Beta**. So progressing means hunting
-  every room in a band, not farming the one you like.
+  every room in a ring, not farming the one you like.
 - **Each tier**: a bigger team, higher stats, and **one extra ability** — Beta 1,
   Alpha 2, Ascendant 3. Nothing else in the game has more than one, so the tiers
   change *what the fight is*, not just its size.
@@ -305,7 +339,7 @@ gives each line a concrete design target, and a way to check it:
 > **At maximum, every colony bonus should be roughly as large as the strongest
 > thing a single maxed monster can do.**
 
-The top of the monster progression is a birth around 195 (top spawn band plus
+The top of the monster progression is a birth around 195 (top spawn ring plus
 the mutation cap) grown to ~295. Against that:
 
 | bonus | today's maximum | on par with a maxed monster? |
@@ -334,7 +368,7 @@ Either **cap them at a level whose top is on par** with a maxed monster, or
 **re-base them on the target** — e.g. a Turret shot deals a % of the *target's*
 max HP (like Poison and Thorns already do), which scales with the world and
 never needs re-tuning. The second is tidier and keeps turrets relevant at any
-depth.
+point in the game.
 
 The two uncapped *economy* nodes (Green Thumb, Rich Seams, +25%/level) are a
 different question: they're self-limiting through `cost_growth` and they feed
@@ -434,7 +468,7 @@ should probably be its own pass after the systems are in.
   `creature_stats_for_level` rewritten; `genes_*` deleted.
 - `colony_storage.odin`: birth path — per-stat 50/50 on **birth** points,
   mutations, counters, female cooldowns.
-- `colony_wilds.odin`: `spawn_level_for` — drop player-tracking; add bands, caps,
+- `colony_wilds.odin`: `spawn_level_for` — drop player-tracking; add rings, caps,
   spread bias, era gates; boss rooms roll a boss instead of spawning one.
 - `colony.odin`: XP cap; birth/level point split; boss-progress state; Nursery
   cooldown state.
@@ -463,7 +497,7 @@ nothing stalls.
 | 3 | mutation counter inheritance | §3 | stage 3 |
 | 4 | hybrids, or same species only | §3 | stage 3 |
 | 5 | wild spread bias strength | §4 | stage 2 |
-| 6 | the spawn-cap table | §4 | stage 2 |
+| 6 | the depth rings and spawn-cap table | §4 | stage 2 |
 | 7 | how tiers unlock | §5 | stage 4 |
 | 8 | what opens the next era | §5 | stage 4 |
 | 9 | the 15-boss roster | §5 | stage 4 |
@@ -480,7 +514,8 @@ straight on.
 
 1. **Stat points + birth/level split + genes out** (creature, UI, saves). The
    foundation; the game should feel the same, just reshaped.
-2. **Spawns**: bands, caps, spread bias. Capture becomes interesting on its own.
+2. **Spawns**: depth rings (and the sealed boundary), caps, spread bias. Capture
+   becomes interesting on its own.
 3. **Breeding**: birth-point 50/50, mutations, cooldowns. Now a line can be built.
 4. **Boss screen + eras + tiers + preview**, reusing the Arena screen's shape.
 5. **Loot and materials**, plus the sinks and the relic rule from §9.
