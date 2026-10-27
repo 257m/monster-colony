@@ -160,17 +160,19 @@ breed the first pair you catch.
 - (b) is pure content and can be layered on later without changing the model.
 - **Default: (a).** **Blocks: stage 3.**
 
-## 4. Spawns: wide rings, rare high rolls, gated by eras
+## 4. Spawns and heat: rings, caps, and the size of your footprint
 
 Today `spawn_level_for` includes `player_top_level × 2/3`, so wilds track *your*
 level and there is never a better monster out there than the one you own. That
 goes, or the hunt has no point.
 
-- **The ceiling** comes from boss progress (below). **Heat** pushes the roll up
-  within the ring without moving the ceiling, which keeps "build big and the
-  underground answers" true.
-- **The roll** is heavily low-biased: `level = low + (cap − low) × r²`, `r`
-  uniform, `low = 25% of cap`. Squaring makes the top of a ring rare:
+- **The ceiling** comes from boss progress (below). **Heat** lifts the roll
+  within the ring without moving the ceiling — it is what makes a hot colony
+  worth having, and it is also what makes it a target. See the heat section
+  under the cap table.
+- **The roll** is heavily low-biased: `level = low + (span) × r²`, `r` uniform,
+  `low = 25% of cap`, `span = cap − low − heat bonus`. Squaring makes the top of
+  a ring rare:
 
 | cap | lowest | median | top 10% | top 1% |
 |---|---|---|---|---|
@@ -201,10 +203,10 @@ So **an era is a ring**, and "depth band" just means the ring:
 | Deepdark | 16–30 | |
 | Abyss | 31+ | |
 
-Rings are **sealed** at the boundary until the era gate opens. Otherwise nothing
-stops you walking to the Abyss on turn 1 and the gate would be decoration: the
-boundary is a wall you cannot cross or work across, and beating the era's bosses
-opens it. OPEN 6 below owns the boundaries and the caps.
+The boundary between rings is **sealed** until the era gate opens — otherwise
+nothing stops you walking to the Abyss on turn 1 and the gate would be
+decoration. The seal cuts both ways; see *"The rings are sealed in both
+directions"* below. OPEN 6 owns the boundaries and the caps.
 
 Each ring carries its own cap, and boss progress raises it (OPEN 6 below tunes
 the numbers):
@@ -221,6 +223,73 @@ the numbers):
 
 Caps only rise. Nothing in this table ever makes an already-open ring easier.
 
+### Heat — the size of your footprint
+
+Heat is **derived from your improvements**, not from your monsters. Buildings are
+your *presence*; monsters are your *defence*. Every standing improvement adds its
+own weight (`improvement_heat`: roads, walls and traps 1, production and support
+2, watchtowers and turrets 3, beacons and refineries 4, counting overlays too),
+and nothing else feeds it.
+
+Monster levels should come **out** of the formula. Today
+`colony_heat = improvement_heat/3 + total_monster_levels/6`, which means a maxed
+roster pins the meter at `HEAT_MAX` forever no matter what you actually built —
+and a colony with no defences is exactly as hot as a fortress of the same size.
+Heat should measure what you *put on the map*, so building is the lever and
+defending is the answer.
+
+Heat does two things, and both are wanted:
+
+- **The underground answers.** Raid size, raid cadence and raid monster level all
+  rise with heat. Building without walls, turrets or monsters that can hold a
+  line gets you steamrolled — that is the limiter.
+- **Breeding gets possible.** Heat lifts the spawn-level roll *inside the ring
+  you are standing in*, never past the ring's cap. Since breeding reads birth
+  points, the top of a band is exactly what you hunt, and heat is what turns the
+  mid-game from a slow grind of mediocre wilds into a run of real candidates.
+
+So heat is a resource you want and a bill you pay, at the same time.
+
+#### Heat saturates per ring
+
+Heat is global, but its **spawn** effect is capped per ring, and the caps differ:
+
+| ring | heat that saturates it | most levels it adds |
+|---|---|---|
+| Shallows (6–15) | 16 | +5 |
+| Deepdark (16–30) | 32 | +10 |
+| Abyss (31+) | 48 | +16 |
+
+Past 16 heat, extra heat does nothing for Shallows wilds. To spend it you have to
+go deeper — which is where the bosses, the materials and the danger are. So the
+reward side of heat pushes you outward and the raid side never stops, which means
+a hot colony always wants more walls than it has.
+
+The spawn roll with heat folded in:
+
+```
+low  = 25% of cap
+low += min(heat, saturation(ring)) / saturation(ring) × band_bonus(ring)
+level = low + (cap − low) × r²          // r uniform
+```
+
+Because the top of the roll is still `cap`, a hot ring is "mostly decent,
+occasionally great" rather than "everything is capped". Heat lifts the floor of
+what you meet; the `r²` still decides whether you get lucky.
+
+#### The rings are sealed in both directions
+
+Until the era gate opens, wilds cannot cross a ring boundary **either way**: the
+deep ones cannot come in to find you, and you cannot walk out. The boundary is a
+wall you cannot cross or work across.
+
+Opening a gate opens both directions at once, and that is the point of the whole
+thing: once the Deepdark gate is open, Deepdark monsters can come inward. The
+walls and turrets you built when they were pointless start earning their keep,
+and the rings you cleared stop being free real estate. This also means the
+deepest open ring sets the level of everything that can reach you, so the gates
+are a difficulty step as well as an unlock.
+
 ### OPEN 5 — How strongly is a wild's spread biased?
 - **(a)** None — fully random.
 - **(b)** ~60% of its points land in one or two favoured stats.
@@ -230,15 +299,42 @@ Caps only rise. Nothing in this table ever makes an already-open ring easier.
 - **Default: (a).** **Blocks: stage 2.**
 
 ### OPEN 6 — The depth rings and the spawn-cap table
-- **(a)** Rings of 6–15 / 16–30 / 31+ with a **sealed** boundary, as sketched.
+- **(a)** Rings of 6–15 / 16–30 / 31+, sealed **both ways** until the gate
+  opens, as sketched.
 - **(b)** Narrower Shallows (6–12) and a longer tail, so the first ring is a
   tutorial and the Deepdark starts sooner.
 - **(c)** No seal — rings only decide which bosses live where and which cap
   applies. Walking deep early is then suicide rather than impossible, and the era
   gate only decides which boss rooms are *worth* doing.
 - (a) makes progress legible and stops accidental suicide runs; (c) trusts the
-  player and removes a wall to cross. The cap numbers work either way.
+  player and removes a wall to cross, but it also means deep monsters wander
+  inward from turn one and there is no step change at the gate. The cap numbers
+  work either way.
 - **Default: (a)** (rings 6–15 / 16–30 / 31+, sealed). **Blocks: stage 2.**
+
+### OPEN 15 — Do monster levels still add heat?
+- **(a)** No — heat is improvements only, so building is the lever and monsters
+  are purely the answer. A big roster costs food, not attention.
+- **(b)** A small, **capped** share, e.g. `min(monster_levels/6, 12)`, so a huge
+  roster still draws some attention without pegging the meter.
+- As written today, monster levels alone reach the clamp and swamp the building
+  contribution entirely.
+- **Default: (a).** **Blocks: stage 2.**
+
+### OPEN 16 — What stops raids escalating forever?
+Heat keeps rising with the colony (more buildings, and the uncapped upgrades let
+you build a lot). Raids cannot keep growing past the point where they out-level
+everything the game can produce.
+- **(a)** Raid level is capped by the deepest **open** ring's cap (so raids are
+  always "the world you have unlocked" plus an alpha), and the escalation after
+  that comes from **size and composition** — more raiders, more specialists,
+  more alphas — rather than from level.
+- **(b)** Raid level is uncapped and expressed in points, so a very hot colony
+  eventually faces monsters no monster can beat — a soft doomsday clock.
+- **(c)** Raid level saturates like spawns do, and heat past that point only
+  shortens the interval and grows the band.
+- (a) keeps the gates as the real escalation, which is where the bosses are.
+- **Default: (a).** **Blocks: stage 2.**
 
 ## 5. Bosses: per-era rosters, three tiers, hunted by room
 
@@ -381,10 +477,11 @@ economy they produce still has a sink once levelling stops being one.
   (+1/kill) and the Academy upgrade exist to accelerate levelling. At birth+100
   they have nothing to accelerate. Either they feed something else (breeding
   speed, materials) or levelling needs to be slow enough that they still matter.
-- **Heat plateaus.** Heat is improvements + monster levels, both of which now
-  cap, so raids stop escalating. Fine — the bosses are the escalation — but tune
-  the raid system to stay interesting *at* the plateau rather than to keep
-  climbing.
+- **Heat stops being a progress tax.** Once heat is improvements-only (§4),
+  it no longer pegs at the clamp just because your roster is big — it tracks what
+  you built, so a small careful colony stays quiet and a sprawl does not. The
+  cap-busting escalation moves to the gates: opening a ring lets deeper monsters
+  reach you, which is a step change no amount of heat produces.
 
 ### OPEN 12 — How far to rework improvements and upgrades?
 - **(a)** Minimum: an upgrade line for Watchtower Block, fix Iron Idol, and cap
@@ -470,6 +567,18 @@ should probably be its own pass after the systems are in.
   mutations, counters, female cooldowns.
 - `colony_wilds.odin`: `spawn_level_for` — drop player-tracking; add rings, caps,
   spread bias, era gates; boss rooms roll a boss instead of spawning one.
+- Heat: `colony_heat` becomes improvements-only; `spawn_level_for` takes the
+  per-ring heat bonus; `raid_*` is capped by the deepest open ring; wild AI and
+  `step_hunt` respect sealed ring boundaries; the HUD shows heat *and* which ring
+  it is saturating.
+- Every "level" escalation has to become a **points** escalation, because level is
+  now the sum of points rather than a multiplier: the alpha's double-level, the
+  boss `BOSS_LEVEL_BONUS`, and the tier stats. Doubling points is the exact
+  equivalent of doubling level today, so the numbers carry over.
+- The Den's description promises that stored monsters "stop counting toward
+  heat". They already don't (denned monsters are counted anyway today — the text
+  was ahead of the code), and with heat improvements-only the claim just becomes
+  true. Reword it.
 - `colony.odin`: XP cap; birth/level point split; boss-progress state; Nursery
   cooldown state.
 - Bosses: `BOSS_SPECIES`, `boss_cronies`, `bosses_slain` and the roaming spawn are
@@ -498,6 +607,8 @@ nothing stalls.
 | 4 | hybrids, or same species only | §3 | stage 3 |
 | 5 | wild spread bias strength | §4 | stage 2 |
 | 6 | the depth rings and spawn-cap table | §4 | stage 2 |
+| 15 | do monster levels still add heat | §4 | stage 2 |
+| 16 | what stops raids escalating forever | §4 | stage 2 |
 | 7 | how tiers unlock | §5 | stage 4 |
 | 8 | what opens the next era | §5 | stage 4 |
 | 9 | the 15-boss roster | §5 | stage 4 |
@@ -507,15 +618,16 @@ nothing stalls.
 | 13 | deck size | §10 | stage 7 |
 | 14 | the loot list | §6 | stage 5 |
 
-**To start the first batch I only need 1 and 2**; 5 and 6 would let spawns follow
-straight on.
+**To start the first batch I only need 1 and 2**; 5, 6, 15 and 16 would let
+spawns and heat follow straight on.
 
 ## 13. Suggested build order
 
 1. **Stat points + birth/level split + genes out** (creature, UI, saves). The
    foundation; the game should feel the same, just reshaped.
-2. **Spawns**: depth rings (and the sealed boundary), caps, spread bias. Capture
-   becomes interesting on its own.
+2. **Spawns and heat**: depth rings (sealed both ways), caps, spread bias, heat
+   saturation per ring, raids capped by the deepest open ring. Capture becomes
+   interesting on its own and the colony layer gets its risk/reward lever.
 3. **Breeding**: birth-point 50/50, mutations, cooldowns. Now a line can be built.
 4. **Boss screen + eras + tiers + preview**, reusing the Arena screen's shape.
 5. **Loot and materials**, plus the sinks and the relic rule from §9.
